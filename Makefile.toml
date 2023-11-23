@@ -1,0 +1,58 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+CARGO_MAKE_WORKSPACE_EMULATION = true
+CARGO_MAKE_CRATE_WORKSPACE_MEMBERS = [ ]
+
+[config]
+default_to_workspace = true
+skip_core_tasks = true
+skip_git_env_info = true
+skip_rust_env_info = true
+skip_crate_env_info = true
+
+[tasks.default]
+alias = "check"
+
+[tasks.clean]
+description = "Clean all target directory"
+command = "cargo"
+args = ["clean"]
+
+[tasks.fmt]
+description = "Check format quality"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.fix-fmt]
+description = "Fix format"
+command = "cargo"
+args = ["fmt", "--all"]
+
+[tasks.clippy]
+description = "Check code quality"
+env_files = ["${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/.env"]
+command = "cargo"
+args = ["clippy", "--", "-D", "warnings"]
+
+[tasks.test]
+description = "Check all unit test"
+env_files = ["${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/.env"]
+command = "cargo"
+args = ["test"]
+dependencies = ["fmt", "clippy"]
+
+[tasks.check]
+description = "Check all issues, format and code quality"
+dependencies = ["fmt", "clippy"]
+
+[tasks.fix-all]
+description = "Try fix all clippy and format issues"
+dependencies = ["fix-fmt", "fix-clippy"]
+
+[tasks.build]
+description = "Generate release binary/lib"
+dependencies = [
+    "fmt",
+    "clippy",
+    "test",
+]
