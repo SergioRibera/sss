@@ -1,107 +1,120 @@
 use image::imageops::{crop_imm, resize, FilterType};
-use image::{DynamicImage, GenericImage, GenericImageView, Rgba, RgbaImage};
-use imageproc::drawing::draw_line_segment_mut;
+use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba, RgbaImage};
+use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut};
 
 /// Round the corner of the image
-pub fn round_corner(image: &mut DynamicImage, radius: u32) {
-    // draw a circle with given foreground on given background
-    // then split it into four pieces and paste them to the four corner of the image
-    //
-    // the circle is drawn on a bigger image to avoid the aliasing
-    // later it will be scaled to the correct size
-    // we add +1 (to the radius) to make sure that there is also space for the border to mitigate artefacts when scaling
-    // note that the +1 isn't added to the radius when drawing the circle
-    let mut circle =
-        RgbaImage::from_pixel((radius + 1) * 4, (radius + 1) * 4, Rgba([255, 255, 255, 0]));
-
-    let width = image.width();
-    let height = image.height();
-
-    // use the bottom right pixel to get the color of the foreground
-    let foreground = image.get_pixel(width - 1, height - 1);
-
-    draw_filled_circle_mut(
-        &mut circle,
-        (((radius + 1) * 2) as i32, ((radius + 1) * 2) as i32),
-        radius as i32 * 2,
-        foreground,
-    );
-
-    // scale down the circle to the correct size
-    let circle = resize(
-        &circle,
-        (radius + 1) * 2,
-        (radius + 1) * 2,
-        FilterType::Triangle,
-    );
+pub fn round_corner(img: &mut DynamicImage, radius: u32) {
+    let (width, height) = img.dimensions();
 
     // top left
-    let part = crop_imm(&circle, 1, 1, radius, radius);
-    image.copy_from(&*part, 0, 0).unwrap();
-
+    border_radius(img, radius, |x, y| (x - 1, y - 1));
     // top right
-    let part = crop_imm(&circle, radius + 1, 1, radius, radius - 1);
-    image.copy_from(&*part, width - radius, 0).unwrap();
-
-    // bottom left
-    let part = crop_imm(&circle, 1, radius + 1, radius, radius);
-    image.copy_from(&*part, 0, height - radius).unwrap();
-
+    border_radius(img, radius, |x, y| (width - x, y - 1));
     // bottom right
-    let part = crop_imm(&circle, radius + 1, radius + 1, radius, radius);
-    image
-        .copy_from(&*part, width - radius, height - radius)
-        .unwrap();
+    border_radius(img, radius, |x, y| (width - x, height - y));
+    // bottom left
+    border_radius(img, radius, |x, y| (x - 1, height - y));
 }
 
-// `draw_filled_circle_mut` doesn't work well with small radius in imageproc v0.18.0
-// it has been fixed but still have to wait for releasing
-// issue: https://github.com/image-rs/imageproc/issues/328
-// PR: https://github.com/image-rs/imageproc/pull/330
-/// Draw as much of a circle, including its contents, as lies inside the image bounds.
-pub fn draw_filled_circle_mut<I>(image: &mut I, center: (i32, i32), radius: i32, color: I::Pixel)
-where
-    I: GenericImage,
-    I::Pixel: 'static,
-{
-    let mut x = 0i32;
-    let mut y = radius;
-    let mut p = 1 - radius;
-    let x0 = center.0;
-    let y0 = center.1;
+fn border_radius(img: &mut DynamicImage, r: u32, coordinates: impl Fn(u32, u32) -> (u32, u32)) {
+    if r == 0 {
+        return;
+    }
+    let r0 = r;
 
-    while x <= y {
-        draw_line_segment_mut(
-            image,
-            ((x0 - x) as f32, (y0 + y) as f32),
-            ((x0 + x) as f32, (y0 + y) as f32),
-            color,
-        );
-        draw_line_segment_mut(
-            image,
-            ((x0 - y) as f32, (y0 + x) as f32),
-            ((x0 + y) as f32, (y0 + x) as f32),
-            color,
-        );
-        draw_line_segment_mut(
-            image,
-            ((x0 - x) as f32, (y0 - y) as f32),
-            ((x0 + x) as f32, (y0 - y) as f32),
-            color,
-        );
-        draw_line_segment_mut(
-            image,
-            ((x0 - y) as f32, (y0 - x) as f32),
-            ((x0 + y) as f32, (y0 - x) as f32),
-            color,
-        );
+    // 16x antialiasing: 16x16 grid creates 256 possible shades, great for u8!
+    let r = 16 * r;
 
-        x += 1;
-        if p < 0 {
-            p += 2 * x + 1;
-        } else {
-            y -= 1;
-            p += 2 * (x - y) + 1;
+    let mut x = 0;
+    let mut y = r - 1;
+    let mut p: i32 = 2 - r as i32;
+
+    // ...
+
+    let mut alpha: u16 = 0;
+    let mut skip_draw = true;
+
+    let set_alpha = |img: &mut DynamicImage, alpha, (x, y)| {
+        let p = img.get_pixel(x, y).0;
+        img.put_pixel(x, y, Rgba([p[0], p[1], p[2], alpha]));
+    };
+    let draw = |img: &mut DynamicImage, alpha, x, y| {
+        debug_assert!((1..=256).contains(&alpha));
+        let pixel_alpha = img.get_pixel(x, y).0[3];
+        set_alpha(
+            img,
+            ((alpha * pixel_alpha as u16 + 128) / 256) as u8,
+            (r0 - x, r0 - y),
+        );
+    };
+
+    'l: loop {
+        // (comments for bottom_right case:)
+        // remove contents below current position
+        {
+            let i = x / 16;
+            for j in y / 16 + 1..r0 {
+                set_alpha(img, 0, coordinates(r0 - i, r0 - j))
+            }
+        }
+        // remove contents right of current position mirrored
+        {
+            let j = x / 16;
+            for i in y / 16 + 1..r0 {
+                set_alpha(img, 0, coordinates(r0 - i, r0 - j))
+            }
+        }
+
+        // draw when moving to next pixel in x-direction
+        if !skip_draw {
+            draw(img, alpha, x / 16 - 1, y / 16);
+            draw(img, alpha, y / 16, x / 16 - 1);
+            alpha = 0;
+        }
+
+        for _ in 0..16 {
+            skip_draw = false;
+
+            if x >= y {
+                break 'l;
+            }
+
+            alpha += y as u16 % 16 + 1;
+            if p < 0 {
+                x += 1;
+                p += (2 * x + 2) as i32;
+            } else {
+                // draw when moving to next pixel in y-direction
+                if y % 16 == 0 {
+                    draw(img, alpha, x / 16, y / 16);
+                    draw(img, alpha, y / 16, x / 16);
+                    skip_draw = true;
+                    alpha = (x + 1) as u16 % 16 * 16;
+                }
+
+                x += 1;
+                p -= (2 * (y - x) + 2) as i32;
+                y -= 1;
+            }
+        }
+    }
+
+    // one corner pixel left
+    if x / 16 == y / 16 {
+        // column under current position possibly not yet accounted
+        if x == y {
+            alpha += y as u16 % 16 + 1;
+        }
+        let s = y as u16 % 16 + 1;
+        let alpha = 2 * alpha - s * s;
+        draw(img, alpha, x / 16, y / 16);
+    }
+
+    // remove remaining square of content in the corner
+    let range = y / 16 + 1..r0;
+    for i in range.clone() {
+        for j in range.clone() {
+            set_alpha(img, 0, coordinates(r0 - i, r0 - j))
         }
     }
 }

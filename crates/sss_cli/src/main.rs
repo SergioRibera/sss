@@ -1,5 +1,7 @@
 use sss_lib::{generate_image, DynImageContent, GenerationSettings, Shadow};
 
+mod config;
+
 struct Screenshot;
 
 impl DynImageContent for Screenshot {

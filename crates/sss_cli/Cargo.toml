@@ -8,6 +8,7 @@ name = "sss"
 path = "./src/main.rs"
 
 [dependencies]
+screenshots = "0.8.6"
 sss_lib = { path = "../sss_lib" }
 clap = { version = "4.4.8", features = [
     "derive",
@@ -16,4 +17,3 @@ clap = { version = "4.4.8", features = [
     "suggestions",
     "wrap_help",
 ] }
-screenshots = "0.8.6"
