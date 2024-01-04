@@ -3,7 +3,12 @@ name = "sss_cli"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "sss"
+path = "./src/main.rs"
+
 [dependencies]
+sss_lib = { path = "../sss_lib" }
 clap = { version = "4.4.8", features = [
     "derive",
     "color",
@@ -11,3 +16,4 @@ clap = { version = "4.4.8", features = [
     "suggestions",
     "wrap_help",
 ] }
+screenshots = "0.8.6"

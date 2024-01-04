@@ -1,5 +1,4 @@
 [workspace.package]
-name = "sss"
 version = "0.0.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -22,4 +21,3 @@ codegen-units = 1
 [workspace.dependencies]
 log = "0.4.20"
 env_logger = "0.10.0"
-thiserror = "1.0.50"

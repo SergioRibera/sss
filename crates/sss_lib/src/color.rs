@@ -1,10 +1,14 @@
+use image::Rgba;
+
+use crate::error::ParseColor as ParseColorError;
+
 pub trait ToRgba {
     type Target;
     fn to_rgba(&self) -> Self::Target;
 }
 
 /// Parse hex color (#RRGGBB or #RRGGBBAA)
-impl ToRgba for str {
+impl ToRgba for String {
     type Target = Result<Rgba<u8>, ParseColorError>;
 
     fn to_rgba(&self) -> Self::Target {
@@ -49,5 +53,13 @@ impl ToRgba for str {
             }
             _ => Err(ParseColorError::InvalidLength),
         }
+    }
+}
+
+impl ToRgba for str {
+    type Target = Result<Rgba<u8>, ParseColorError>;
+
+    fn to_rgba(&self) -> Self::Target {
+        String::from(self).to_rgba()
     }
 }

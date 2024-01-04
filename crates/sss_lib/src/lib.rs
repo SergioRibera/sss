@@ -1,26 +1,44 @@
+//! This library is originally inspired from https://github.com/Aloxaf/silicon
+use ::image::DynamicImage;
+
+pub mod blur;
 mod color;
-mod image;
+pub mod components;
+pub mod error;
+mod img;
+mod shadow;
+pub mod utils;
+
+pub use image;
+pub use img::*;
+pub use shadow::Shadow;
 
 pub struct GenerationSettings {
-    background: String,
-    /// pad between code and edge of code area.
+    /// Background for image
+    /// Default: #323232
+    pub background: Background,
+    /// pad between inner immage and edge.
     /// Default: 25
-    padding: (u32, u32),
-    /// Title bar padding
-    /// Default: 15
-    title_bar_pad: u32,
+    pub padding: (u32, u32),
     /// round corner
-    /// Default: true
-    round_corner: bool,
-    /// Shadow adder
-    shadow_adder: Option<ShadowAdder>,
+    /// Default: Some(15)
+    pub round_corner: Option<u32>,
+    /// Shadow
+    /// Default: None
+    pub shadow: Option<Shadow>,
+}
+
+impl Default for GenerationSettings {
+    fn default() -> Self {
+        Self {
+            background: Background::Solid(image::Rgba([0x32, 0x32, 0x32, 255])),
+            padding: (80, 100),
+            round_corner: Some(15),
+            shadow: None,
+        }
+    }
 }
 
 pub trait DynImageContent {
-    fn content(&self) -> DynamicImage::ImageRgba8;
-}
-
-pub fn generate_image(settings: GenerationSettings, content: impl DynImageContent) {
-    let mut img =
-        DynamicImage::ImageRgba8(RgbaImage::from_pixel(size.0, size.1, background.to_rgba()));
+    fn content(&self) -> DynamicImage;
 }
