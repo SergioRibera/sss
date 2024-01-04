@@ -1,8 +1,12 @@
-[package]
-name = "code_screenshot"
+[workspace.package]
+name = "sss"
 version = "0.0.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+
+[workspace]
+resolver = "2"
+members = ["crates/sss_lib", "crates/sss_cli"]
 
 [profile.dev]
 opt-level = 1
@@ -15,25 +19,7 @@ panic = 'abort'
 opt-level = 3
 codegen-units = 1
 
-[target.'cfg(not(target_family="wasm"))'.profile.dev.package."*"]
-opt-level = 3
-
-[dependencies]
+[workspace.dependencies]
 log = "0.4.20"
 env_logger = "0.10.0"
-syntect = { version = "5.1.0", default-features = false, features = [
-    "parsing",
-    "default-syntaxes",
-    "default-themes",
-    "regex-fancy",
-    "plist-load",
-] }
-clap = { version = "4.4.8", features = [
-    "derive",
-    "color",
-    "env",
-    "suggestions",
-    "wrap_help",
-] }
 thiserror = "1.0.50"
-lewp-css = "0.2.0"

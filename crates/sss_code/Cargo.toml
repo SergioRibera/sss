@@ -1,0 +1,21 @@
+[package]
+name = "sss_code"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lewp-css = "0.2.0"
+syntect = { version = "5.1.0", default-features = false, features = [
+    "parsing",
+    "default-syntaxes",
+    "default-themes",
+    "regex-fancy",
+    "plist-load",
+] }
+clap = { version = "4.4.8", features = [
+    "derive",
+    "color",
+    "env",
+    "suggestions",
+    "wrap_help",
+] }

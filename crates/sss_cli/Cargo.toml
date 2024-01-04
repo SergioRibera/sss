@@ -1,0 +1,13 @@
+[package]
+name = "sss_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.4.8", features = [
+    "derive",
+    "color",
+    "env",
+    "suggestions",
+    "wrap_help",
+] }
