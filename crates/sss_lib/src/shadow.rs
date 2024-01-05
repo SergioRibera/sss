@@ -1,4 +1,4 @@
-use image::{DynamicImage, Rgba, RgbaImage};
+use image::{DynamicImage, Rgba};
 use imageproc::drawing::draw_filled_rect_mut;
 use imageproc::rect::Rect;
 

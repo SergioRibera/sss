@@ -1,12 +1,13 @@
 [package]
 name = "sss_lib"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 log.workspace = true
 env_logger.workspace = true
-font-kit = "0.12.0"
+thiserror.workspace = true
 imageproc = "0.23.0"
 arboard = { version = "3.3.0", features = ["wayland-data-control"] }
 image = { version = "0.24.7", default-features = false, features = [

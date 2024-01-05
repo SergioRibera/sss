@@ -1,6 +1,4 @@
-use image::imageops::{crop_imm, resize, FilterType};
-use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba, RgbaImage};
-use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut};
+use image::{DynamicImage, GenericImage, GenericImageView, Rgba};
 
 /// Round the corner of the image
 pub fn round_corner(img: &mut DynamicImage, radius: u32) {

@@ -44,8 +44,14 @@
               fontconfig
 
               dbus
+              wayland
+              wayland-protocols
+              libxkbcommon
               xorg.libXcursor
               xorg.libxcb
+              xorg.libX11
+              xorg.libXi
+              xorg.libXrandr
             ];
             commonArgs = {
               inherit src;
@@ -84,7 +90,7 @@
             devShells.default = craneLib.devShell {
               packages = [
                 toolchain
-              ] ++ commonArgs.buildInputs;
+              ] ++ buildInputs;
               LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
             };
           };

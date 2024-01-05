@@ -3,7 +3,7 @@ use image::{Rgba, RgbaImage};
 
 use crate::color::ToRgba;
 use crate::components::round_corner;
-// use crate::utils::copy_alpha;
+use crate::error::Background as BackgroundError;
 use crate::{DynImageContent, GenerationSettings};
 
 #[derive(Clone, Debug)]
@@ -64,4 +64,30 @@ pub fn generate_image(
     }
 
     img
+}
+
+impl TryFrom<String> for Background {
+    type Error = BackgroundError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.contains(";") {
+            let mut split = value.splitn(3, ";");
+            let o = split.next().unwrap();
+            let start  = split.next().unwrap().to_rgba().unwrap();
+            let stop = split.next().unwrap().to_rgba().unwrap();
+            let orientation = if o == "h" {
+                GradientType::Horizontal
+            } else {
+                GradientType::Vertical
+            };
+            return Ok(Background::Gradient(orientation, start, stop))
+        }
+        if let Ok(color) = value.to_rgba() {
+            return Ok(Background::Solid(color));
+        }
+        if let Ok(img) = image::open(value) {
+            return Ok(Background::Image(img.to_rgba8()));
+        }
+        Err(BackgroundError::CannotParse)
+    }
 }

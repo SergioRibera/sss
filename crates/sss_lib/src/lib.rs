@@ -11,6 +11,7 @@ pub mod utils;
 
 pub use image;
 pub use img::*;
+pub use color::ToRgba;
 pub use shadow::Shadow;
 
 pub struct GenerationSettings {
