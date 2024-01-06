@@ -12,6 +12,10 @@ impl ToRgba for String {
     type Target = Result<Rgba<u8>, ParseColorError>;
 
     fn to_rgba(&self) -> Self::Target {
+        log::trace!("Start Parse Color: '{self}'");
+        if self.is_empty() {
+            return Err(ParseColorError::InvalidLength);
+        }
         if self.as_bytes()[0] != b'#' {
             return Err(ParseColorError::InvalidDigit);
         }
@@ -21,10 +25,12 @@ impl ToRgba for String {
             // RGB or RGBA
             4 | 5 => {
                 let a = if self.len() == 5 {
+                    log::trace!("Parse Color RGB");
                     let alpha = (color & 0xf) as u8;
                     color >>= 4;
                     alpha
                 } else {
+                    log::trace!("Parse Color RGBA");
                     0xff
                 };
 
@@ -37,10 +43,12 @@ impl ToRgba for String {
             // RRGGBB or RRGGBBAA
             7 | 9 => {
                 let alpha = if self.len() == 9 {
+                    log::trace!("Parse Color RRGGBBAA");
                     let alpha = (color & 0xff) as u8;
                     color >>= 8;
                     alpha
                 } else {
+                    log::trace!("Parse Color RRGGBB");
                     0xff
                 };
 
