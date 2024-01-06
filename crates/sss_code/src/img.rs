@@ -92,7 +92,7 @@ impl<'a> ImageCode<'a> {
             drawables.push((
                 width,
                 height,
-                Some(if !hi { style.foreground } else { fg }),
+                Some(if hi { style.foreground } else { fg }),
                 style.font_style.into(),
                 text.to_owned(),
             ));
@@ -109,13 +109,19 @@ impl<'a> ImageCode<'a> {
         &self,
         img: &mut DynamicImage,
         lines: Range<usize>,
+        line_hi: Range<usize>,
         lineno: u32,
         mut color: Rgba<u8>,
     ) {
         for i in color.0.iter_mut() {
             *i = (*i).saturating_sub(20);
         }
-        for (i, l) in lines.enumerate() {
+        let no_hi_color = {
+            let mut c = color.clone();
+            c.0[3] /= 2;
+            c
+        };
+        for (i, l) in lines.clone().enumerate() {
             let line_mumber = format!(
                 "{:>width$}",
                 l + 1,
@@ -123,7 +129,11 @@ impl<'a> ImageCode<'a> {
             );
             self.font.draw_text_mut(
                 img,
-                color,
+                if line_hi.contains(&(lines.start + i)) {
+                    color
+                } else {
+                    no_hi_color
+                },
                 CODE_PADDING,
                 self.get_line_y(i as u32),
                 FontStyle::REGULAR,
@@ -183,7 +193,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 ..l
             })
             .unwrap_or_default();
-        let max_lineno = line_range.end as u32;
+        let max_lineno = line_range.len() as u32;
 
         if let Some(title) = self.config.window_title.as_ref() {
             let title_width = self.font.get_text_len(title);
@@ -204,7 +214,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
 
         for (n, line) in lines[line_range.clone()].iter().enumerate() {
             let line = h.highlight_line(line, self.syntax_set).unwrap();
-            let hi = !line_hi.contains(&n);
+            let hi = line_hi.contains(&(line_range.start + n));
             drawables.extend(self.create_line(
                 n,
                 hi,
@@ -229,7 +239,13 @@ impl<'a> DynImageContent for ImageCode<'a> {
 
         // Draw line numbers
         if self.config.line_numbers {
-            self.draw_line_number(&mut img, line_range, max_lineno, color_to_rgba(foreground));
+            self.draw_line_number(
+                &mut img,
+                line_range,
+                line_hi,
+                max_lineno,
+                color_to_rgba(foreground),
+            );
         }
 
         // Draw lines
