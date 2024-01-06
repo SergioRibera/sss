@@ -5,7 +5,12 @@ license = "MIT OR Apache-2.0"
 
 [workspace]
 resolver = "2"
-members = ["crates/sss_lib", "crates/sss_select", "crates/sss_cli"]
+members = [
+    "crates/sss_lib",
+    "crates/sss_select",
+    "crates/sss_cli",
+    "crates/sss_code",
+]
 
 [profile.dev]
 opt-level = 1
@@ -22,3 +27,10 @@ codegen-units = 1
 log = "0.4.20"
 env_logger = "0.10.0"
 thiserror = "1"
+clap = { version = "4.4.8", features = [
+    "derive",
+    "color",
+    "env",
+    "suggestions",
+    "wrap_help",
+] }
