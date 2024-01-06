@@ -1,7 +1,7 @@
 use image::{Pixel, RgbaImage};
 
 /// copy from src to dst, taking into account alpha channels
-pub(crate) fn copy_alpha(src: &RgbaImage, dst: &mut RgbaImage, x: u32, y: u32) {
+pub fn copy_alpha(src: &RgbaImage, dst: &mut RgbaImage, x: u32, y: u32) {
     assert!(src.width() + x <= dst.width());
     assert!(src.height() + y <= dst.height());
     for j in 0..src.height() {

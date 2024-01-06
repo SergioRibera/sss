@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use config::get_config;
+use font::FontCollection;
 use img::ImageCode;
 use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
@@ -9,8 +10,10 @@ use theme::{list_themes, load_theme, theme_from_vim};
 
 mod config;
 mod error;
+mod font;
 mod img;
 mod theme;
+mod utils;
 
 // wl-paste | cargo run -p sss_code -- -t InspiredGitHub -e rs --lines 2..10 --vim-theme "Normal,#dab997,#262626,,;LineNr,#949494,#262626,,;Visual,,#4e4e4e,,;Cursor,#262626,#dab997;CursorLine,,#3a3a3a,,;Search,#3a3a3a,ffaf00;SpellBad,#d75f5f,,undercurl,;Title,#83adad,,,;MatchParen,,#8a8a8a,,;IdentBlanklineChar,#4e4e4e,,,;Number,#ff8700,,,;Character,#d75f5f,,,;String,#afaf00,,,;Constant,#ff8700,,,;Identifier,#d75f5f,,,;Keyword,#d485ad,,,;Comment,#8a8a8a,,,;Operator,#d485ad,,,;Statement,#d75f5f,,,;Type,#ffaf00,,,;StorageClass,#ffaf00,,,;Function,#83adad,,," -
 fn main() {
@@ -18,7 +21,7 @@ fn main() {
     let mut ss = SyntaxSet::load_defaults_newlines();
     let themes = ThemeSet::load_defaults();
 
-    if let Some(dir) = config.extra_syntaxes {
+    if let Some(dir) = &config.extra_syntaxes {
         let mut builder = ss.into_builder();
         builder.add_from_folder(dir, true).unwrap();
         ss = builder.build();
@@ -34,16 +37,16 @@ fn main() {
         return;
     }
 
-    let content = config.content.unwrap().contents().unwrap();
-    let syntax = if let Some(ext) = config.extension {
-        ss.find_syntax_by_extension(&ext).unwrap()
+    let content = config.content.clone().unwrap().contents().unwrap();
+    let syntax = if let Some(ext) = &config.extension {
+        ss.find_syntax_by_extension(ext).unwrap()
     } else {
         ss.find_syntax_by_first_line(content.split("\n").next().unwrap())
             .unwrap()
     };
 
-    let theme = if let Some(vim_theme) = config.vim_theme {
-        Cow::Owned(theme_from_vim(&vim_theme))
+    let theme = if let Some(vim_theme) = &config.vim_theme {
+        Cow::Owned(theme_from_vim(vim_theme))
     } else {
         themes
             .themes
@@ -52,7 +55,36 @@ fn main() {
             .unwrap_or_else(|| Cow::Owned(load_theme(&config.theme, true)))
     };
 
-    let out = generate_image(config.clone().into(), ImageCode { config });
+    let out = generate_image(
+        config.clone().into(),
+        ImageCode {
+            font: config
+                .font
+                .as_ref()
+                .and_then(|f| FontCollection::new(f).ok())
+                .unwrap_or_default(),
+            config: config.clone(),
+            syntax,
+            theme,
+            syntax_set: &ss,
+            content: &content,
+        },
+    );
+
+    // if config.just_copy {
+    //     let mut c = arboard::Clipboard::new().unwrap();
+    //     c.set_image(arboard::ImageData {
+    //         width: out.width() as usize,
+    //         height: out.height() as usize,
+    //         bytes: std::borrow::Cow::Owned(out.to_vec()),
+    //     })
+    //     .unwrap();
+    //     return;
+    // }
+
+    if let Some(path) = config.save_path {
+        out.save_with_format(path, config.save_format).unwrap();
+    }
 }
 
 fn list_file_types(ss: &SyntaxSet) {

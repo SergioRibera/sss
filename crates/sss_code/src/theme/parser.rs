@@ -21,21 +21,31 @@ pub fn parse_vim(vim: &str) -> HashMap<&str, VimHighlight> {
         .collect::<HashMap<&str, VimHighlight>>()
 }
 
-const VIM_NAMES: [(&str, &str); 12] = [
+const VIM_NAMES: [(&str, &str); 19] = [
     ("Number", "constant.numeric"),
-    ("Character", "constant.character"),
+    ("TSCharacter,Character", "constant.character"),
     ("String", "string"),
     ("Constant", "constant"),
     ("Identifier", "variable"),
     ("Keyword", "keyword"),
     ("Comment", "comment"),
-    ("Operator", "keyword.operator"),
+    ("Operator", "keyword.operator, operator"),
     ("Statement", "variable.parameter.function"),
-    ("Type", "entity.name.class, meta.class, support.class"),
+    ("Type", "entity.name.class, meta.class, support.class, type, typeParameter, entity.type.name, entity.name.type, meta.type.name, storage"),
+    ("Structure", "enum, struct"),
     ("StorageClass", "storage"),
-    ("Function", "entity.name.function, support.function"),
+    ("Function", "entity.name.function, support.function, function"),
+    ("Macro", "macro, entity.name.function.macro"),
+    ("TSField", "property"),
+    ("TSParameter", "parameter"),
+    ("parens", "brace"),
+    ("Conditional", "conditional, keyword.conditional, keyword.control.conditional"),
+    ("MyTag", "brackethighlighter.tag, brackethighlighter.angle, brackethighlighter.round, brackethighlighter.square"),
 ];
 
 pub fn vim_to_scope_str(v: &str) -> Option<&str> {
-    VIM_NAMES.iter().find(|(n, _)| n == &v).map(|(_, v)| *v)
+    VIM_NAMES
+        .iter()
+        .find(|(n, _)| n.contains(&v))
+        .map(|(_, v)| *v)
 }

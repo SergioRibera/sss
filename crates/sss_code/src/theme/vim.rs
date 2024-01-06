@@ -40,8 +40,6 @@ pub fn theme_from_vim(vim: &str) -> Theme {
         })
         .collect::<Vec<_>>();
 
-    println!("Scopes: {scopes:?}");
-
     let &(fg_n, bg_n, _) = values.get("Normal").unwrap();
     let &(fg_nr, bg_nr, _) = values.get("LineNr").unwrap();
     let &(fg_sel, bg_sel, _) = values.get("Visual").unwrap();

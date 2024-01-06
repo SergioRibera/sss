@@ -80,8 +80,11 @@ pub fn color_from_term(term: &str) -> Option<Color> {
 }
 
 pub fn str_to_color(s: &str) -> Option<Color> {
-    s.to_rgba().ok().map(|rgba| {
-        let [r, g, b, a] = rgba.0;
-        Color { r, g, b, a }
-    })
+    s.to_rgba()
+        .ok()
+        .map(|rgba| {
+            let [r, g, b, a] = rgba.0;
+            Color { r, g, b, a }
+        })
+        .or(color_from_term(s))
 }
