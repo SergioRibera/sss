@@ -9,16 +9,10 @@ name = "sss"
 path = "./src/main.rs"
 
 [dependencies]
+clap.workspace = true
 screenshots = "0.8.6"
 sss_lib = { path = "../sss_lib" }
 sss_select = { path = "../sss_select" }
 arboard = { version = "3.3.0", features = ["wayland-data-control"] }
-clap = { version = "4.4.8", features = [
-    "derive",
-    "color",
-    "env",
-    "suggestions",
-    "wrap_help",
-] }
 wayland-client = "0.31.1"
 wayland-protocols = { version = "0.31.0", features = ["client"] }
