@@ -6,7 +6,12 @@ edition = "2021"
 [dependencies]
 clap.workspace = true
 thiserror.workspace = true
+log.workspace = true
+env_logger.workspace = true
 clap-stdin = "0.3.0"
+conv = "0.3.3"
+font-kit = "0.11.0"
+pathfinder_geometry = "0.5.1"
 sss_lib = { path = "../sss_lib" }
 syntect = { version = "5.1.0", default-features = false, features = [
     "parsing",
