@@ -29,7 +29,7 @@ pub fn theme_from_vim(vim: &str) -> Theme {
     let scopes = values
         .iter()
         .map(|(name, (fg, bg, style))| ThemeItem {
-            scope: vim_to_scope_str(*name)
+            scope: vim_to_scope_str(name)
                 .and_then(|v| ScopeSelectors::from_str(v).ok())
                 .unwrap_or_default(),
             style: StyleModifier {
@@ -60,10 +60,10 @@ pub fn theme_from_vim(vim: &str) -> Theme {
             line_highlight: bg_cur_line,
             misspelling: fg_bad,
             accent: fg_n,
-            bracket_contents_foreground: fg_brk.clone(),
+            bracket_contents_foreground: *fg_brk,
             bracket_contents_options: Some(underline(s_brk.clone().unwrap_or_default())),
-            brackets_foreground: fg_brk.clone(),
-            brackets_background: bg_brk.clone(),
+            brackets_foreground: *fg_brk,
+            brackets_background: *bg_brk,
             brackets_options: None,
             tags_foreground: fg_tag,
             tags_options: None,

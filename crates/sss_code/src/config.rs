@@ -106,18 +106,18 @@ pub fn get_config() -> CodeConfig {
     CodeConfig::parse()
 }
 
-impl Into<GenerationSettings> for CodeConfig {
-    fn into(self) -> GenerationSettings {
-        let background = Background::try_from(self.background.clone()).unwrap();
+impl From<CodeConfig> for GenerationSettings {
+    fn from(val: CodeConfig) -> Self {
+        let background = Background::try_from(val.background.clone()).unwrap();
         GenerationSettings {
             background: background.clone(),
-            padding: (self.padding_x, self.padding_y),
-            round_corner: Some(self.radius),
-            shadow: self.shadow.then_some(Shadow {
+            padding: (val.padding_x, val.padding_y),
+            round_corner: Some(val.radius),
+            shadow: val.shadow.then_some(Shadow {
                 background,
-                use_inner_image: self.shadow_image,
-                shadow_color: self.shadow_color.to_rgba().unwrap(),
-                blur_radius: self.shadow_blur,
+                use_inner_image: val.shadow_image,
+                shadow_color: val.shadow_color.to_rgba().unwrap(),
+                blur_radius: val.shadow_blur,
             }),
         }
     }

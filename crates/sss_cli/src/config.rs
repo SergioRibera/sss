@@ -76,30 +76,30 @@ pub fn get_config() -> CliConfig {
     CliConfig::parse()
 }
 
-impl Into<GenerationSettings> for CliConfig {
-    fn into(self) -> GenerationSettings {
-        let background = Background::try_from(self.background.clone()).unwrap();
+impl From<CliConfig> for GenerationSettings {
+    fn from(val: CliConfig) -> Self {
+        let background = Background::try_from(val.background.clone()).unwrap();
         GenerationSettings {
             background: background.clone(),
-            padding: (self.padding_x, self.padding_y),
-            round_corner: Some(self.radius),
+            padding: (val.padding_x, val.padding_y),
+            round_corner: Some(val.radius),
             shadow: Some(Shadow {
                 background,
-                use_inner_image: self.shadow_image,
-                shadow_color: self.shadow_color.to_rgba().unwrap(),
-                blur_radius: self.shadow_blur,
+                use_inner_image: val.shadow_image,
+                shadow_color: val.shadow_color.to_rgba().unwrap(),
+                blur_radius: val.shadow_blur,
             }),
         }
     }
 }
 
-impl Into<SelectConfig> for CliConfig {
-    fn into(self) -> SelectConfig {
+impl From<CliConfig> for SelectConfig {
+    fn from(val: CliConfig) -> Self {
         SelectConfig {
-            current: self.current,
-            screen: self.screen,
-            window: self.window,
-            area: self.area,
+            current: val.current,
+            screen: val.screen,
+            window: val.window,
+            area: val.area,
         }
     }
 }

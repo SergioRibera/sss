@@ -1,14 +1,14 @@
-use std::num::NonZeroU32;
+
 use std::rc::Rc;
 
 use app::SelectApp;
-use raqote::DrawTarget;
+
 use utils::calculate_layout_size;
 use winit::dpi::{LogicalPosition, PhysicalPosition, PhysicalSize};
 use winit::event::MouseButton;
-use winit::raw_window_handle::HasWindowHandle;
+
 use winit::{
-    event::{ElementState, Event, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::WindowBuilder,
 };

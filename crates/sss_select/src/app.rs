@@ -79,7 +79,7 @@ impl SelectApp {
                 (y + height as i32) as f32 - SCREEN_RECT_HEIGHT - 20.,
                 SCREEN_RECT_WIDTH,
                 SCREEN_RECT_HEIGHT,
-                &raqote::Source::Solid(self.background_opaque.clone()),
+                &raqote::Source::Solid(self.background_opaque),
                 &raqote::DrawOptions::default(),
             )
         }
@@ -106,7 +106,7 @@ impl SelectApp {
                 NonZeroU32::new(self.size.height).unwrap(),
             )
             .unwrap();
-        self.dt.clear(self.background.clone());
+        self.dt.clear(self.background);
     }
 
     pub fn render(&mut self) {

@@ -7,7 +7,7 @@ pub fn copy_alpha(src: &RgbaImage, dst: &mut RgbaImage, x: u32, y: u32) {
     for j in 0..src.height() {
         for i in 0..src.width() {
             let s = src.get_pixel(i, j);
-            let mut d = dst.get_pixel(i + x, j + y).clone();
+            let mut d = *dst.get_pixel(i + x, j + y);
             match s.0[3] {
                 255 => {
                     d = *s;
@@ -17,7 +17,7 @@ pub fn copy_alpha(src: &RgbaImage, dst: &mut RgbaImage, x: u32, y: u32) {
                     d.blend(s);
                 }
             }
-            dst.put_pixel(i + x, j + y, d.clone());
+            dst.put_pixel(i + x, j + y, d);
         }
     }
 }

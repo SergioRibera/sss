@@ -12,7 +12,6 @@ path = "./src/main.rs"
 clap.workspace = true
 screenshots = "0.8.6"
 sss_lib = { path = "../sss_lib" }
-sss_select = { path = "../sss_select" }
 arboard = { version = "3.3.0", features = ["wayland-data-control"] }
 wayland-client = "0.31.1"
 wayland-protocols = { version = "0.31.0", features = ["client"] }

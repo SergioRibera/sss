@@ -70,8 +70,8 @@ impl TryFrom<String> for Background {
     type Error = BackgroundError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.contains(";") {
-            let mut split = value.splitn(3, ";");
+        if value.contains(';') {
+            let mut split = value.splitn(3, ';');
             let o = split.next().unwrap();
             let start = split.next().unwrap().to_rgba().unwrap();
             let stop = split.next().unwrap().to_rgba().unwrap();

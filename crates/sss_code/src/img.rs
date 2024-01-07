@@ -117,7 +117,7 @@ impl<'a> ImageCode<'a> {
             *i = (*i).saturating_sub(20);
         }
         let no_hi_color = {
-            let mut c = color.clone();
+            let mut c = color;
             c.0[3] /= 2;
             c
         };
@@ -252,7 +252,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
         for (x, y, color, style, text) in &drawables {
             let color = color_to_rgba(color.unwrap_or(foreground));
             self.font
-                .draw_text_mut(&mut img, color, *x, *y, *style, &text);
+                .draw_text_mut(&mut img, color, *x, *y, *style, text);
         }
 
         // Draw window controlls

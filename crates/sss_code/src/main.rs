@@ -41,7 +41,7 @@ fn main() {
     let syntax = if let Some(ext) = &config.extension {
         ss.find_syntax_by_extension(ext).unwrap()
     } else {
-        ss.find_syntax_by_first_line(content.split("\n").next().unwrap())
+        ss.find_syntax_by_first_line(content.split('\n').next().unwrap())
             .unwrap()
     };
 

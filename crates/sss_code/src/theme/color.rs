@@ -76,7 +76,7 @@ pub fn color_from_term(term: &str) -> Option<Color> {
     LOOKUPTABLE
         .iter()
         .find(|(t, _)| t == &term)
-        .and_then(|(_, v)| str_to_color(*v))
+        .and_then(|(_, v)| str_to_color(v))
 }
 
 pub fn str_to_color(s: &str) -> Option<Color> {
