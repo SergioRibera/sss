@@ -73,14 +73,14 @@ impl TryFrom<String> for Background {
         if value.contains(";") {
             let mut split = value.splitn(3, ";");
             let o = split.next().unwrap();
-            let start  = split.next().unwrap().to_rgba().unwrap();
+            let start = split.next().unwrap().to_rgba().unwrap();
             let stop = split.next().unwrap().to_rgba().unwrap();
             let orientation = if o == "h" {
                 GradientType::Horizontal
             } else {
                 GradientType::Vertical
             };
-            return Ok(Background::Gradient(orientation, start, stop))
+            return Ok(Background::Gradient(orientation, start, stop));
         }
         if let Ok(color) = value.to_rgba() {
             return Ok(Background::Solid(color));

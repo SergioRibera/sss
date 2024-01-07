@@ -20,7 +20,7 @@ fn main() {
     let config = get_config();
     let area = sss_select::get_area(config.clone().into());
 
-    let img = generate_image(config.clone().into(), Screenshot{ area });
+    let img = generate_image(config.clone().into(), Screenshot { area });
 
     if config.just_copy {
         let mut c = arboard::Clipboard::new().unwrap();

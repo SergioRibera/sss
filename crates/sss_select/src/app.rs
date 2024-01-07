@@ -76,7 +76,7 @@ impl SelectApp {
             let PhysicalSize { width, height } = m.size;
             self.dt.fill_rect(
                 (x + width as i32) as f32 - SCREEN_RECT_WIDTH - 20.,
-                (y + height as i32) as f32 - SCREEN_RECT_HEIGHT- 20.,
+                (y + height as i32) as f32 - SCREEN_RECT_HEIGHT - 20.,
                 SCREEN_RECT_WIDTH,
                 SCREEN_RECT_HEIGHT,
                 &raqote::Source::Solid(self.background_opaque.clone()),

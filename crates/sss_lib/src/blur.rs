@@ -6,8 +6,8 @@
 use std::cmp::min;
 
 use image::RgbaImage;
-use rayon::iter::ParallelIterator;
 use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 
 #[derive(Copy, Clone)]
 struct SharedMutPtr(*mut [[u8; 4]]);
