@@ -5,12 +5,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace]
 resolver = "2"
-members = [
-    "crates/sss_lib",
-    "crates/sss_select",
-    "crates/sss_cli",
-    "crates/sss_code",
-]
+members = ["crates/sss_lib", "crates/sss_code"]
 
 [profile.dev]
 opt-level = 1
