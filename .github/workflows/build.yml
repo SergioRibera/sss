@@ -1,10 +1,10 @@
-name: Build and deploy
+name: Build and deploy sss_code
 
 permissions:
   contents: write
 
 env:
-  APP_NAME: code_screenshot
+  APP_NAME: ssss_code
 
 on:
   push:
@@ -13,7 +13,7 @@ on:
       - "**/Makefile.toml"
       - "release.toml"
       - "LICENS**"
-      - "README.md"
+      - "**/README.md"
     tags:
       - "**"
 
@@ -54,7 +54,7 @@ jobs:
         uses: actions-rs/cargo@v1.0.1
         with:
           command: build
-          args: --release --workspace --package ${{ env.APP_NAME }} --target ${{ matrix.target }}
+          args: --release --workspace -p ${{ env.APP_NAME }} --target ${{ matrix.target }}
       - name: Post Build | Prepare artifacts [Windows]
         if: matrix.os == 'windows-latest'
         run: |
