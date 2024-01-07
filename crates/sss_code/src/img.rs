@@ -1,12 +1,11 @@
-///! This file is inspired from https://github.com/Aloxaf/silicon
-///!
-///! Source from: https://github.com/Aloxaf/silicon/blob/master/src/formatter.rs
-///!
+//! This file is inspired from https://github.com/Aloxaf/silicon
+//!
+//! Source from: https://github.com/Aloxaf/silicon/blob/master/src/formatter.rs
+//!
 use std::borrow::Cow;
 use std::ops::Range;
 
-use sss_lib::image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
-use sss_lib::utils::copy_alpha;
+use sss_lib::image::{DynamicImage, Rgba, RgbaImage};
 use sss_lib::DynImageContent;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, Style, Theme};
@@ -24,7 +23,6 @@ const TITLE_BAR_PADDING: u32 = 10;
 const WINDOW_CONTROLS_WIDTH: u32 = 120;
 const WINDOW_CONTROLS_HEIGHT: u32 = 40;
 
-const CODE_LINE_PADDING: u32 = 2;
 const CODE_PADDING: u32 = 25;
 
 pub struct ImageCode<'a> {
@@ -70,9 +68,7 @@ impl<'a> ImageCode<'a> {
 
     fn create_line(
         &self,
-        n: usize,
-        hi: bool,
-        max_lineno: u32,
+        (n, hi, max_lineno): (usize, bool, u32),
         mut fg: Color,
         tab: &str,
         tokens: &[(Style, &str)],
@@ -136,26 +132,9 @@ impl<'a> ImageCode<'a> {
                 },
                 CODE_PADDING,
                 self.get_line_y(i as u32),
-                FontStyle::REGULAR,
+                FontStyle::Regular,
                 &line_mumber,
             );
-        }
-    }
-
-    fn highlight_lines<I: IntoIterator<Item = u32>>(&self, img: &mut DynamicImage, lines: I) {
-        let width = img.width();
-        let height = self.font.get_font_height() + LINE_SPACE;
-        let mut color = img.get_pixel(20, 20);
-
-        for i in color.0.iter_mut() {
-            *i = (*i).saturating_add(40);
-        }
-
-        let shadow = RgbaImage::from_pixel(width, height, color);
-
-        for i in lines {
-            let y = self.get_line_y(i - 1);
-            copy_alpha(&shadow, img.as_mut_rgba8().unwrap(), 0, y);
         }
     }
 }
@@ -206,7 +185,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
                     },
                 TITLE_BAR_PADDING + (WINDOW_CONTROLS_HEIGHT / 2) - self.font.get_font_height() / 2,
                 None,
-                FontStyle::BOLD,
+                FontStyle::Bold,
                 title.to_string(),
             ));
             max_width = max_width.max(WINDOW_CONTROLS_WIDTH + title_width + TITLE_BAR_PADDING * 2)
@@ -216,9 +195,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
             let line = h.highlight_line(line, self.syntax_set).unwrap();
             let hi = line_hi.contains(&(line_range.start + n));
             drawables.extend(self.create_line(
-                n,
-                hi,
-                max_lineno,
+                (n, hi, max_lineno),
                 foreground,
                 &tab,
                 &line,

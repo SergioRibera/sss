@@ -18,24 +18,24 @@ use syntect::highlighting;
 /// Font style
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum FontStyle {
-    REGULAR,
-    ITALIC,
-    BOLD,
-    BOLDITALIC,
+    Regular,
+    Italic,
+    Bold,
+    BoldItalic,
 }
 
 impl From<highlighting::FontStyle> for FontStyle {
     fn from(style: highlighting::FontStyle) -> Self {
         if style.contains(highlighting::FontStyle::BOLD) {
             if style.contains(highlighting::FontStyle::ITALIC) {
-                BOLDITALIC
+                BoldItalic
             } else {
-                BOLD
+                Bold
             }
         } else if style.contains(highlighting::FontStyle::ITALIC) {
-            ITALIC
+            Italic
         } else {
-            REGULAR
+            Regular
         }
     }
 }
@@ -58,19 +58,19 @@ impl Default for ImageFont {
     fn default() -> Self {
         let l = vec![
             (
-                REGULAR,
+                Regular,
                 include_bytes!("../../../assets/fonts/Hack-Regular.ttf").to_vec(),
             ),
             (
-                ITALIC,
+                Italic,
                 include_bytes!("../../../assets/fonts/Hack-Italic.ttf").to_vec(),
             ),
             (
-                BOLD,
+                Bold,
                 include_bytes!("../../../assets/fonts/Hack-Bold.ttf").to_vec(),
             ),
             (
-                BOLDITALIC,
+                BoldItalic,
                 include_bytes!("../../../assets/fonts/Hack-BoldItalic.ttf").to_vec(),
             ),
         ];
@@ -113,20 +113,20 @@ impl ImageFont {
             match properties.style {
                 Style::Normal => {
                     if properties.weight == Weight::NORMAL {
-                        fonts.insert(REGULAR, font);
+                        fonts.insert(Regular, font);
                     } else if properties.weight == Weight::BOLD {
-                        fonts.insert(BOLD, font);
-                    } else if properties.weight == Weight::MEDIUM && !fonts.contains_key(&REGULAR) {
-                        fonts.insert(REGULAR, font);
+                        fonts.insert(Bold, font);
+                    } else if properties.weight == Weight::MEDIUM && !fonts.contains_key(&Regular) {
+                        fonts.insert(Regular, font);
                     }
                 }
                 Style::Italic => {
                     if properties.weight == Weight::NORMAL {
-                        fonts.insert(ITALIC, font);
+                        fonts.insert(Italic, font);
                     } else if properties.weight == Weight::BOLD {
-                        fonts.insert(BOLDITALIC, font);
-                    } else if properties.weight == Weight::MEDIUM && !fonts.contains_key(&ITALIC) {
-                        fonts.insert(ITALIC, font);
+                        fonts.insert(BoldItalic, font);
+                    } else if properties.weight == Weight::MEDIUM && !fonts.contains_key(&Italic) {
+                        fonts.insert(Italic, font);
                     }
                 }
                 _ => (),
@@ -140,12 +140,12 @@ impl ImageFont {
     pub fn get_by_style(&self, style: FontStyle) -> &Font {
         self.fonts
             .get(&style)
-            .unwrap_or_else(|| self.fonts.get(&REGULAR).unwrap())
+            .unwrap_or_else(|| self.fonts.get(&Regular).unwrap())
     }
 
     /// Get the regular font
     pub fn get_regular(&self) -> &Font {
-        self.fonts.get(&REGULAR).unwrap()
+        self.fonts.get(&Regular).unwrap()
     }
 
     /// Get the height of the font
@@ -246,7 +246,7 @@ impl FontCollection {
 
     /// Get the width of the given text
     pub fn get_text_len(&self, text: &str) -> u32 {
-        self.layout(text, REGULAR).1
+        self.layout(text, Regular).1
     }
 
     /// Draw the text to a image
