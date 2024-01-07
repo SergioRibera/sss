@@ -49,6 +49,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Load .env file
         uses: xom9ikk/dotenv@v2
+        with:
+          load-mode: skip
 
       - name: Build Release
         uses: actions-rs/cargo@v1.0.1
