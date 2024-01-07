@@ -4,7 +4,7 @@ permissions:
   contents: write
 
 env:
-  APP_NAME: ssss_code
+  APP_NAME: sss_code
 
 on:
   push:
