@@ -10,7 +10,8 @@ on:
       - "**/Makefile.toml"
       - "release.toml"
       - "LICENSE*"
-      - "README.md"
+      - "**/*.md"
+      - "**/*.nix"
     tags-ignore:
       - "**"
   pull_request:
