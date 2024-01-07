@@ -3,6 +3,10 @@ name = "sss_code"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "sss_code"
+path = "./src/main.rs"
+
 [dependencies]
 clap.workspace = true
 thiserror.workspace = true
