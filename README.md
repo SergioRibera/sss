@@ -1,6 +1,10 @@
 # **S**uper **S**creen**S**hot
 It is a set of libraries and tools for building screenshots in a standardized, high-performance image format.
 
+| SSS Code                                                                                         | SSS Screenshot          |
+|--------------------------------------------------------------------------------------------------|-------------------------|
+| ![out](https://github.com/SergioRibera/sss/assets/56278796/be74cd48-8f87-4544-98da-c7bc119753ab) | Not available (For now) |
+
 ## Libraries
 - [sss_lib](./crates/sss_lib): Base library for screenshot generation
 - [sss_code](./crates/sss_code): Terminal tool to take screenshot of your code
