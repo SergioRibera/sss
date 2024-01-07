@@ -88,8 +88,9 @@
 
             # nix develop
             devShells.default = craneLib.devShell {
-              packages = [
+              packages = with pkgs; [
                 toolchain
+                cargo-release
               ] ++ buildInputs;
               LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
             };
