@@ -6,7 +6,6 @@ use sss_lib::image::{
     ImageError, ImageFormat,
 };
 use sss_lib::{Background, GenerationSettings, Shadow, ToRgba};
-use sss_select::SelectConfig;
 
 #[derive(Clone, Debug, Parser)]
 #[clap(version, author)]
@@ -17,12 +16,14 @@ pub struct CliConfig {
         help = "When you take from a screen or window, capture the one on which the mouse is located."
     )]
     pub current: bool,
+    #[clap(long, default_value = "false", help = "Capture cursor (Only Wayland)")]
+    pub show_cursor: bool,
     #[clap(long, default_value = "false", help = "Capture a full screen")]
     pub screen: bool,
-    #[clap(long, default_value = "false", help = "Capture a application window")]
-    pub window: bool,
-    #[clap(long, default_value = "false", help = "Captures an area of the screen")]
-    pub area: bool,
+    #[clap(long, help = "ID of screen to capture")]
+    pub screen_id: Option<u32>,
+    #[clap(long, help = "Captures an area of the screen", value_parser = str_to_area)]
+    pub area: Option<(i32, i32, u32, u32)>,
     // Screenshot Section
     #[clap(
         long,
@@ -39,6 +40,8 @@ pub struct CliConfig {
     #[clap(long, default_value = "100")]
     pub padding_y: u32,
     // Shadow Section
+    #[clap(long, help = "Enable shadow")]
+    pub shadow: bool,
     #[clap(
         long,
         default_value = "false",
@@ -83,23 +86,12 @@ impl From<CliConfig> for GenerationSettings {
             background: background.clone(),
             padding: (val.padding_x, val.padding_y),
             round_corner: Some(val.radius),
-            shadow: Some(Shadow {
+            shadow: val.shadow.then_some(Shadow {
                 background,
                 use_inner_image: val.shadow_image,
                 shadow_color: val.shadow_color.to_rgba().unwrap(),
                 blur_radius: val.shadow_blur,
             }),
-        }
-    }
-}
-
-impl From<CliConfig> for SelectConfig {
-    fn from(val: CliConfig) -> Self {
-        SelectConfig {
-            current: val.current,
-            screen: val.screen,
-            window: val.window,
-            area: val.area,
         }
     }
 }
@@ -111,4 +103,23 @@ fn str_to_format(s: &str) -> Result<ImageFormat, ImageError> {
             UnsupportedErrorKind::Format(ImageFormatHint::Name(s.to_string())),
         ),
     ))
+}
+
+fn str_to_area(s: &str) -> Result<(i32, i32, u32, u32), String> {
+    let err = "The format of area is wrong (x,y WxH)".to_string();
+    let (pos, size) = s.split_once(" ").ok_or(err.clone())?;
+    let (x, y) = pos.split_once(",").ok_or(err.clone()).map(|(x, y)| {
+        (
+            x.parse::<i32>().map_err(|e| e.to_string()),
+            y.parse::<i32>().map_err(|e| e.to_string()),
+        )
+    })?;
+    let (w, h) = size.split_once("x").ok_or(err.clone()).map(|(w, h)| {
+        (
+            w.parse::<u32>().map_err(|e| e.to_string()),
+            h.parse::<u32>().map_err(|e| e.to_string()),
+        )
+    })?;
+
+    Ok((x?, y?, w?, h?))
 }
