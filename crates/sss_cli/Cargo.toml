@@ -10,8 +10,6 @@ path = "./src/main.rs"
 
 [dependencies]
 clap.workspace = true
+libwayshot = "0.3.0"
 screenshots = "0.8.6"
 sss_lib = { path = "../sss_lib" }
-arboard = { version = "3.3.0", features = ["wayland-data-control"] }
-wayland-client = "0.31.1"
-wayland-protocols = { version = "0.31.0", features = ["client"] }
