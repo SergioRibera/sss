@@ -2,7 +2,7 @@ use std::env::var_os;
 
 use libwayshot::output::OutputPositioning;
 use libwayshot::reexport::Transform;
-use libwayshot::WayshotConnection;
+use libwayshot::{CaptureRegion, WayshotConnection};
 use screenshots::display_info::DisplayInfo;
 use screenshots::image::imageops::{overlay, rotate180, rotate270, rotate90};
 use screenshots::image::{Rgba, RgbaImage};
@@ -85,31 +85,32 @@ impl ShotImpl {
             ));
         }
 
-        if let Some(wayshot) = self.wayland.as_ref() {
-            let outputs = wayshot.get_all_outputs();
-            return Ok(make_all_screens(
-                &outputs
-                    .iter()
-                    .map(|o| {
-                        let OutputPositioning {
-                            x,
-                            y,
-                            width,
-                            height,
-                        } = o.dimensions;
-                        (
-                            (x, y, width as u32, height as u32, o.transform),
-                            wayshot
-                                .screenshot_single_output(o, mouse)
-                                .map_err(|_| "Cannot take screenshot on Wayland".to_string())
-                                .unwrap(),
-                        )
-                    })
-                    .collect::<Vec<(_, _)>>(),
-            ));
-        }
-
-        Err("No Context loaded".to_string())
+        self.wayland
+            .as_ref()
+            .ok_or("No Context loaded".to_string())
+            .map(|wayshot| {
+                let outputs = wayshot.get_all_outputs();
+                make_all_screens(
+                    &outputs
+                        .iter()
+                        .map(|o| {
+                            let OutputPositioning {
+                                x,
+                                y,
+                                width,
+                                height,
+                            } = o.dimensions;
+                            (
+                                (x, y, width as u32, height as u32, o.transform),
+                                wayshot
+                                    .screenshot_single_output(o, mouse)
+                                    .map_err(|_| "Cannot take screenshot on Wayland".to_string())
+                                    .unwrap(),
+                            )
+                        })
+                        .collect::<Vec<(_, _)>>(),
+                )
+            })
     }
 
     pub fn capture_area(
@@ -150,21 +151,22 @@ impl ShotImpl {
                 .unwrap());
         }
 
-        if let Some(wayshot) = self.wayland.as_ref() {
-            println!("{x},{y} {w}x{h}");
-            return wayshot
-                .screenshot(
-                    libwayshot::CaptureRegion {
-                        x_coordinate: x,
-                        y_coordinate: y,
-                        width: w as i32,
-                        height: h as i32,
-                    },
-                    mouse,
-                )
-                .map_err(|_| "Cannot take screenshot on Wayland".to_string());
-        }
-
-        Err("No Context loaded".to_string())
+        self.wayland
+            .as_ref()
+            .ok_or("No Context loaded".to_string())
+            .map(|wayshot| {
+                wayshot
+                    .screenshot(
+                        CaptureRegion {
+                            x_coordinate: x,
+                            y_coordinate: y,
+                            width: w as i32,
+                            height: h as i32,
+                        },
+                        mouse,
+                    )
+                    .map_err(|_| "Cannot take screenshot on Wayland".to_string())
+                    .unwrap()
+            })
     }
 }
