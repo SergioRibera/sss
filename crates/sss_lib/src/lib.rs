@@ -5,6 +5,7 @@ pub mod blur;
 mod color;
 pub mod components;
 pub mod error;
+pub mod font;
 mod img;
 mod shadow;
 pub mod utils;

@@ -6,14 +6,14 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 use sss_lib::image::{DynamicImage, Rgba, RgbaImage};
+use sss_lib::font::{FontCollection, FontStyle};
 use sss_lib::DynImageContent;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, Style, Theme};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::config::CodeConfig;
-use crate::font::{FontCollection, FontStyle};
-use crate::utils::{add_window_controls, color_to_rgba};
+use crate::utils::{add_window_controls, color_to_rgba, fontstyle_from_syntect};
 
 type Drawable = (u32, u32, Option<Color>, FontStyle, String);
 
@@ -89,7 +89,7 @@ impl<'a> ImageCode<'a> {
                 width,
                 height,
                 Some(if hi { style.foreground } else { fg }),
-                style.font_style.into(),
+                fontstyle_from_syntect(style.font_style),
                 text.to_owned(),
             ));
 

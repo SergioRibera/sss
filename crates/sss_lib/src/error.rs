@@ -1,3 +1,4 @@
+use font_kit::error::{FontLoadingError, SelectionError};
 use std::num::ParseIntError;
 
 use thiserror::Error;
@@ -7,6 +8,7 @@ use thiserror::Error;
 pub enum ImagenGeneration {
     Color(#[from] ParseColor),
     Background(#[from] Background),
+    Font(#[from] FontError),
 }
 
 #[derive(Debug, Error)]
@@ -27,4 +29,11 @@ pub enum ParseColor {
     InvalidDigit,
     #[error("Error parsing number")]
     Parse(#[from] ParseIntError),
+}
+
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub enum FontError {
+    SelectionError(#[from] SelectionError),
+    FontLoadingError(#[from] FontLoadingError),
 }

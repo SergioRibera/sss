@@ -1,12 +1,28 @@
+use sss_lib::font::FontStyle;
 use sss_lib::image::imageops::{resize, FilterType};
 use sss_lib::image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
 use sss_lib::imageproc::drawing::draw_filled_circle_mut;
 use sss_lib::utils::copy_alpha;
 use sss_lib::ToRgba;
 use syntect::highlighting::Color;
+use syntect::highlighting::FontStyle as HiFontStyle;
 
 pub fn color_to_rgba(c: Color) -> Rgba<u8> {
     Rgba([c.r, c.g, c.b, c.a])
+}
+
+pub fn fontstyle_from_syntect(style: HiFontStyle) -> FontStyle {
+    if style.contains(HiFontStyle::BOLD) {
+        if style.contains(HiFontStyle::ITALIC) {
+            FontStyle::BoldItalic
+        } else {
+            FontStyle::Bold
+        }
+    } else if style.contains(HiFontStyle::ITALIC) {
+        FontStyle::Italic
+    } else {
+        FontStyle::Regular
+    }
 }
 
 pub fn add_window_controls(

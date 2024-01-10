@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use config::get_config;
-use font::FontCollection;
 use img::ImageCode;
+use sss_lib::font::FontCollection;
 use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -10,7 +10,6 @@ use theme::{list_themes, load_theme, theme_from_vim};
 
 mod config;
 mod error;
-mod font;
 mod img;
 mod theme;
 mod utils;

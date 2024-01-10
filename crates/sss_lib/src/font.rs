@@ -8,12 +8,11 @@ use font_kit::hinting::HintingOptions;
 use font_kit::properties::{Properties, Style, Weight};
 use font_kit::source::SystemSource;
 use pathfinder_geometry::transform2d::Transform2F;
-use sss_lib::image::{GenericImage, Pixel};
-use sss_lib::imageproc::definitions::Clamp;
-use sss_lib::imageproc::pixelops::weighted_sum;
+use image::{GenericImage, Pixel};
+use imageproc::definitions::Clamp;
+use imageproc::pixelops::weighted_sum;
 use std::collections::HashMap;
 use std::sync::Arc;
-use syntect::highlighting;
 
 /// Font style
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -22,22 +21,6 @@ pub enum FontStyle {
     Italic,
     Bold,
     BoldItalic,
-}
-
-impl From<highlighting::FontStyle> for FontStyle {
-    fn from(style: highlighting::FontStyle) -> Self {
-        if style.contains(highlighting::FontStyle::BOLD) {
-            if style.contains(highlighting::FontStyle::ITALIC) {
-                BoldItalic
-            } else {
-                Bold
-            }
-        } else if style.contains(highlighting::FontStyle::ITALIC) {
-            Italic
-        } else {
-            Regular
-        }
-    }
 }
 
 use pathfinder_geometry::rect::RectI;
