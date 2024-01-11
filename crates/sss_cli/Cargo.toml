@@ -1,6 +1,9 @@
 [package]
 name = "sss_cli"
 version = "0.1.0"
+publish = false
+repository.workspace = true
+homepage.workspace = true
 edition.workspace = true
 license.workspace = true
 
