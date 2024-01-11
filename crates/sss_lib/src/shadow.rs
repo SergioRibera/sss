@@ -42,7 +42,7 @@ impl Shadow {
         shadow = crate::blur::gaussian_blur(shadow.clone(), self.blur_radius);
 
         // copy the original image to the top of it
-        copy_alpha(&image, &mut shadow, p_x, p_y);
+        copy_alpha(image, &mut shadow, p_x, p_y);
 
         shadow
     }

@@ -150,11 +150,10 @@ fn str_to_format(s: &str) -> Result<ImageFormat, ImageError> {
 fn parse_font_str(s: &str) -> Result<FontCollection, FontError> {
     let fonts = s
         .split(';')
-        .filter_map(|f| {
-            (!f.is_empty()).then(|| {
-                let (name, size) = f.split_once('=').unwrap();
-                (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
-            })
+        .filter(|&f| !f.is_empty())
+        .map(|f| {
+            let (name, size) = f.split_once('=').unwrap();
+            (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
         })
         .collect::<Vec<(String, f32)>>();
 
@@ -163,14 +162,14 @@ fn parse_font_str(s: &str) -> Result<FontCollection, FontError> {
 
 fn str_to_area(s: &str) -> Result<(i32, i32, u32, u32), String> {
     let err = "The format of area is wrong (x,y WxH)".to_string();
-    let (pos, size) = s.split_once(" ").ok_or(err.clone())?;
-    let (x, y) = pos.split_once(",").ok_or(err.clone()).map(|(x, y)| {
+    let (pos, size) = s.split_once(' ').ok_or(err.clone())?;
+    let (x, y) = pos.split_once(',').ok_or(err.clone()).map(|(x, y)| {
         (
             x.parse::<i32>().map_err(|e| e.to_string()),
             y.parse::<i32>().map_err(|e| e.to_string()),
         )
     })?;
-    let (w, h) = size.split_once("x").ok_or(err.clone()).map(|(w, h)| {
+    let (w, h) = size.split_once('x').ok_or(err.clone()).map(|(w, h)| {
         (
             w.parse::<u32>().map_err(|e| e.to_string()),
             h.parse::<u32>().map_err(|e| e.to_string()),

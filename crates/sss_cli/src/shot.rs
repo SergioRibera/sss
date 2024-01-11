@@ -8,6 +8,8 @@ use screenshots::image::imageops::{overlay, rotate180, rotate270, rotate90};
 use screenshots::image::{Rgba, RgbaImage};
 use screenshots::Screen;
 
+type ScreenImage = ((i32, i32, u32, u32, Transform), RgbaImage);
+
 fn wayland_detect() -> bool {
     let xdg_session_type = var_os("XDG_SESSION_TYPE")
         .unwrap_or_default()
@@ -22,7 +24,7 @@ fn wayland_detect() -> bool {
     xdg_session_type.eq("wayland") || wayland_display.to_lowercase().contains("wayland")
 }
 
-fn make_all_screens(screens: &[((i32, i32, u32, u32, Transform), RgbaImage)]) -> RgbaImage {
+fn make_all_screens(screens: &[ScreenImage]) -> RgbaImage {
     let max_w = screens.iter().map(|((_, _, w, _, _), _)| *w).sum();
     let max_h = screens
         .iter()
@@ -31,8 +33,7 @@ fn make_all_screens(screens: &[((i32, i32, u32, u32, Transform), RgbaImage)]) ->
         .unwrap_or_default();
     let mut res = RgbaImage::from_pixel(max_w, max_h, Rgba([0, 0, 0, 255]));
 
-    for ((x, y, w, h, t), screen_img) in screens {
-        println!("{x},{y} {w}x{h} - {t:?}");
+    for ((x, y, _, _, t), screen_img) in screens {
         let mut img = screen_img.clone();
         match t {
             Transform::_90 => img = rotate90(&img),
@@ -75,7 +76,7 @@ impl ShotImpl {
                             width,
                             height,
                             ..
-                        } = s.display_info.clone();
+                        } = s.display_info;
                         (
                             (x, y, width, height, Transform::Normal),
                             s.capture().unwrap(),

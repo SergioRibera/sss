@@ -194,11 +194,10 @@ fn str_to_format(s: &str) -> Result<ImageFormat, ImageError> {
 fn parse_font_str(s: &str) -> Result<FontCollection, FontError> {
     let fonts = s
         .split(';')
-        .filter_map(|f| {
-            (!f.is_empty()).then(|| {
-                let (name, size) = f.split_once('=').unwrap();
-                (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
-            })
+        .filter(|&f| !f.is_empty())
+        .map(|f| {
+            let (name, size) = f.split_once('=').unwrap();
+            (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
         })
         .collect::<Vec<(String, f32)>>();
 

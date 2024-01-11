@@ -12,7 +12,8 @@ impl Screenshot {}
 impl DynImageContent for Screenshot {
     fn content(&self) -> sss_lib::image::RgbaImage {
         let shot = ShotImpl::default();
-        let img = if self.config.screen && self.config.current {
+
+        if self.config.screen && self.config.current {
             screenshots::Screen::from_point(0, 0) // replace by mouse
                 .unwrap()
                 .capture()
@@ -21,8 +22,6 @@ impl DynImageContent for Screenshot {
             shot.capture_area(area, self.config.show_cursor).unwrap()
         } else {
             shot.all(self.config.show_cursor).unwrap()
-        };
-
-        img
+        }
     }
 }
