@@ -7,10 +7,10 @@ use font_kit::font::Font;
 use font_kit::hinting::HintingOptions;
 use font_kit::properties::{Properties, Style, Weight};
 use font_kit::source::SystemSource;
-use pathfinder_geometry::transform2d::Transform2F;
 use image::{GenericImage, Pixel};
 use imageproc::definitions::Clamp;
 use imageproc::pixelops::weighted_sum;
+use pathfinder_geometry::transform2d::Transform2F;
 use std::collections::HashMap;
 use std::sync::Arc;
 

@@ -137,7 +137,7 @@ impl<'a> ImageCode<'a> {
 }
 
 impl<'a> DynImageContent for ImageCode<'a> {
-    fn content(&self) -> RgbaImage{
+    fn content(&self) -> RgbaImage {
         let mut h = HighlightLines::new(self.syntax, &self.theme);
         let mut drawables = Vec::new();
         let mut max_width = 0;
@@ -188,11 +188,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
             self.get_line_y(max_lineno) + CODE_PADDING,
         );
 
-        let mut img = RgbaImage::from_pixel(
-            size.0,
-            size.1,
-            color_to_rgba(background),
-        );
+        let mut img = RgbaImage::from_pixel(size.0, size.1, color_to_rgba(background));
 
         // Draw line numbers
         if self.config.line_numbers {
