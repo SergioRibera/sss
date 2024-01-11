@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use config::get_config;
 use img::ImageCode;
-use sss_lib::font::FontCollection;
 use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -57,11 +56,7 @@ fn main() {
     let out = generate_image(
         config.clone().into(),
         ImageCode {
-            font: config
-                .font
-                .as_ref()
-                .and_then(|f| FontCollection::new(f).ok())
-                .unwrap_or_default(),
+            font: config.font.clone(),
             config: config.clone(),
             syntax,
             theme,

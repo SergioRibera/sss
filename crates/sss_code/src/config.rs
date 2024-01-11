@@ -3,13 +3,13 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use clap_stdin::FileOrStdin;
+use sss_lib::error::FontError;
+use sss_lib::font::FontCollection;
 use sss_lib::image::error::{ImageFormatHint, UnsupportedError, UnsupportedErrorKind};
 use sss_lib::image::{ImageError, ImageFormat};
 use sss_lib::{Background, GenerationSettings, Shadow, ToRgba};
 
 use crate::error::CodeScreenshotError;
-
-pub type FontList = Vec<(String, f32)>;
 
 #[derive(Clone, Parser)]
 #[clap(author, version, about)]
@@ -23,8 +23,8 @@ pub struct CodeConfig {
         help = "Theme file to use. May be a path, or an embedded theme. Embedded themes will take precendence."
     )]
     pub theme: String,
-    #[clap(long, help = "[default: Hack=26.0;] The font used to render, format: Font Name=size;Other Font Name=12.0", value_parser = parse_font_str)]
-    pub font: Option<FontList>,
+    #[clap(long, default_value = "Hack=12.0;", help = "[default: Hack=12.0;] The font used to render, format: Font Name=size;Other Font Name=12.0", value_parser = parse_font_str)]
+    pub font: FontCollection,
     #[clap(
         long,
         help = "[Not recommended for manual use] Set theme from vim highlights, format: group,bg,fg,style;group,bg,fg,style;"
@@ -51,10 +51,31 @@ pub struct CodeConfig {
     pub line_numbers: bool,
     #[clap(long, default_value = "4", help = "Tab width")]
     pub tab_width: u8,
+    #[clap(long, help = "Author Name of screenshot")]
+    pub author: Option<String>,
+    #[clap(long, default_value = "#FFFFFF", help = "Title bar text color")]
+    pub author_color: String,
+    #[clap(long, default_value = "Hack", help = "Font to render Author")]
+    pub author_font: String,
+    // Window Bar
     #[clap(long, help = "Whether show the window controls")]
     pub window_controls: bool,
     #[clap(long, help = "Window title")]
     pub window_title: Option<String>,
+    #[clap(long, default_value = "#4287f5", help = "Window bar background")]
+    pub windows_background: String,
+    #[clap(long, default_value = "#FFFFFF", help = "Title bar text color")]
+    pub windows_title_color: String,
+    #[clap(long, default_value = "120", help = "Width of window controls")]
+    pub window_controls_width: u32,
+    #[clap(
+        long,
+        default_value = "40",
+        help = "Height of window title/controls bar"
+    )]
+    pub window_controls_height: u32,
+    #[clap(long, default_value = "10", help = "Padding of title on window bar")]
+    pub titlebar_padding: u32,
     // Screenshot Section
     #[clap(
         long,
@@ -78,7 +99,7 @@ pub struct CodeConfig {
     #[clap(
         long,
         default_value = "#707070",
-        help = "Support: '#RRGGBBAA' '#RRGGBBAA;#RRGGBBAA' or file path"
+        help = "Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path"
     )]
     pub shadow_color: String,
     #[clap(long, default_value = "50")]
@@ -109,16 +130,29 @@ pub fn get_config() -> CodeConfig {
 impl From<CodeConfig> for GenerationSettings {
     fn from(val: CodeConfig) -> Self {
         let background = Background::try_from(val.background.clone()).unwrap();
+        let windows_background = Background::try_from(val.windows_background.clone()).unwrap();
+        let shadow_color = Background::try_from(val.shadow_color.clone()).unwrap();
+
         GenerationSettings {
+            windows_background,
             background: background.clone(),
             padding: (val.padding_x, val.padding_y),
             round_corner: Some(val.radius),
             shadow: val.shadow.then_some(Shadow {
-                background,
+                shadow_color,
                 use_inner_image: val.shadow_image,
-                shadow_color: val.shadow_color.to_rgba().unwrap(),
                 blur_radius: val.shadow_blur,
             }),
+            fonts: val.font,
+            author: val.author.clone(),
+            author_font: val.author_font.clone(),
+            author_color: val.author_color.to_rgba().unwrap(),
+            window_controls: val.window_controls,
+            windows_title: val.window_title.clone(),
+            windows_title_color: val.windows_title_color.to_rgba().unwrap(),
+            window_controls_width: val.window_controls_width,
+            window_controls_height: val.window_controls_height,
+            titlebar_padding: val.titlebar_padding,
         }
     }
 }
@@ -157,11 +191,16 @@ fn str_to_format(s: &str) -> Result<ImageFormat, ImageError> {
     ))
 }
 
-fn parse_font_str(s: &str) -> Result<Vec<(String, f32)>, String> {
-    Ok(s.split(';')
-        .map(|font| {
-            let (name, size) = font.split_once('=').unwrap();
-            (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
+fn parse_font_str(s: &str) -> Result<FontCollection, FontError> {
+    let fonts = s
+        .split(';')
+        .filter_map(|f| {
+            (!f.is_empty()).then(|| {
+                let (name, size) = f.split_once('=').unwrap();
+                (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
+            })
         })
-        .collect::<Vec<(String, f32)>>())
+        .collect::<Vec<(String, f32)>>();
+
+    FontCollection::new(&fonts)
 }

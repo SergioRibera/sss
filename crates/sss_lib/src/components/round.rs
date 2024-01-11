@@ -1,7 +1,7 @@
-use image::{DynamicImage, GenericImage, GenericImageView, Rgba};
+use image::{Rgba, RgbaImage};
 
 /// Round the corner of the image
-pub fn round_corner(img: &mut DynamicImage, radius: u32) {
+pub fn round_corner(img: &mut RgbaImage, radius: u32) {
     let (width, height) = img.dimensions();
 
     // top left
@@ -14,7 +14,7 @@ pub fn round_corner(img: &mut DynamicImage, radius: u32) {
     border_radius(img, radius, |x, y| (x - 1, height - y));
 }
 
-fn border_radius(img: &mut DynamicImage, r: u32, coordinates: impl Fn(u32, u32) -> (u32, u32)) {
+fn border_radius(img: &mut RgbaImage, r: u32, coordinates: impl Fn(u32, u32) -> (u32, u32)) {
     if r == 0 {
         return;
     }
@@ -32,11 +32,11 @@ fn border_radius(img: &mut DynamicImage, r: u32, coordinates: impl Fn(u32, u32) 
     let mut alpha: u16 = 0;
     let mut skip_draw = true;
 
-    let set_alpha = |img: &mut DynamicImage, alpha, (x, y)| {
+    let set_alpha = |img: &mut RgbaImage, alpha, (x, y)| {
         let p = img.get_pixel(x, y).0;
         img.put_pixel(x, y, Rgba([p[0], p[1], p[2], alpha]));
     };
-    let draw = |img: &mut DynamicImage, alpha, x, y| {
+    let draw = |img: &mut RgbaImage, alpha, x, y| {
         debug_assert!((1..=256).contains(&alpha));
         let pixel_alpha = img.get_pixel(x, y).0[3];
         set_alpha(

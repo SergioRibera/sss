@@ -2,8 +2,9 @@ use image::imageops::{horizontal_gradient, resize, vertical_gradient, FilterType
 use image::{Rgba, RgbaImage};
 
 use crate::color::ToRgba;
-use crate::components::round_corner;
+use crate::components::{add_window_controls, add_window_title, round_corner};
 use crate::error::Background as BackgroundError;
+use crate::font::FontStyle;
 use crate::{DynImageContent, GenerationSettings};
 
 #[derive(Clone, Debug)]
@@ -47,10 +48,53 @@ pub fn generate_image(
     content: impl DynImageContent,
 ) -> image::ImageBuffer<Rgba<u8>, Vec<u8>> {
     let mut inner = content.content();
+    let show_winbar = settings.window_controls || settings.windows_title.is_some();
     let (p_x, p_y) = settings.padding;
-    let (w, h) = (inner.width() + (p_x * 2), inner.height() + (p_y * 2));
+    let win_bar_h = if show_winbar {
+        settings.window_controls_height
+    } else {
+        0
+    };
+    let (w, h) = (
+        inner.width() + (p_x * 2),
+        inner.height() + (p_y * 2) + win_bar_h,
+    );
 
+    let mut winbar = settings
+        .windows_background
+        .to_image(inner.width(), settings.window_controls_height);
     let mut img = settings.background.to_image(w, h);
+
+    if settings.window_controls {
+        add_window_controls(
+            &mut winbar,
+            settings.windows_background,
+            settings.window_controls_width,
+            settings.window_controls_height,
+            settings.titlebar_padding,
+            settings.window_controls_width / 3 / 4,
+        );
+    }
+
+    if let Some(title) = settings.windows_title.as_ref() {
+        add_window_title(
+            &mut winbar,
+            &settings.fonts,
+            settings.windows_title_color,
+            title,
+            settings.titlebar_padding,
+            settings.window_controls,
+            settings.window_controls_width,
+            settings.window_controls_height,
+        );
+    }
+
+    if show_winbar {
+        let mut tmp_inner = RgbaImage::new(inner.width(), inner.height() + win_bar_h);
+        image::imageops::overlay(&mut tmp_inner, &winbar, 0, 0);
+        image::imageops::overlay(&mut tmp_inner, &inner, 0, win_bar_h.into());
+        inner = tmp_inner;
+    }
 
     if let Some(radius) = settings.round_corner {
         round_corner(&mut inner, radius);
@@ -61,6 +105,19 @@ pub fn generate_image(
         image::imageops::overlay(&mut img, &inner, 0, 0);
     } else {
         image::imageops::overlay(&mut img, &inner, p_x.into(), p_y.into());
+    }
+
+    if let Some(author) = settings.author {
+        let title_w = settings.fonts.get_text_len(&author);
+
+        settings.fonts.draw_text_mut(
+            &mut img,
+            settings.author_color,
+            w / 2 - title_w / 2,
+            h - p_y / 2,
+            FontStyle::Bold,
+            &author,
+        );
     }
 
     img

@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use sss_lib::error::FontError;
+use sss_lib::font::FontCollection;
 use sss_lib::image::{
     error::{ImageFormatHint, UnsupportedError, UnsupportedErrorKind},
     ImageError, ImageFormat,
@@ -25,6 +27,8 @@ pub struct CliConfig {
     #[clap(long, help = "Captures an area of the screen", value_parser = str_to_area)]
     pub area: Option<(i32, i32, u32, u32)>,
     // Screenshot Section
+    #[clap(long, default_value = "Hack=12.0;", help = "[default: Hack=12.0;] The font used to render, format: Font Name=size;Other Font Name=12.0", value_parser = parse_font_str)]
+    pub font: FontCollection,
     #[clap(
         long,
         short,
@@ -34,6 +38,31 @@ pub struct CliConfig {
     pub background: String,
     #[clap(long, short, default_value = "15")]
     pub radius: u32,
+    #[clap(long, help = "Author Name of screenshot")]
+    pub author: Option<String>,
+    #[clap(long, default_value = "#FFFFFF", help = "Title bar text color")]
+    pub author_color: String,
+    #[clap(long, default_value = "Hack", help = "Font to render Author")]
+    pub author_font: String,
+    // Window Bar
+    #[clap(long, help = "Whether show the window controls")]
+    pub window_controls: bool,
+    #[clap(long, help = "Window title")]
+    pub window_title: Option<String>,
+    #[clap(long, default_value = "#4287f5", help = "Window bar background")]
+    pub windows_background: String,
+    #[clap(long, default_value = "#FFFFFF", help = "Title bar text color")]
+    pub windows_title_color: String,
+    #[clap(long, default_value = "120", help = "Width of window controls")]
+    pub window_controls_width: u32,
+    #[clap(
+        long,
+        default_value = "40",
+        help = "Height of window title/controls bar"
+    )]
+    pub window_controls_height: u32,
+    #[clap(long, default_value = "10", help = "Padding of title on window bar")]
+    pub titlebar_padding: u32,
     // Padding Section
     #[clap(long, default_value = "80")]
     pub padding_x: u32,
@@ -51,7 +80,7 @@ pub struct CliConfig {
     #[clap(
         long,
         default_value = "#707070",
-        help = "Support: '#RRGGBBAA' '#RRGGBBAA;#RRGGBBAA' or file path"
+        help = "Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path"
     )]
     pub shadow_color: String,
     #[clap(long, default_value = "50")]
@@ -82,16 +111,29 @@ pub fn get_config() -> CliConfig {
 impl From<CliConfig> for GenerationSettings {
     fn from(val: CliConfig) -> Self {
         let background = Background::try_from(val.background.clone()).unwrap();
+        let windows_background = Background::try_from(val.windows_background.clone()).unwrap();
+        let shadow_color = Background::try_from(val.shadow_color.clone()).unwrap();
+
         GenerationSettings {
-            background: background.clone(),
+            windows_background,
+            background,
             padding: (val.padding_x, val.padding_y),
             round_corner: Some(val.radius),
             shadow: val.shadow.then_some(Shadow {
-                background,
+                shadow_color,
                 use_inner_image: val.shadow_image,
-                shadow_color: val.shadow_color.to_rgba().unwrap(),
                 blur_radius: val.shadow_blur,
             }),
+            fonts: val.font,
+            author: val.author.clone(),
+            author_font: val.author_font.clone(),
+            author_color: val.author_color.to_rgba().unwrap(),
+            window_controls: val.window_controls,
+            windows_title: val.window_title.clone(),
+            windows_title_color: val.windows_title_color.to_rgba().unwrap(),
+            window_controls_width: val.window_controls_width,
+            window_controls_height: val.window_controls_height,
+            titlebar_padding: val.titlebar_padding,
         }
     }
 }
@@ -103,6 +145,20 @@ fn str_to_format(s: &str) -> Result<ImageFormat, ImageError> {
             UnsupportedErrorKind::Format(ImageFormatHint::Name(s.to_string())),
         ),
     ))
+}
+
+fn parse_font_str(s: &str) -> Result<FontCollection, FontError> {
+    let fonts = s
+        .split(';')
+        .filter_map(|f| {
+            (!f.is_empty()).then(|| {
+                let (name, size) = f.split_once('=').unwrap();
+                (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
+            })
+        })
+        .collect::<Vec<(String, f32)>>();
+
+    FontCollection::new(&fonts)
 }
 
 fn str_to_area(s: &str) -> Result<(i32, i32, u32, u32), String> {

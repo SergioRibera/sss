@@ -5,23 +5,20 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use sss_lib::image::{DynamicImage, Rgba, RgbaImage};
 use sss_lib::font::{FontCollection, FontStyle};
+use sss_lib::image::{Rgba, RgbaImage};
 use sss_lib::DynImageContent;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, Style, Theme};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::config::CodeConfig;
-use crate::utils::{add_window_controls, color_to_rgba, fontstyle_from_syntect};
+use crate::utils::{color_to_rgba, fontstyle_from_syntect};
 
 type Drawable = (u32, u32, Option<Color>, FontStyle, String);
 
 const LINE_SPACE: u32 = 5;
 const LINE_NUMBER_RIGHT: u32 = 7;
-const TITLE_BAR_PADDING: u32 = 10;
-const WINDOW_CONTROLS_WIDTH: u32 = 120;
-const WINDOW_CONTROLS_HEIGHT: u32 = 40;
 
 const CODE_PADDING: u32 = 25;
 
@@ -45,7 +42,7 @@ impl<'a> ImageCode<'a> {
         lineno * self.get_line_height()
             + CODE_PADDING
             + if self.config.window_controls || self.config.window_title.is_some() {
-                WINDOW_CONTROLS_HEIGHT + TITLE_BAR_PADDING
+                self.config.window_controls_height + self.config.titlebar_padding
             } else {
                 0
             }
@@ -103,7 +100,7 @@ impl<'a> ImageCode<'a> {
 
     fn draw_line_number(
         &self,
-        img: &mut DynamicImage,
+        img: &mut RgbaImage,
         lines: Range<usize>,
         line_hi: Range<usize>,
         lineno: u32,
@@ -140,7 +137,7 @@ impl<'a> ImageCode<'a> {
 }
 
 impl<'a> DynImageContent for ImageCode<'a> {
-    fn content(&self) -> DynamicImage {
+    fn content(&self) -> RgbaImage{
         let mut h = HighlightLines::new(self.syntax, &self.theme);
         let mut drawables = Vec::new();
         let mut max_width = 0;
@@ -174,23 +171,6 @@ impl<'a> DynImageContent for ImageCode<'a> {
             .unwrap_or_default();
         let max_lineno = line_range.len() as u32;
 
-        if let Some(title) = self.config.window_title.as_ref() {
-            let title_width = self.font.get_text_len(title);
-            drawables.push((
-                TITLE_BAR_PADDING
-                    + if self.config.window_controls {
-                        WINDOW_CONTROLS_WIDTH + TITLE_BAR_PADDING
-                    } else {
-                        self.get_left_pad(max_lineno) + TITLE_BAR_PADDING
-                    },
-                TITLE_BAR_PADDING + (WINDOW_CONTROLS_HEIGHT / 2) - self.font.get_font_height() / 2,
-                None,
-                FontStyle::Bold,
-                title.to_string(),
-            ));
-            max_width = max_width.max(WINDOW_CONTROLS_WIDTH + title_width + TITLE_BAR_PADDING * 2)
-        }
-
         for (n, line) in lines[line_range.clone()].iter().enumerate() {
             let line = h.highlight_line(line, self.syntax_set).unwrap();
             let hi = line_hi.contains(&(line_range.start + n));
@@ -208,11 +188,11 @@ impl<'a> DynImageContent for ImageCode<'a> {
             self.get_line_y(max_lineno) + CODE_PADDING,
         );
 
-        let mut img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+        let mut img = RgbaImage::from_pixel(
             size.0,
             size.1,
             color_to_rgba(background),
-        ));
+        );
 
         // Draw line numbers
         if self.config.line_numbers {
@@ -230,17 +210,6 @@ impl<'a> DynImageContent for ImageCode<'a> {
             let color = color_to_rgba(color.unwrap_or(foreground));
             self.font
                 .draw_text_mut(&mut img, color, *x, *y, *style, text);
-        }
-
-        // Draw window controlls
-        if self.config.window_controls {
-            add_window_controls(
-                &mut img,
-                WINDOW_CONTROLS_WIDTH,
-                WINDOW_CONTROLS_HEIGHT,
-                TITLE_BAR_PADDING,
-                WINDOW_CONTROLS_WIDTH / 3 / 4,
-            );
         }
 
         img

@@ -10,7 +10,7 @@ pub struct Screenshot {
 impl Screenshot {}
 
 impl DynImageContent for Screenshot {
-    fn content(&self) -> sss_lib::image::DynamicImage {
+    fn content(&self) -> sss_lib::image::RgbaImage {
         let shot = ShotImpl::default();
         let img = if self.config.screen && self.config.current {
             screenshots::Screen::from_point(0, 0) // replace by mouse
@@ -23,6 +23,6 @@ impl DynImageContent for Screenshot {
             shot.all(self.config.show_cursor).unwrap()
         };
 
-        sss_lib::image::DynamicImage::ImageRgba8(img)
+        img
     }
 }

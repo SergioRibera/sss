@@ -30,11 +30,14 @@ use FontStyle::*;
 use crate::error::FontError;
 
 /// A single font with specific size
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ImageFont {
     pub fonts: HashMap<FontStyle, Font>,
     pub size: f32,
 }
+
+unsafe impl Send for ImageFont {}
+unsafe impl Sync for ImageFont {}
 
 impl Default for ImageFont {
     /// It will use Hack font (size: 26.0) by default
@@ -142,8 +145,11 @@ impl ImageFont {
 /// A collection of font
 ///
 /// It can be used to draw text on the image.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FontCollection(Vec<ImageFont>);
+
+unsafe impl Sync for FontCollection {}
+unsafe impl Send for FontCollection {}
 
 impl Default for FontCollection {
     fn default() -> Self {
