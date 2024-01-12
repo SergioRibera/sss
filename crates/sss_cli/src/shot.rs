@@ -7,7 +7,9 @@ use libwayshot::reexport::Transform;
 #[cfg(target_os = "linux")]
 use libwayshot::{CaptureRegion, WayshotConnection};
 use screenshots::display_info::DisplayInfo;
-use screenshots::image::imageops::{overlay, rotate180, rotate270, rotate90};
+use screenshots::image::imageops::overlay;
+#[cfg(target_os = "linux")]
+use screenshots::image::imageops::{rotate180, rotate270, rotate90};
 use screenshots::image::{Rgba, RgbaImage};
 use screenshots::Screen;
 
@@ -87,7 +89,10 @@ impl ShotImpl {
                             ..
                         } = s.display_info;
                         (
+                            #[cfg(target_os = "linux")]
                             (x, y, width, height, Transform::Normal),
+                            #[cfg(not(target_os = "linux"))]
+                            (x, y, width, height),
                             s.capture().unwrap(),
                         )
                     })
