@@ -1,14 +1,30 @@
 [package]
 name = "sss_code"
+description = "Take pretty screenshot to your code"
 version = "0.1.4"
-edition = "2021"
 publish = false
+authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "sss_code"
 path = "./src/main.rs"
+
+[package.metadata.dist]
+dist = true
+tag = "{{crate_name}}/{{version}}"
+
+[package.metadata.release]
+tag-prefix = "{{crate_name}}"
+
+[package.metadata.wix]
+upgrade-guid = "5E40820B-529A-430A-974D-3573F1BBD7B5"
+path-guid = "F31CE5AA-8FD7-43C4-9E5C-306E8E323AA8"
+license = false
+eula = false
 
 [dependencies]
 clap.workspace = true

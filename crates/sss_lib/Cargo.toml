@@ -2,6 +2,7 @@
 name = "sss_lib"
 version = "0.1.4"
 publish = false
+dist = false
 repository.workspace = true
 homepage.workspace = true
 edition.workspace = true
