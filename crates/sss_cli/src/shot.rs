@@ -11,7 +11,10 @@ use screenshots::image::imageops::{overlay, rotate180, rotate270, rotate90};
 use screenshots::image::{Rgba, RgbaImage};
 use screenshots::Screen;
 
+#[cfg(target_os = "linux")]
 type ScreenImage = ((i32, i32, u32, u32, Transform), RgbaImage);
+#[cfg(not(target_os = "linux"))]
+type ScreenImage = ((i32, i32, u32, u32), RgbaImage);
 
 fn wayland_detect() -> bool {
     let xdg_session_type = var_os("XDG_SESSION_TYPE")
@@ -28,23 +31,20 @@ fn wayland_detect() -> bool {
 }
 
 fn make_all_screens(screens: &[ScreenImage]) -> RgbaImage {
-    let max_w = screens.iter().map(|((_, _, w, _, _), _)| *w).sum();
-    let max_h = screens
-        .iter()
-        .map(|((_, _, _, h, _), _)| *h)
-        .max()
-        .unwrap_or_default();
+    let max_w = screens.iter().map(|(a, _)| a.2).sum();
+    let max_h = screens.iter().map(|(a, _)| a.3).max().unwrap_or_default();
     let mut res = RgbaImage::from_pixel(max_w, max_h, Rgba([0, 0, 0, 255]));
 
-    for ((x, y, _, _, t), screen_img) in screens {
+    for (a, screen_img) in screens {
         let mut img = screen_img.clone();
-        match t {
+        #[cfg(target_os = "linux")]
+        match a.4 {
             Transform::_90 => img = rotate90(&img),
             Transform::_180 => img = rotate180(&img),
             Transform::_270 => img = rotate270(&img),
             _ => (),
         }
-        overlay(&mut res, &img, (*x).into(), (*y).into());
+        overlay(&mut res, &img, (a.0).into(), (a.1).into());
     }
 
     res
@@ -52,7 +52,10 @@ fn make_all_screens(screens: &[ScreenImage]) -> RgbaImage {
 
 pub struct ShotImpl {
     xorg: Option<Vec<Screen>>,
+    #[cfg(target_os = "linux")]
     wayland: Option<WayshotConnection>,
+    #[cfg(not(target_os = "linux"))]
+    wayland: Option<()>,
 }
 
 impl Default for ShotImpl {
