@@ -15,10 +15,6 @@ path = "./src/main.rs"
 
 [package.metadata.dist]
 dist = true
-tag = "{{crate_name}}/{{version}}"
-
-[package.metadata.release]
-tag-prefix = "{{crate_name}}"
 
 [package.metadata.wix]
 upgrade-guid = "5E40820B-529A-430A-974D-3573F1BBD7B5"
