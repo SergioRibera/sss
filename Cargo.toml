@@ -54,3 +54,8 @@ targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-apple-dar
 publish-jobs = ["homebrew"]
 # Publish jobs to run in CI
 pr-run-mode = "skip"
+
+[workspace.metadata.dist.dependencies.apt]
+libxcb1 = "*"
+libxrandr2 = "*"
+libdbus-1-3 = "*"

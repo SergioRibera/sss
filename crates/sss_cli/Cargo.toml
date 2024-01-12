@@ -24,6 +24,8 @@ eula = false
 
 [dependencies]
 clap.workspace = true
-libwayshot = "0.3.0"
 screenshots = "0.8.6"
 sss_lib = { path = "../sss_lib" }
+
+[target.x86_64-unknown-linux-gnu.dependencies]
+libwayshot = "0.3.0"

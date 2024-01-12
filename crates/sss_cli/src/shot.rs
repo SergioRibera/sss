@@ -1,7 +1,10 @@
 use std::env::var_os;
 
+#[cfg(target_os = "linux")]
 use libwayshot::output::OutputPositioning;
+#[cfg(target_os = "linux")]
 use libwayshot::reexport::Transform;
+#[cfg(target_os = "linux")]
 use libwayshot::{CaptureRegion, WayshotConnection};
 use screenshots::display_info::DisplayInfo;
 use screenshots::image::imageops::{overlay, rotate180, rotate270, rotate90};
@@ -56,9 +59,12 @@ impl Default for ShotImpl {
     fn default() -> Self {
         Self {
             xorg: (!wayland_detect()).then_some(Screen::all().unwrap()),
+            #[cfg(target_os = "linux")]
             wayland: wayland_detect()
                 .then_some(WayshotConnection::new())
                 .map(|w| w.unwrap()),
+            #[cfg(not(target_os = "linux"))]
+            wayland: None,
         }
     }
 }
@@ -86,6 +92,10 @@ impl ShotImpl {
             ));
         }
 
+        #[cfg(not(target_os = "linux"))]
+        return Err("No Context loaded".to_string());
+
+        #[cfg(target_os = "linux")]
         self.wayland
             .as_ref()
             .ok_or("No Context loaded".to_string())
@@ -152,6 +162,10 @@ impl ShotImpl {
                 .unwrap());
         }
 
+        #[cfg(not(target_os = "linux"))]
+        return Err("No Context loaded".to_string());
+
+        #[cfg(target_os = "linux")]
         self.wayland
             .as_ref()
             .ok_or("No Context loaded".to_string())
