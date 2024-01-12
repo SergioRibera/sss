@@ -90,6 +90,8 @@
             devShells.default = craneLib.devShell {
               packages = with pkgs; [
                 toolchain
+                oranda
+                cargo-dist
                 cargo-release
               ] ++ buildInputs;
               LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
