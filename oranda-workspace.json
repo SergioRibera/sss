@@ -1,0 +1,26 @@
+{
+    "workspace": {
+        "name": "SSS (Super ScreenShot)",
+        "members": [
+            {
+                "slug": "sss",
+                "path": "./crates/sss_cli"
+            },
+            {
+                "slug": "sss_code",
+                "path": "./crates/sss_code"
+            }
+        ]
+    },
+    "styles": {
+        "theme": "cupcake"
+    },
+    "marketing": {
+        "social": {
+            "twitter_account": "sergioribera_rs"
+        }
+    },
+    "components": {
+        "changelog": true
+    }
+}

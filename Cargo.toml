@@ -55,6 +55,10 @@ publish-jobs = ["homebrew"]
 # Publish jobs to run in CI
 pr-run-mode = "skip"
 
+[workspace.metadata.dist.github-custom-runners]
+aarch64-unknown-linux-gnu = "buildjet-8vcpu-ubuntu-2204-arm"
+aarch64-unknown-linux-musl = "buildjet-8vcpu-ubuntu-2204-arm"
+
 [workspace.metadata.dist.dependencies.apt]
 libxcb1 = "*"
 libxrandr2 = "*"
