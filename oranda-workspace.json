@@ -1,4 +1,7 @@
 {
+    "build": {
+        "path_prefix": "sss"
+    },
     "workspace": {
         "name": "SSS (Super ScreenShot)",
         "members": [
