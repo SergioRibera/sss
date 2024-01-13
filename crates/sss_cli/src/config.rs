@@ -90,10 +90,11 @@ pub struct CliConfig {
     pub just_copy: bool,
     #[clap(
         long,
+        short,
         default_value = "None",
         help = "If it is set then the result will be saved here, otherwise it will not be saved."
     )]
-    pub save_path: Option<PathBuf>,
+    pub output: Option<PathBuf>,
     #[clap(
         long,
         short = 'f',

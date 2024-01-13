@@ -36,7 +36,7 @@ Options:
       --shadow-color <SHADOW_COLOR>                      Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path [default: #707070]
       --shadow-blur <SHADOW_BLUR>                        [default: 50]
   -c, --just-copy                                        Send the result to your clipboard
-      --save-path <SAVE_PATH>                            If it is set then the result will be saved here, otherwise it will not be saved. [default: None]
+  -o, --output <OUTPUT>                                  If it is set then the result will be saved here, otherwise it will not be saved. [default: None]
   -f, --save-format <SAVE_FORMAT>                        The format in which the image will be saved [default: png]
   -h, --help                                             Print help
   -V, --version                                          Print version

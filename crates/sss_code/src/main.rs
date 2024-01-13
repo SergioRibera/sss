@@ -76,7 +76,7 @@ fn main() {
     //     return;
     // }
 
-    if let Some(path) = config.save_path {
+    if let Some(path) = config.output {
         out.save_with_format(path, config.save_format).unwrap();
     }
 }
