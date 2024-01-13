@@ -56,7 +56,7 @@ fn main() {
     let out = generate_image(
         config.clone().into(),
         ImageCode {
-            font: config.font.clone(),
+            font: config.fonts.clone(),
             config: config.clone(),
             syntax,
             theme,

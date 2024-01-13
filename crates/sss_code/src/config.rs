@@ -24,7 +24,7 @@ pub struct CodeConfig {
     )]
     pub theme: String,
     #[clap(long, default_value = "Hack=12.0;", help = "[default: Hack=12.0;] The font used to render, format: Font Name=size;Other Font Name=12.0", value_parser = parse_font_str)]
-    pub font: FontCollection,
+    pub fonts: FontCollection,
     #[clap(
         long,
         help = "[Not recommended for manual use] Set theme from vim highlights, format: group,bg,fg,style;group,bg,fg,style;"
@@ -63,9 +63,9 @@ pub struct CodeConfig {
     #[clap(long, help = "Window title")]
     pub window_title: Option<String>,
     #[clap(long, default_value = "#4287f5", help = "Window bar background")]
-    pub windows_background: String,
+    pub window_background: String,
     #[clap(long, default_value = "#FFFFFF", help = "Title bar text color")]
-    pub windows_title_color: String,
+    pub window_title_color: String,
     #[clap(long, default_value = "120", help = "Width of window controls")]
     pub window_controls_width: u32,
     #[clap(
@@ -131,7 +131,7 @@ pub fn get_config() -> CodeConfig {
 impl From<CodeConfig> for GenerationSettings {
     fn from(val: CodeConfig) -> Self {
         let background = Background::try_from(val.background.clone()).unwrap();
-        let windows_background = Background::try_from(val.windows_background.clone()).unwrap();
+        let windows_background = Background::try_from(val.window_background.clone()).unwrap();
         let shadow_color = Background::try_from(val.shadow_color.clone()).unwrap();
 
         GenerationSettings {
@@ -144,13 +144,13 @@ impl From<CodeConfig> for GenerationSettings {
                 use_inner_image: val.shadow_image,
                 blur_radius: val.shadow_blur,
             }),
-            fonts: val.font,
+            fonts: val.fonts,
             author: val.author.clone(),
             author_font: val.author_font.clone(),
             author_color: val.author_color.to_rgba().unwrap(),
             window_controls: val.window_controls,
             windows_title: val.window_title.clone(),
-            windows_title_color: val.windows_title_color.to_rgba().unwrap(),
+            windows_title_color: val.window_title_color.to_rgba().unwrap(),
             window_controls_width: val.window_controls_width,
             window_controls_height: val.window_controls_height,
             titlebar_padding: val.titlebar_padding,

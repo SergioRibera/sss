@@ -16,7 +16,7 @@ Options:
       --show-cursor                                      Capture cursor (Only Wayland)
       --screen                                           Capture a full screen
       --area <AREA>                                      Captures an area of the screen
-      --font <FONT>                                      [default: Hack=12.0;] The font used to render, format: Font Name=size;Other Font Name=12.0 [default: Hack=12.0;]
+      --fonts <FONTS>                                    [default: Hack=12.0;] The font used to render, format: Font Name=size;Other Font Name=12.0 [default: Hack=12.0;]
   -b, --background <BACKGROUND>                          Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path [default: #323232]
   -r, --radius <RADIUS>                                  [default: 15]
       --author <AUTHOR>                                  Author Name of screenshot
@@ -24,8 +24,8 @@ Options:
       --author-font <AUTHOR_FONT>                        Font to render Author [default: Hack]
       --window-controls                                  Whether show the window controls
       --window-title <WINDOW_TITLE>                      Window title
-      --windows-background <WINDOWS_BACKGROUND>          Window bar background [default: #4287f5]
-      --windows-title-color <WINDOWS_TITLE_COLOR>        Title bar text color [default: #FFFFFF]
+      --window-background <WINDOW_BACKGROUND>            Window bar background [default: #4287f5]
+      --window-title-color <WINDOW_TITLE_COLOR>          Title bar text color [default: #FFFFFF]
       --window-controls-width <WINDOW_CONTROLS_WIDTH>    Width of window controls [default: 120]
       --window-controls-height <WINDOW_CONTROLS_HEIGHT>  Height of window title/controls bar [default: 40]
       --titlebar-padding <TITLEBAR_PADDING>              Padding of title on window bar [default: 10]
