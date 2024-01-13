@@ -1,6 +1,7 @@
 # SSS
 Terminal tool to take screenshots of your screen
 
+![out](https://github.com/SergioRibera/sss/assets/56278796/945f224c-96ec-48b6-a738-50ac2c9cfb90)
 
 ## Usage
 
