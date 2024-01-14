@@ -44,6 +44,7 @@ impl Background {
 }
 
 pub fn generate_image(
+    copy_img: bool,
     settings: GenerationSettings,
     content: impl DynImageContent,
 ) -> image::ImageBuffer<Rgba<u8>, Vec<u8>> {
@@ -118,6 +119,19 @@ pub fn generate_image(
             FontStyle::Bold,
             &author,
         );
+    }
+
+    if copy_img {
+        use arboard::SetExtLinux;
+
+        let mut c = arboard::Clipboard::new().unwrap();
+
+        c.set_image(arboard::ImageData {
+            width: img.width() as usize,
+            height: img.height() as usize,
+            bytes: std::borrow::Cow::Owned(img.to_vec()),
+        })
+        .unwrap();
     }
 
     img

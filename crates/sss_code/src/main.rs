@@ -54,6 +54,7 @@ fn main() {
     };
 
     let out = generate_image(
+        config.just_copy,
         config.clone().into(),
         ImageCode {
             font: config.fonts.clone(),
@@ -64,17 +65,6 @@ fn main() {
             content: &content,
         },
     );
-
-    // if config.just_copy {
-    //     let mut c = arboard::Clipboard::new().unwrap();
-    //     c.set_image(arboard::ImageData {
-    //         width: out.width() as usize,
-    //         height: out.height() as usize,
-    //         bytes: std::borrow::Cow::Owned(out.to_vec()),
-    //     })
-    //     .unwrap();
-    //     return;
-    // }
 
     if let Some(path) = config.output {
         out.save_with_format(path, config.save_format).unwrap();
