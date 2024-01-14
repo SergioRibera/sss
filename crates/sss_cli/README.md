@@ -15,6 +15,7 @@ Options:
       --current                                          When you take from a screen or window, capture the one on which the mouse is located.
       --show-cursor                                      Capture cursor (Only Wayland)
       --screen                                           Capture a full screen
+      --screen-id <SCREEN_ID>                            ID or Name of screen to capture
       --area <AREA>                                      Captures an area of the screen
       --fonts <FONTS>                                    [default: Hack=12.0;] The font used to render, format: Font Name=size;Other Font Name=12.0 [default: Hack=12.0;]
   -b, --background <BACKGROUND>                          Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path [default: #323232]

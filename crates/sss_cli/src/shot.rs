@@ -32,21 +32,25 @@ fn wayland_detect() -> bool {
     xdg_session_type.eq("wayland") || wayland_display.to_lowercase().contains("wayland")
 }
 
+#[cfg(target_os = "linux")]
+fn rotate(screen: &RgbaImage, t: Transform) -> RgbaImage {
+    match t {
+        Transform::_90 => rotate90(screen),
+        Transform::_180 => rotate180(screen),
+        Transform::_270 => rotate270(screen),
+        _ => screen.clone(),
+    }
+}
+
 fn make_all_screens(screens: &[ScreenImage]) -> RgbaImage {
     let max_w = screens.iter().map(|(a, _)| a.2).sum();
     let max_h = screens.iter().map(|(a, _)| a.3).max().unwrap_or_default();
     let mut res = RgbaImage::from_pixel(max_w, max_h, Rgba([0, 0, 0, 255]));
 
     for (a, screen_img) in screens {
-        let mut img = screen_img.clone();
         #[cfg(target_os = "linux")]
-        match a.4 {
-            Transform::_90 => img = rotate90(&img),
-            Transform::_180 => img = rotate180(&img),
-            Transform::_270 => img = rotate270(&img),
-            _ => (),
-        }
-        overlay(&mut res, &img, (a.0).into(), (a.1).into());
+        let screen_img = &rotate(screen_img, a.4);
+        overlay(&mut res, screen_img, (a.0).into(), (a.1).into());
     }
 
     res
@@ -190,6 +194,71 @@ impl ShotImpl {
                     )
                     .map_err(|_| "Cannot take screenshot on Wayland".to_string())
                     .unwrap()
+            })
+    }
+
+    pub fn screen(
+        &self,
+        mouse_position: Option<(i32, i32)>,
+        id: Option<i32>,
+        name: Option<String>,
+        mouse: bool,
+    ) -> Result<RgbaImage, String> {
+        let pos = mouse_position.or(id.map(|i| (i, i))).unwrap_or_default();
+
+        if let Some(screens) = self.xorg.as_ref() {
+            let (x, y) = pos;
+            let screen = screens
+                .iter()
+                .find(|s| {
+                    s.display_info.id == pos.0 as u32
+                        || x >= s.display_info.x
+                            && (x - s.display_info.width as i32)
+                                < s.display_info.x + s.display_info.width as i32
+                            && y >= s.display_info.y
+                            && (y - s.display_info.height as i32)
+                                < s.display_info.y + s.display_info.height as i32
+                })
+                .unwrap();
+            return Ok(screen.capture().unwrap());
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        return Err("No Context loaded".to_string());
+
+        let Some(screen_name) = name else {
+            return Err("No name set".to_string());
+        };
+
+        #[cfg(target_os = "linux")]
+        self.wayland
+            .as_ref()
+            .ok_or("No Context loaded".to_string())
+            .map(|wayshot| {
+                let outputs = wayshot.get_all_outputs();
+                let screen = outputs
+                    .iter()
+                    .find(|o| {
+                        let OutputPositioning {
+                            x,
+                            y,
+                            width,
+                            height,
+                        } = o.dimensions;
+                        o.name == screen_name.trim()
+                            || pos.0 >= x
+                                && (pos.0 - width) < x + width
+                                && pos.1 >= y
+                                && (pos.1 - height) < y + height
+                    })
+                    .ok_or(format!("Screen '{screen_name}' not found"))
+                    .unwrap();
+                let img = wayshot
+                    .screenshot_single_output(&screen, mouse)
+                    .map_err(|_| "Cannot take screenshot on Wayland".to_string())
+                    .unwrap();
+                #[cfg(target_os = "linux")]
+                rotate(&img, screen.transform)
             })
     }
 }

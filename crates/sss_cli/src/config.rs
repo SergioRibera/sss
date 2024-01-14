@@ -22,8 +22,8 @@ pub struct CliConfig {
     pub show_cursor: bool,
     #[clap(long, default_value = "false", help = "Capture a full screen")]
     pub screen: bool,
-    #[clap(long, help = "ID of screen to capture")]
-    pub screen_id: Option<u32>,
+    #[clap(long, help = "ID or Name of screen to capture")]
+    pub screen_id: Option<String>,
     #[clap(long, help = "Captures an area of the screen", value_parser = str_to_area)]
     pub area: Option<(i32, i32, u32, u32)>,
     // Screenshot Section
