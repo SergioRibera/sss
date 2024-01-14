@@ -52,10 +52,10 @@ Options:
 
 ## From file
 ```sh
-sss_code --window-controls --window-title example.rs -n --background '#aaaaff' -e rs -f png --save-path ./out.png ./example.rs
+sss_code --window-controls --window-title example.rs -n --background '#aaaaff' -e rs -f png -o ./out.png ./example.rs
 ```
 
 ## From clipboard (Wayland example)
 ```sh
-wl-paste | sss_code --window-controls --window-title example.rs -n --background '#aaaaff' -e rs -f png --save-path ./out.png -
+wl-paste | sss_code --window-controls --window-title example.rs -n --background '#aaaaff' -e rs -f png -o ./out.png -
 ```

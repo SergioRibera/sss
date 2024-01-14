@@ -44,5 +44,5 @@ Options:
 
 ## Capture Area
 ```sh
-sss --area "$(slurp)" --window-controls --windows-background "#ffffff" --author "SergioRibera" --save-path out.png
+sss --area "$(slurp)" --window-controls --windows-background "#ffffff" --author "SergioRibera" -o out.png
 ```

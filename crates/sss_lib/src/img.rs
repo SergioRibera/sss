@@ -122,8 +122,6 @@ pub fn generate_image(
     }
 
     if copy_img {
-        use arboard::SetExtLinux;
-
         let mut c = arboard::Clipboard::new().unwrap();
 
         c.set_image(arboard::ImageData {
