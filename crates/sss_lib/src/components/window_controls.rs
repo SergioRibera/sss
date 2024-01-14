@@ -65,7 +65,7 @@ pub fn add_window_title(
             } else {
                 title_padding
             },
-        title_padding + (controls_height / 2) - font.get_font_height() / 2,
+        (controls_height / 2) - font.get_font_height() / 2,
         FontStyle::Bold,
         title,
     );
