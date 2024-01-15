@@ -1,3 +1,4 @@
+use mouse_position::mouse_position::Mouse;
 use sss_lib::DynImageContent;
 
 use crate::config::CliConfig;
@@ -14,7 +15,10 @@ impl DynImageContent for Screenshot {
         let shot = ShotImpl::default();
 
         if self.config.screen && self.config.current {
-            screenshots::Screen::from_point(0, 0) // replace by mouse
+            let Mouse::Position { x, y } = Mouse::get_mouse_position() else {
+                panic!("Cannot get mouse position");
+            };
+            screenshots::Screen::from_point(x, y) // replace by mouse
                 .unwrap()
                 .capture()
                 .unwrap()
