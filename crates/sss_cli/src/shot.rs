@@ -13,10 +13,12 @@ use screenshots::image::imageops::{rotate180, rotate270, rotate90};
 use screenshots::image::{Rgba, RgbaImage};
 use screenshots::Screen;
 
+use crate::Area;
+
 #[cfg(target_os = "linux")]
-type ScreenImage = ((i32, i32, u32, u32, Transform), RgbaImage);
+type ScreenImage = ((Area, Transform), RgbaImage);
 #[cfg(not(target_os = "linux"))]
-type ScreenImage = ((i32, i32, u32, u32), RgbaImage);
+type ScreenImage = ((Area, ()), RgbaImage);
 
 fn wayland_detect() -> bool {
     let xdg_session_type = var_os("XDG_SESSION_TYPE")
@@ -43,14 +45,18 @@ fn rotate(screen: &RgbaImage, t: Transform) -> RgbaImage {
 }
 
 fn make_all_screens(screens: &[ScreenImage]) -> RgbaImage {
-    let max_w = screens.iter().map(|(a, _)| a.2).sum();
-    let max_h = screens.iter().map(|(a, _)| a.3).max().unwrap_or_default();
+    let max_w = screens.iter().map(|(a, _)| a.0.width).sum();
+    let max_h = screens
+        .iter()
+        .map(|(a, _)| a.0.height)
+        .max()
+        .unwrap_or_default();
     let mut res = RgbaImage::from_pixel(max_w, max_h, Rgba([0, 0, 0, 255]));
 
     for (a, screen_img) in screens {
         #[cfg(target_os = "linux")]
-        let screen_img = &rotate(screen_img, a.4);
-        overlay(&mut res, screen_img, (a.0).into(), (a.1).into());
+        let screen_img = &rotate(screen_img, a.1);
+        overlay(&mut res, screen_img, (a.0.x).into(), (a.0.y).into());
     }
 
     res
@@ -94,9 +100,25 @@ impl ShotImpl {
                         } = s.display_info;
                         (
                             #[cfg(target_os = "linux")]
-                            (x, y, width, height, Transform::Normal),
+                            (
+                                Area {
+                                    x,
+                                    y,
+                                    width,
+                                    height,
+                                },
+                                Transform::Normal,
+                            ),
                             #[cfg(not(target_os = "linux"))]
-                            (x, y, width, height),
+                            (
+                                Area {
+                                    x,
+                                    y,
+                                    width,
+                                    height,
+                                },
+                                (),
+                            ),
                             s.capture().unwrap(),
                         )
                     })
@@ -124,7 +146,15 @@ impl ShotImpl {
                                 height,
                             } = o.dimensions;
                             (
-                                (x, y, width as u32, height as u32, o.transform),
+                                (
+                                    Area {
+                                        x,
+                                        y,
+                                        width: width as u32,
+                                        height: height as u32,
+                                    },
+                                    o.transform,
+                                ),
                                 wayshot
                                     .screenshot_single_output(o, mouse)
                                     .map_err(|_| "Cannot take screenshot on Wayland".to_string())
@@ -138,7 +168,12 @@ impl ShotImpl {
 
     pub fn capture_area(
         &self,
-        (x, y, w, h): (i32, i32, u32, u32),
+        Area {
+            x,
+            y,
+            width: w,
+            height: h,
+        }: Area,
         mouse: bool,
     ) -> Result<RgbaImage, String> {
         if w <= 1 || h <= 1 {
@@ -254,7 +289,7 @@ impl ShotImpl {
                     .ok_or(format!("Screen '{screen_name}' not found"))
                     .unwrap();
                 let img = wayshot
-                    .screenshot_single_output(&screen, mouse)
+                    .screenshot_single_output(screen, mouse)
                     .map_err(|_| "Cannot take screenshot on Wayland".to_string())
                     .unwrap();
                 #[cfg(target_os = "linux")]

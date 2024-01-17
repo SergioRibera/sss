@@ -24,3 +24,4 @@ image = { version = "0.24.7", default-features = false, features = [
     "webp",
 ] }
 rayon = "1.8.0"
+serde.workspace = true

@@ -11,6 +11,8 @@ use image::{GenericImage, Pixel};
 use imageproc::definitions::Clamp;
 use imageproc::pixelops::weighted_sum;
 use pathfinder_geometry::transform2d::Transform2F;
+use serde::de::{Deserialize, Deserializer};
+use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -32,6 +34,7 @@ use crate::error::FontError;
 /// A single font with specific size
 #[derive(Clone, Debug)]
 pub struct ImageFont {
+    pub name: String,
     pub fonts: HashMap<FontStyle, Font>,
     pub size: f32,
 }
@@ -66,7 +69,11 @@ impl Default for ImageFont {
             fonts.insert(style, font);
         }
 
-        Self { fonts, size: 26.0 }
+        Self {
+            name: "Hack".to_string(),
+            fonts,
+            size: 26.0,
+        }
     }
 }
 
@@ -119,7 +126,11 @@ impl ImageFont {
             }
         }
 
-        Ok(Self { fonts, size })
+        Ok(Self {
+            name: name.to_string(),
+            fonts,
+            size,
+        })
     }
 
     /// Get a font by style. If there is no such a font, it will return the REGULAR font.
@@ -273,6 +284,43 @@ impl FontCollection {
 
         width
     }
+}
+
+impl<'de> Deserialize<'de> for FontCollection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(parse_font_str(&String::deserialize(deserializer)?).unwrap())
+    }
+}
+
+impl Serialize for FontCollection {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let font_strings: Vec<String> = self
+            .0
+            .iter()
+            .map(|font| format!("{}={}", font.name, font.size))
+            .collect();
+        let font_str = font_strings.join(";");
+        String::serialize(&font_str, serializer)
+    }
+}
+
+pub fn parse_font_str(s: &str) -> Result<FontCollection, FontError> {
+    let fonts = s
+        .split(';')
+        .filter(|&f| !f.is_empty())
+        .map(|f| {
+            let (name, size) = f.split_once('=').unwrap();
+            (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
+        })
+        .collect::<Vec<(String, f32)>>();
+
+    FontCollection::new(&fonts)
 }
 
 struct PositionedGlyph {

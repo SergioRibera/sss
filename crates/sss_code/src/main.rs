@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use config::get_config;
 use img::ImageCode;
 use sss_lib::generate_image;
+use sss_lib::image::error::{ImageFormatHint, UnsupportedError, UnsupportedErrorKind};
+use sss_lib::image::{ImageError, ImageFormat};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use theme::{list_themes, load_theme, theme_from_vim};
@@ -46,18 +48,19 @@ fn main() {
     let theme = if let Some(vim_theme) = &config.vim_theme {
         Cow::Owned(theme_from_vim(vim_theme))
     } else {
+        let theme = config.theme.clone().unwrap_or("base16-ocean.dark".to_string());
         themes
             .themes
-            .get(&config.theme)
+            .get(&theme)
             .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(load_theme(&config.theme, true)))
+            .unwrap_or_else(|| Cow::Owned(load_theme(&theme, true)))
     };
 
     let out = generate_image(
-        config.just_copy,
+        config.copy,
         config.clone().into(),
         ImageCode {
-            font: config.fonts.clone(),
+            font: config.fonts.clone().unwrap_or_default(),
             config: config.clone(),
             syntax,
             theme,
@@ -66,9 +69,20 @@ fn main() {
         },
     );
 
-    if let Some(path) = config.output {
-        out.save_with_format(path, config.save_format).unwrap();
-    }
+    out.save_with_format(
+        &config.output,
+        str_to_format(config.save_format.unwrap_or("png".to_string())).unwrap(),
+    )
+    .unwrap();
+}
+
+fn str_to_format(s: String) -> Result<ImageFormat, ImageError> {
+    ImageFormat::from_extension(s.clone()).ok_or(ImageError::Unsupported(
+        UnsupportedError::from_format_and_kind(
+            ImageFormatHint::Name(s.to_string()),
+            UnsupportedErrorKind::Format(ImageFormatHint::Name(s.to_string())),
+        ),
+    ))
 }
 
 fn list_file_types(ss: &SyntaxSet) {

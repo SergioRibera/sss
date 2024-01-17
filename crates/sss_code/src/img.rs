@@ -42,7 +42,7 @@ impl<'a> ImageCode<'a> {
         lineno * self.get_line_height()
             + CODE_PADDING
             + if self.config.window_controls || self.config.window_title.is_some() {
-                self.config.window_controls_height + self.config.titlebar_padding
+                self.config.window_controls_height.unwrap() + self.config.titlebar_padding.unwrap()
             } else {
                 0
             }
@@ -149,7 +149,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
             .or(self.theme.settings.foreground)
             .unwrap();
         let background = self.theme.settings.background.unwrap();
-        let tab = " ".repeat(self.config.tab_width as usize);
+        let tab = " ".repeat(self.config.tab_width.unwrap() as usize);
         let lines = self.content.split('\n').collect::<Vec<&str>>();
         let line_range = self
             .config
