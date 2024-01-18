@@ -16,6 +16,31 @@
     , self
     , ...
     }:
+    {
+      homeManagerModules = {
+        sss = (import ./crates/sss_cli/module.nix) {
+          isNixOSModule = false;
+        };
+        sss_code = (import ./crates/sss_code/module.nix) {
+          isNixOSModule = false;
+        };
+        default = self.homeManagerModules.sss;
+      };
+
+      nixosModules = {
+        sss = (import ./crates/sss_cli/module.nix) {
+          isNixOSModule = true;
+        };
+        sss_code = (import ./crates/sss_code/module.nix) {
+          isNixOSModule = true;
+        };
+        default = self.nixosModules.sss;
+      };
+
+      # aliases
+      homeManagerModule = self.homeManagerModules.default;
+      nixosModule = self.nixosModules.default;
+    } //
     inputs.flake-parts.lib.mkFlake
       {
         inherit inputs;
@@ -59,7 +84,7 @@
             };
             # Compile all artifacts for x86_64-unknown-linux-gnu
             linuxArtifacts = craneLib.buildDepsOnly (commonArgs
-              // {
+            // {
               CARGO_BUILD_TARGET = "x86_64-unknown-linux-gnu";
               doCheck = false;
             });
