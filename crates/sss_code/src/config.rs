@@ -49,11 +49,11 @@ pub struct CodeConfig {
     // Setting synctect
     #[clap(long, short = 'l', help = "Lists supported file types")]
     #[merge(strategy = overwrite_false)]
-    #[serde(default = "default_bool")]
+    #[serde(skip)]
     pub list_file_types: bool,
     #[clap(long, short = 'L', help = "Lists themes")]
     #[merge(strategy = overwrite_false)]
-    #[serde(default = "default_bool")]
+    #[serde(skip)]
     pub list_themes: bool,
     #[clap(
         long,
@@ -65,8 +65,10 @@ pub struct CodeConfig {
     pub extension: Option<String>,
     // Render options
     #[clap(long, default_value="..", help = "Lines range to take screenshot, format start..end", value_parser=parse_range)]
+    #[serde(skip)]
     pub lines: Option<Range<usize>>,
     #[clap(long, default_value="..", help = "Lines to highlight over the rest, format start..end", value_parser=parse_range)]
+    #[serde(skip)]
     pub highlight_lines: Option<Range<usize>>,
     #[clap(long, short = 'n', default_value = "false", help = "Show Line numbers")]
     #[merge(strategy = overwrite_false)]
