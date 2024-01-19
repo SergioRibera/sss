@@ -20,9 +20,9 @@ in
 {
   sss = pkgs.stdenv.mkDerivation {
     name = "sss";
-    version = "0.1.1";
+    version = "0.1.2";
     src = fetchTarball {
-      url = "https://github.com/SergioRibera/sss/releases/download/sss_cli/v0.1.1/sss_cli-${platform}.tar.xz";
+      url = "https://github.com/SergioRibera/sss/releases/download/sss_cli/v0.1.2/sss_cli-${platform}.tar.xz";
       sha256 = hash_sss;
     };
     buildInputs = with pkgs; [
