@@ -48,7 +48,10 @@ fn main() {
     let theme = if let Some(vim_theme) = &config.vim_theme {
         Cow::Owned(theme_from_vim(vim_theme))
     } else {
-        let theme = config.theme.clone().unwrap_or("base16-ocean.dark".to_string());
+        let theme = config
+            .theme
+            .clone()
+            .unwrap_or("base16-ocean.dark".to_string());
         themes
             .themes
             .get(&theme)
