@@ -45,9 +45,9 @@ in
 
   sss_code = pkgs.stdenv.mkDerivation {
     name = "sss_code";
-    version = "0.1.5";
+    version = "0.1.6";
     src = fetchTarball {
-      url = "https://github.com/SergioRibera/sss/releases/download/sss_code/v0.1.5/sss_code-${platform}.tar.xz";
+      url = "https://github.com/SergioRibera/sss/releases/download/sss_code/v0.1.6/sss_code-${platform}.tar.xz";
       sha256 = hash_sss_code;
     };
     buildInputs = with pkgs; [ fontconfig ];
