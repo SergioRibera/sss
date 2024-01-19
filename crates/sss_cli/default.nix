@@ -7,9 +7,9 @@ let
     "aarch64-darwin" = "aarch64-apple-darwin";
   }."${pkgs.stdenv.hostPlatform.system}";
   hash_sss = {
-    "x86_64-linux" = "0sbrny0a47hyg8z6266xw77h27slamlqg3kdcrimkn2xrn9341wh";
-    "x86_64-darwin" = "00a66gi5l71z0c6xgcswcnlh3m9d5n1hrgkmcgibnr3mxipxgrpm";
-    "aarch64-darwin" = "1dw15gjihr898l1apgwjcqx1dk2b227rhcrcq4qclxyd9wyg2861";
+    "x86_64-linux" = "179p06qm5c9vw8kdqzmy0grffwl23044anhrinj8k2clbaacb00z";
+    "x86_64-darwin" = "146c5laxhh2h523cizbck9cwshqdb2nkj91m2mzrqilv5gpam3yl";
+    "aarch64-darwin" = "12v9ay0b70rxbdch62k39kpcdlxc8nlmsic5f61q8rkzxcpdyh8n";
   }."${pkgs.stdenv.hostPlatform.system}";
 in
 pkgs.stdenv.mkDerivation {
