@@ -21,11 +21,22 @@ in
   sss = pkgs.stdenv.mkDerivation {
     name = "sss";
     version = "0.1.1";
-    buildInputs = with pkgs; [ fontconfig ];
     src = fetchTarball {
       url = "https://github.com/SergioRibera/sss/releases/download/sss_cli/v0.1.1/sss_cli-${platform}.tar.xz";
       sha256 = hash_sss;
     };
+    buildInputs = with pkgs; [
+      fontconfig
+      dbus
+      wayland
+      wayland-protocols
+      libxkbcommon
+      xorg.libXcursor
+      xorg.libxcb
+      xorg.libX11
+      xorg.libXi
+      xorg.libXrandr
+    ];
     installPhase = ''
       mkdir -p $out/bin
       cp sss $out/bin/
@@ -35,11 +46,11 @@ in
   sss_code = pkgs.stdenv.mkDerivation {
     name = "sss_code";
     version = "0.1.5";
-    buildInputs = with pkgs; [ fontconfig ];
     src = fetchTarball {
       url = "https://github.com/SergioRibera/sss/releases/download/sss_code/v0.1.5/sss_code-${platform}.tar.xz";
       sha256 = hash_sss_code;
     };
+    buildInputs = with pkgs; [ fontconfig ];
     installPhase = ''
       mkdir -p $out/bin
       cp sss_code $out/bin/
