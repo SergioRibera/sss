@@ -1,61 +1,52 @@
 {
   description = "Standar cross compile flake for Rust Lang Projects";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  outputs =
-    { self
-    , nixpkgs
-    ,
-    }:
-    let
-      # inherit (pkgs) lib;
-      genSystems = nixpkgs.lib.genAttrs [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-      pkgsFor = nixpkgs.legacyPackages;
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    cranix.url = "github:Lemin-n/cranix/2af6b2e71577bb8836b10e28f3267f2c5342a8fd";
+    crane.url = "github:ipetkov/crane";
+    fenix.url = "github:nix-community/fenix";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
 
-      # Toolchain
-      # toolchain = with fenix.packages.${system};
-      #   fromToolchainFile {
-      #     file = ./rust-toolchain.toml;
-      #     sha256 = "sha256-U2yfueFohJHjif7anmJB5vZbpP7G6bICH4ZsjtufRoU=";
-      #   };
-      # craneLib = crane.lib.${system}.overrideToolchain toolchain;
-
-      # # src = craneLib.cleanCargoSource (craneLib.path ./.);
-      # buildInputs = with pkgs; [
-      #   pkg-config
-      #   fontconfig
-
-      #   dbus
-      #   wayland
-      #   wayland-protocols
-      #   libxkbcommon
-      #   xorg.libXcursor
-      #   xorg.libxcb
-      #   xorg.libX11
-      #   xorg.libXi
-      #   xorg.libXrandr
-      # ];
-    in
-    {
-      overlays.default = _: prev: {
-        sss = prev.callPackage ./crates/sss_cli { };
-        sss_code = prev.callPackage ./crates/sss_code { };
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    ...
+  } @ inputs:
+  # Iterate over Arm, x86 for MacOs 🍎 and Linux 🐧
+    flake-utils.lib.eachSystem (flake-utils.lib.defaultSystems) (
+      system: let
+        sssBundle = import ./nix {
+          inherit system;
+          pkgs = nixpkgs.legacyPackages.${system};
+          crane = inputs.crane.lib;
+          cranix = inputs.cranix.lib;
+          fenix = inputs.fenix.packages;
+        };
+      in {
+        inherit (sssBundle) apps packages devShells;
+      }
+    )
+    // {
+      # Overlays
+      overlays.default = import ./nix/overlay.nix {
+        crane = inputs.crane.lib;
+        cranix = inputs.cranix.lib;
+        fenix = inputs.fenix.packages;
       };
-      packages = genSystems (system: self.overlays.default null pkgsFor.${system});
-
-      #  inputs.flake-parts.lib.mkFlake {
-      #  # nix develop
-      #  devShells.default = craneLib.devShell {
-      #    packages = with pkgs; [
-      #      toolchain
-      #      oranda
-      #      cargo-dist
-      #      cargo-release
-      #    ] ++ buildInputs;
-      #    LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
-      #  };
-      #};
+      # nixosModules
+      nixosModules = {
+        default = import ./nix/nixos-module.nix {
+          crane = inputs.crane.lib;
+          cranix = inputs.cranix.lib;
+          fenix = inputs.fenix.packages;
+        };
+        home-manager = import ./nix/hm-module.nix {
+          crane = inputs.crane.lib;
+          cranix = inputs.cranix.lib;
+          fenix = inputs.fenix.packages;
+        };
+      };
     };
 }
