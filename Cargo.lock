@@ -1847,12 +1847,14 @@ name = "sss_lib"
 version = "0.1.4"
 dependencies = [
  "arboard",
+ "clap",
  "conv",
  "env_logger",
  "font-kit",
  "image",
  "imageproc",
  "log",
+ "merge2",
  "pathfinder_geometry",
  "rayon",
  "serde",

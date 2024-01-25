@@ -5,7 +5,7 @@ use crate::utils::copy_alpha;
 use crate::Background;
 
 /// Add the shadow for image
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Shadow {
     pub shadow_color: Background,
     pub use_inner_image: bool,

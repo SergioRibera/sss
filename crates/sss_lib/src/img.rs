@@ -5,7 +5,7 @@ use crate::color::ToRgba;
 use crate::components::{add_window_controls, add_window_title, round_corner};
 use crate::error::Background as BackgroundError;
 use crate::font::FontStyle;
-use crate::{DynImageContent, GenerationSettings};
+use crate::{str_to_format, DynImageContent, GenerationSettings};
 
 #[derive(Clone, Debug)]
 pub enum GradientType {
@@ -43,16 +43,12 @@ impl Background {
     }
 }
 
-pub fn generate_image(
-    copy_img: bool,
-    settings: GenerationSettings,
-    content: impl DynImageContent,
-) -> image::ImageBuffer<Rgba<u8>, Vec<u8>> {
+pub fn generate_image(settings: GenerationSettings, content: impl DynImageContent) {
     let mut inner = content.content();
-    let show_winbar = settings.window_controls || settings.windows_title.is_some();
+    let show_winbar = settings.window_controls.enable || settings.window_controls.title.is_some();
     let (p_x, p_y) = settings.padding;
     let win_bar_h = if show_winbar {
-        settings.window_controls_height
+        settings.window_controls.height
     } else {
         0
     };
@@ -62,31 +58,32 @@ pub fn generate_image(
     );
 
     let mut winbar = settings
+        .colors
         .windows_background
-        .to_image(inner.width(), settings.window_controls_height);
-    let mut img = settings.background.to_image(w, h);
+        .to_image(inner.width(), settings.window_controls.height);
+    let mut img = settings.colors.background.to_image(w, h);
 
-    if settings.window_controls {
+    if settings.window_controls.enable {
         add_window_controls(
             &mut winbar,
-            settings.windows_background,
-            settings.window_controls_width,
-            settings.window_controls_height,
-            settings.titlebar_padding,
-            settings.window_controls_width / 3 / 4,
+            settings.colors.windows_background,
+            settings.window_controls.width,
+            settings.window_controls.height,
+            settings.window_controls.title_padding,
+            settings.window_controls.width / 3 / 4,
         );
     }
 
-    if let Some(title) = settings.windows_title.as_ref() {
+    if let Some(title) = settings.window_controls.title.as_ref() {
         add_window_title(
             &mut winbar,
             &settings.fonts,
-            settings.windows_title_color,
+            settings.colors.windows_title,
             title,
-            settings.titlebar_padding,
-            settings.window_controls,
-            settings.window_controls_width,
-            settings.window_controls_height,
+            settings.window_controls.title_padding,
+            settings.window_controls.enable,
+            settings.window_controls.width,
+            settings.window_controls.height,
         );
     }
 
@@ -113,7 +110,7 @@ pub fn generate_image(
 
         settings.fonts.draw_text_mut(
             &mut img,
-            settings.author_color,
+            settings.colors.author_color,
             w / 2 - title_w / 2,
             h - p_y / 2,
             FontStyle::Bold,
@@ -121,7 +118,7 @@ pub fn generate_image(
         );
     }
 
-    if copy_img {
+    if settings.copy {
         let mut c = arboard::Clipboard::new().unwrap();
 
         c.set_image(arboard::ImageData {
@@ -130,9 +127,13 @@ pub fn generate_image(
             bytes: std::borrow::Cow::Owned(img.to_vec()),
         })
         .unwrap();
+    } else {
+        img.save_with_format(
+            &settings.output,
+            str_to_format(settings.save_format.unwrap_or("png".to_string())).unwrap(),
+        )
+        .unwrap();
     }
-
-    img
 }
 
 impl TryFrom<String> for Background {

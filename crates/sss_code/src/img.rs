@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use sss_lib::font::{FontCollection, FontStyle};
 use sss_lib::image::{Rgba, RgbaImage};
-use sss_lib::DynImageContent;
+use sss_lib::{DynImageContent, GenerationSettings};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, Style, Theme};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
@@ -24,6 +24,7 @@ const CODE_PADDING: u32 = 25;
 
 pub struct ImageCode<'a> {
     pub font: FontCollection,
+    pub lib_config: GenerationSettings,
     pub config: CodeConfig,
     pub syntax_set: &'a SyntaxSet,
     pub syntax: &'a SyntaxReference,
@@ -41,8 +42,11 @@ impl<'a> ImageCode<'a> {
     fn get_line_y(&self, lineno: u32) -> u32 {
         lineno * self.get_line_height()
             + CODE_PADDING
-            + if self.config.window_controls || self.config.window_title.is_some() {
-                self.config.window_controls_height.unwrap() + self.config.titlebar_padding.unwrap()
+            + if self.lib_config.window_controls.enable
+                || self.lib_config.window_controls.title.is_some()
+            {
+                self.lib_config.window_controls.height
+                    + self.lib_config.window_controls.title_padding
             } else {
                 0
             }

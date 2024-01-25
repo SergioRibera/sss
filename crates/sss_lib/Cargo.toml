@@ -10,6 +10,9 @@ license.workspace = true
 
 [dependencies]
 log.workspace = true
+clap.workspace = true
+serde.workspace = true
+merge2.workspace = true
 env_logger.workspace = true
 thiserror.workspace = true
 conv = "0.3.3"
@@ -24,4 +27,3 @@ image = { version = "0.24.7", default-features = false, features = [
     "webp",
 ] }
 rayon = "1.8.0"
-serde.workspace = true

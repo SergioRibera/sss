@@ -1,7 +1,5 @@
 use config::get_config;
 use img::Screenshot;
-use screenshots::image::error::{ImageFormatHint, UnsupportedError, UnsupportedErrorKind};
-use screenshots::image::{ImageError, ImageFormat};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sss_lib::generate_image;
 
@@ -18,31 +16,9 @@ pub struct Area {
 }
 
 fn main() {
-    let config = get_config();
+    let (config, g_config) = get_config();
 
-    let img = generate_image(
-        config.copy,
-        config.clone().into(),
-        Screenshot {
-            config: config.clone(),
-        },
-    );
-
-    img.save_with_format(
-        &config.output,
-        str_to_format(config.save_format.unwrap_or("png".to_string())).unwrap(),
-    )
-    .unwrap();
-    println!("Saved!");
-}
-
-fn str_to_format(s: String) -> Result<ImageFormat, ImageError> {
-    ImageFormat::from_extension(s.clone()).ok_or(ImageError::Unsupported(
-        UnsupportedError::from_format_and_kind(
-            ImageFormatHint::Name(s.to_string()),
-            UnsupportedErrorKind::Format(ImageFormatHint::Name(s.to_string())),
-        ),
-    ))
+    generate_image(g_config, Screenshot { config });
 }
 
 fn str_to_area(s: &str) -> Result<Area, String> {
