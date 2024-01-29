@@ -88,6 +88,7 @@ pub struct GenerationSettingsArgs {
     #[clap(flatten)]
     pub colors: ColorsArgs,
     #[clap(flatten)]
+    #[serde(rename = "window-controls")]
     pub window_controls: WindowControlsArgs,
 }
 

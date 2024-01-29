@@ -1,6 +1,5 @@
 { lib, ... }:
 with lib; {
-  enable = mkEnableOption "cli to take screenshots";
   copy = mkEnableOption "Copy screenshot to clipboard";
   shadow = mkEnableOption "Enable shadows";
   shadow-image = mkEnableOption "Enable shadows from captured image";
@@ -16,13 +15,13 @@ with lib; {
     description = "Radius for the screenshot corners";
   };
   author = mkOption {
-    type = lib.types.nullOr types.str;
-    default = null;
+    type = types.str;
+    default = "";
     description = "Author Name of screenshot";
   };
   window-title = mkOption {
-    type = lib.types.nullOr types.str;
-    default = null;
+    type = types.str;
+    default = "";
     description = "Window title";
   };
   padding-x = mkOption {
@@ -36,8 +35,8 @@ with lib; {
     description = "Padding Y of inner screenshot";
   };
   shadow-blur = mkOption {
-    type = types.int;
-    default = 50;
+    type = types.float;
+    default = 50.0;
     description = "Blur of shadow";
   };
   save-format = mkOption {
@@ -47,53 +46,61 @@ with lib; {
   };
 
   colors = mkOption {
-    type = types.attrsOf (types.submodule {
-      background = mkOption {
-        type = types.str;
-        default = "#323232";
-        description = "Background of image generated. Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path";
+    default = { };
+    type = types.submodule {
+      config = { };
+      options = {
+        background = mkOption {
+          type = types.str;
+          default = "#323232";
+          description = "Background of image generated. Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path";
+        };
+        author = mkOption {
+          type = types.str;
+          default = "#FFFFFF";
+          description = "Title bar text color";
+        };
+        window-background = mkOption {
+          type = types.str;
+          default = "#4287f5";
+          description = "Window title bar background";
+        };
+        shadow = mkOption {
+          type = types.str;
+          default = "#707070";
+          description = "Shadow of screenshot. Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path";
+        };
+        title = mkOption {
+          type = types.str;
+          default = "#FFFFFF";
+          description = "Title bar text color";
+        };
       };
-      author = mkOption {
-        type = types.str;
-        default = "#FFFFFF";
-        description = "Title bar text color";
-      };
-      window-background = mkOption {
-        type = types.str;
-        default = "#4287f5";
-        description = "Window title bar background";
-      };
-      shadow = mkOption {
-        type = types.str;
-        default = "#707070";
-        description = "Shadow of screenshot. Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path";
-      };
-      title = mkOption {
-        type = types.str;
-        default = "#FFFFFF";
-        description = "Title bar text color";
-      };
-    });
+    };
   };
 
   window-controls = mkOption {
-    type = types.attrsOf (types.submodule {
-      enable = mkEnableOption "cli to take screenshots";
-      width = mkOption {
-        type = types.int;
-        default = 120;
-        description = "Width of window controls";
+    default = { };
+    type = types.submodule {
+      config = { };
+      options = {
+        enable = mkEnableOption "cli to take screenshots";
+        width = mkOption {
+          type = types.int;
+          default = 120;
+          description = "Width of window controls";
+        };
+        height = mkOption {
+          type = types.int;
+          default = 40;
+          description = "Height of window title/controls bar";
+        };
+        titlebar-padding = mkOption {
+          type = types.int;
+          default = 10;
+          description = "Padding of title on window bar";
+        };
       };
-      height = mkOption {
-        type = types.int;
-        default = 40;
-        description = "Height of window title/controls bar";
-      };
-      titlebar-padding = mkOption {
-        type = types.int;
-        default = 10;
-        description = "Padding of title on window bar";
-      };
-    });
+    };
   };
 }

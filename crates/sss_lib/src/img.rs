@@ -1,3 +1,4 @@
+use arboard::SetExtLinux;
 use image::imageops::{horizontal_gradient, resize, vertical_gradient, FilterType};
 use image::{Rgba, RgbaImage};
 
@@ -121,12 +122,15 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
     if settings.copy {
         let mut c = arboard::Clipboard::new().unwrap();
 
-        c.set_image(arboard::ImageData {
-            width: img.width() as usize,
-            height: img.height() as usize,
-            bytes: std::borrow::Cow::Owned(img.to_vec()),
-        })
-        .unwrap();
+        c.set()
+            .clipboard(arboard::LinuxClipboardKind::Clipboard)
+            .wait()
+            .image(arboard::ImageData {
+                width: img.width() as usize,
+                height: img.height() as usize,
+                bytes: img.to_vec().into(),
+            })
+            .unwrap();
     } else {
         img.save_with_format(
             &settings.output,
