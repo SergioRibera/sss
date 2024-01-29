@@ -47,3 +47,8 @@ Options:
 ```sh
 sss --area "$(slurp)" --window-controls --windows-background "#ffffff" --author "SergioRibera" -o out.png
 ```
+
+## Capture Area to raw (Wayland clipboard)
+```sh
+sss --area "$(slurp)" --author "SergioRibera" -o raw | wl-copy
+```

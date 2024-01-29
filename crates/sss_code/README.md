@@ -59,3 +59,8 @@ sss_code --window-controls --window-title example.rs -n --background '#aaaaff' -
 ```sh
 wl-paste | sss_code --window-controls --window-title example.rs -n --background '#aaaaff' -e rs -f png -o ./out.png -
 ```
+
+## To raw clipboard (Wayland example)
+```sh
+sss_code --window-controls --window-title example.rs -n --background '#aaaaff' -e rs -f png -o raw ./example.rs | wl-copy
+```
