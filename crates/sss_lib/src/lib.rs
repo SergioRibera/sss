@@ -8,9 +8,9 @@ pub mod components;
 pub mod error;
 pub mod font;
 mod img;
+mod out;
 mod shadow;
 pub mod utils;
-mod out;
 
 pub use args::*;
 pub use color::ToRgba;

@@ -4,7 +4,7 @@ use clap::Parser;
 use clap_stdin::FileOrStdin;
 use merge2::{bool::overwrite_false, Merge};
 use serde::{Deserialize, Serialize};
-use sss_lib::default_bool;
+use sss_lib::{default_bool, swap_option};
 
 use crate::error::CodeScreenshotError;
 
@@ -12,6 +12,7 @@ use crate::error::CodeScreenshotError;
 #[clap(author, version, about)]
 struct ClapConfig {
     #[clap(flatten)]
+    #[merge(strategy = swap_option)]
     pub code: Option<CodeConfig>,
     // lib configs
     #[clap(flatten)]
@@ -19,10 +20,11 @@ struct ClapConfig {
     pub lib_config: sss_lib::GenerationSettingsArgs,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Merge, Parser, Serialize)]
+#[derive(Clone, Debug, Deserialize, Merge, Parser, Serialize)]
 pub struct CodeConfig {
     #[clap(help = "Content to take screenshot. It accepts stdin or File")]
     #[serde(skip)]
+    #[merge(skip)]
     pub content: Option<FileOrStdin<String>>,
     #[clap(
         long,

@@ -120,19 +120,19 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
         );
     }
 
-    // if settings.copy {
-    //     let mut c = arboard::Clipboard::new().unwrap();
+    if settings.copy {
+        let mut c = arboard::Clipboard::new().unwrap();
 
-    //     c.set()
-    //         .clipboard(arboard::LinuxClipboardKind::Clipboard)
-    //         .wait()
-    //         .image(arboard::ImageData {
-    //             width: img.width() as usize,
-    //             height: img.height() as usize,
-    //             bytes: img.to_vec().into(),
-    //         })
-    //         .unwrap();
-    // }
+        c.set()
+            .clipboard(arboard::LinuxClipboardKind::Clipboard)
+            .wait()
+            .image(arboard::ImageData {
+                width: img.width() as usize,
+                height: img.height() as usize,
+                bytes: img.to_vec().into(),
+            })
+            .unwrap();
+    }
     make_output(
         &img,
         &settings.output,

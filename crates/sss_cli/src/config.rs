@@ -9,6 +9,7 @@ use crate::{str_to_area, Area};
 #[clap(version, author)]
 struct ClapConfig {
     #[clap(flatten)]
+    #[merge(strategy = swap_option)]
     pub cli: Option<CliConfig>,
     // lib configs
     #[clap(flatten)]

@@ -62,7 +62,7 @@ with lib; {
         };
         window-background = mkOption {
           type = types.str;
-          default = "#4287f5";
+          default = "";
           description = "Window title bar background";
         };
         shadow = mkOption {
