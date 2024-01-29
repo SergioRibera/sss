@@ -119,25 +119,26 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
         );
     }
 
-    // if settings.copy {
-    //     let mut c = arboard::Clipboard::new().unwrap();
+    if settings.copy {
+        let mut c = arboard::Clipboard::new().unwrap();
 
-    //     c.set()
-    //         .clipboard(arboard::LinuxClipboardKind::Clipboard)
-    //         .wait()
-    //         .image(arboard::ImageData {
-    //             width: img.width() as usize,
-    //             height: img.height() as usize,
-    //             bytes: img.to_vec().into(),
-    //         })
-    //         .unwrap();
-    // } else {
+        c.set()
+            .clipboard(arboard::LinuxClipboardKind::Clipboard)
+            .wait()
+            .image(arboard::ImageData {
+                width: img.width() as usize,
+                height: img.height() as usize,
+                bytes: img.to_vec().into(),
+            })
+            .unwrap();
+    }
+    if !settings.output.is_empty() {
         img.save_with_format(
             &settings.output,
             str_to_format(settings.save_format.unwrap_or("png".to_string())).unwrap(),
         )
         .unwrap();
-    // }
+    }
 }
 
 impl TryFrom<String> for Background {
