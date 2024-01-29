@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::font::{parse_font_str, FontCollection};
 use crate::{Background, Colors, GenerationSettings, Shadow, ToRgba, WindowControls};
 
-pub fn str_to_format(s: String) -> Result<ImageFormat, ImageError> {
-    ImageFormat::from_extension(s.clone()).ok_or(ImageError::Unsupported(
+pub fn str_to_format(s: impl ToString) -> Result<ImageFormat, ImageError> {
+    ImageFormat::from_extension(s.to_string()).ok_or(ImageError::Unsupported(
         UnsupportedError::from_format_and_kind(
             ImageFormatHint::Name(s.to_string()),
             UnsupportedErrorKind::Format(ImageFormatHint::Name(s.to_string())),
@@ -74,7 +74,7 @@ pub struct GenerationSettingsArgs {
     #[clap(
         long,
         short,
-        help = "If it is set then the result will be saved here, otherwise it will not be saved."
+        help = "[values: raw or file path] If it is set then the result will be saved here"
     )]
     #[serde(skip)]
     pub output: String,

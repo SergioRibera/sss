@@ -50,10 +50,10 @@ pub fn get_config() -> (CliConfig, sss_lib::GenerationSettings) {
     let _ = std::fs::create_dir_all(config_path.clone());
 
     let config_path = config_path.join("config.toml");
-    println!("Reading configs from path: {config_path:?}");
+    // println!("Reading configs from path: {config_path:?}");
 
     if let Ok(cfg_content) = std::fs::read_to_string(config_path) {
-        println!("Merging from config file");
+        // println!("Merging from config file");
         let mut config: ClapConfig = toml::from_str(&cfg_content).unwrap();
         let mut args = ClapConfig::parse();
 

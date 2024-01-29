@@ -6,7 +6,8 @@ use crate::color::ToRgba;
 use crate::components::{add_window_controls, add_window_title, round_corner};
 use crate::error::Background as BackgroundError;
 use crate::font::FontStyle;
-use crate::{str_to_format, DynImageContent, GenerationSettings};
+use crate::out::make_output;
+use crate::{DynImageContent, GenerationSettings};
 
 #[derive(Clone, Debug)]
 pub enum GradientType {
@@ -119,26 +120,24 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
         );
     }
 
-    if settings.copy {
-        let mut c = arboard::Clipboard::new().unwrap();
+    // if settings.copy {
+    //     let mut c = arboard::Clipboard::new().unwrap();
 
-        c.set()
-            .clipboard(arboard::LinuxClipboardKind::Clipboard)
-            .wait()
-            .image(arboard::ImageData {
-                width: img.width() as usize,
-                height: img.height() as usize,
-                bytes: img.to_vec().into(),
-            })
-            .unwrap();
-    }
-    if !settings.output.is_empty() {
-        img.save_with_format(
-            &settings.output,
-            str_to_format(settings.save_format.unwrap_or("png".to_string())).unwrap(),
-        )
-        .unwrap();
-    }
+    //     c.set()
+    //         .clipboard(arboard::LinuxClipboardKind::Clipboard)
+    //         .wait()
+    //         .image(arboard::ImageData {
+    //             width: img.width() as usize,
+    //             height: img.height() as usize,
+    //             bytes: img.to_vec().into(),
+    //         })
+    //         .unwrap();
+    // }
+    make_output(
+        &img,
+        &settings.output,
+        settings.save_format.as_ref().map(|s| s.as_str()),
+    );
 }
 
 impl TryFrom<String> for Background {

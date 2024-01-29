@@ -10,6 +10,7 @@ pub mod font;
 mod img;
 mod shadow;
 pub mod utils;
+mod out;
 
 pub use args::*;
 pub use color::ToRgba;
