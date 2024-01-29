@@ -9,12 +9,7 @@ pub fn make_output(img: &ImageBuffer<Rgba<u8>, Vec<u8>>, output: &str, fmt: Opti
             let mut stdout = std::io::stdout();
             let encoder = PngEncoder::new(&mut stdout);
             encoder
-                .write_image(
-                    &img.to_vec(),
-                    img.width(),
-                    img.height(),
-                    image::ColorType::Rgba8,
-                )
+                .write_image(img, img.width(), img.height(), image::ColorType::Rgba8)
                 .unwrap();
         }
         _ => {
