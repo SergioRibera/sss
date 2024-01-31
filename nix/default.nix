@@ -90,6 +90,9 @@ in
         [
           toolchain
           pkg-config
+          oranda
+          cargo-dist
+          cargo-release
         ]
         ++ buildInputs;
       PKG_CONFIG_PATH = "${pkgs.fontconfig.dev}/lib/pkgconfig";
