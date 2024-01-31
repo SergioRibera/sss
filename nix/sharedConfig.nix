@@ -3,6 +3,7 @@ with lib; {
   copy = mkEnableOption "Copy screenshot to clipboard";
   shadow = mkEnableOption "Enable shadows";
   shadow-image = mkEnableOption "Enable shadows from captured image";
+  notify = mkEnableOption "Show Displays a notification when the screenshot has been created";
   fonts = mkOption {
     type = types.str;
     default = "Hack=12.0";

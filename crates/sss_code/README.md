@@ -39,6 +39,7 @@ Options:
   -r, --radius <RADIUS>                                  [default: 15]
       --padding-x <PADDING_X>                            [default: 80]
       --padding-y <PADDING_Y>                            [default: 100]
+      --notify                                           Show Displays a notification when the screenshot has been created
       --shadow                                           Enable shadow
       --shadow-image                                     Generate shadow from inner image
       --shadow-color <SHADOW_COLOR>                      Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path [default: #707070]

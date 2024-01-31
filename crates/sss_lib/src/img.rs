@@ -133,7 +133,12 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
             })
             .unwrap();
     }
-    make_output(&img, &settings.output, settings.save_format.as_deref());
+    make_output(
+        &img,
+        &settings.output,
+        settings.show_notify,
+        settings.save_format.as_deref(),
+    );
 }
 
 impl TryFrom<String> for Background {

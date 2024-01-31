@@ -25,6 +25,9 @@ pub struct GenerationSettings {
     /// Copy to clipboard
     /// Default: false
     pub copy: bool,
+    /// Show Notify
+    /// Default: false
+    pub show_notify: bool,
     /// Output img
     /// Not Default
     pub output: String,

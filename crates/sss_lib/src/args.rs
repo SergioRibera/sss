@@ -67,6 +67,10 @@ pub struct GenerationSettingsArgs {
     #[merge(strategy = swap_option)]
     pub shadow_blur: Option<f32>,
     // Saving options
+    #[clap(long = "notify", help = "Show Displays a notification when the screenshot has been created")]
+    #[merge(strategy = overwrite_false)]
+    #[serde(rename = "notify", default = "default_bool")]
+    pub show_notify: bool,
     #[clap(long, short, help = "Send the result to your clipboard")]
     #[merge(strategy = overwrite_false)]
     #[serde(default = "default_bool")]
@@ -157,6 +161,7 @@ impl From<GenerationSettingsArgs> for GenerationSettings {
 
         GenerationSettings {
             copy: val.copy,
+            show_notify: val.show_notify,
             output: val.output.clone(),
             save_format: val.save_format.clone(),
             colors: val.colors.into(),
