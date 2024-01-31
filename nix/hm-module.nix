@@ -1,13 +1,12 @@
-{
-  crane,
-  cranix,
-  fenix,
-}: {
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+{ crane
+, cranix
+, fenix
+,
+}: { config
+   , lib
+   , pkgs
+   , ...
+   }:
 with lib; let
   inherit (attrsets) filterAttrs;
   sss = import ./. {
@@ -15,26 +14,27 @@ with lib; let
     system = pkgs.system;
   };
   cfgSSS = config.programs.sss;
-  tomlFormat = pkgs.formats.toml {};
+  tomlFormat = pkgs.formats.toml { };
   configDir =
     if pkgs.stdenv.isDarwin
     then "Library/Application Support"
     else config.xdg.configHome;
-  sharedConfig = import ./sharedConfig.nix {inherit lib;};
+  sharedConfig = import ./sharedConfig.nix { inherit lib; };
   # Temp config
   sssPackage = lists.optional cfgSSS.enable sss.packages.default;
   codePackage = lists.optional cfgSSS.code.enable sss.packages.code;
   filterConfig = cfg: filterAttrs (n: v: ((builtins.typeOf v) != "null") && n != "enable") cfg;
-in {
+in
+{
   options.programs = {
     sss =
       {
         enable = mkEnableOption "cli to take screenshots";
         cli = mkOption {
           description = "";
-          default = {};
+          default = { };
           type = types.submodule {
-            config = {};
+            config = { };
             options = {
               current = mkEnableOption "Capture current screens";
               screen = mkEnableOption "Capture all screens";
@@ -48,13 +48,18 @@ in {
         };
         code = mkOption {
           description = "";
-          default = {};
+          default = { };
           type = types.submodule {
-            config = {};
+            config = { };
             options = {
               enable = mkEnableOption "cli to take screenshots code";
               # Code Configs
               line-numbers = mkEnableOption "Show Line numbers";
+              code-background = mkOption {
+                type = types.str;
+                default = "";
+                description = "Background of code section. Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path";
+              };
               theme = mkOption {
                 type = types.str;
                 default = "base16-ocean.dark";
@@ -84,9 +89,9 @@ in {
         };
         general = mkOption {
           description = "";
-          default = {};
+          default = { };
           type = types.submodule {
-            config = {};
+            config = { };
             options = sharedConfig;
           };
         };

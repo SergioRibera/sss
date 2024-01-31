@@ -56,6 +56,12 @@ pub struct CodeConfig {
     #[serde(skip)]
     pub extension: Option<String>,
     // Render options
+    #[clap(
+        long,
+        help = "[default: #323232] Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path"
+    )]
+    #[merge(strategy = swap_option)]
+    pub code_background: Option<String>,
     #[clap(long, default_value="..", help = "Lines range to take screenshot, format start..end", value_parser=parse_range)]
     #[serde(skip)]
     pub lines: Option<Range<usize>>,

@@ -16,6 +16,7 @@ Options:
   -t, --theme <THEME>                                    Theme file to use. May be a path, or an embedded theme. Embedded themes will take precendence. [default:
                                                          base16-ocean.dark]
       --fonts <FONTS>                                    [default: Hack=12.0;] The font used to render, format: Font Name=size;Other Font Name=12.0 [default: Hack=12.0;]
+      --code-background <CODE_BACKGROUND>                [default: #323232] Support: '#RRGGBBAA' 'h;#RRGGBBAA;#RRGGBBAA' 'v;#RRGGBBAA;#RRGGBBAA' or file path
       --vim-theme <VIM_THEME>                            [Not recommended for manual use] Set theme from vim highlights, format: group,bg,fg,style;group,bg,fg,style;
   -l, --list-file-types                                  Lists supported file types
   -L, --list-themes                                      Lists themes

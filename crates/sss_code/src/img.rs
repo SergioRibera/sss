@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use sss_lib::font::{FontCollection, FontStyle};
 use sss_lib::image::{Rgba, RgbaImage};
-use sss_lib::{DynImageContent, GenerationSettings};
+use sss_lib::{Background, DynImageContent, GenerationSettings};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, Style, Theme};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
@@ -152,7 +152,17 @@ impl<'a> DynImageContent for ImageCode<'a> {
             .highlight
             .or(self.theme.settings.foreground)
             .unwrap();
-        let background = self.theme.settings.background.unwrap();
+        let background = self
+            .config
+            .code_background
+            .clone()
+            .and_then(|b| Background::try_from(b).ok())
+            .or(self
+                .theme
+                .settings
+                .background
+                .map(|b| Background::Solid(Rgba([b.r, b.g, b.b, b.a]))))
+            .unwrap();
         let tab = " ".repeat(self.config.tab_width.unwrap() as usize);
         let lines = self.content.split('\n').collect::<Vec<&str>>();
         let line_range = self
@@ -192,7 +202,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
             self.get_line_y(max_lineno) + CODE_PADDING,
         );
 
-        let mut img = RgbaImage::from_pixel(size.0, size.1, color_to_rgba(background));
+        let mut img = background.to_image(size.0, size.1);
 
         // Draw line numbers
         if self.config.line_numbers {
