@@ -15,8 +15,9 @@ It is a set of libraries and tools for building screenshots in a standardized, h
 > For the moment it is not published in any store so you have to download the tool from the [releases](https://github.com/SergioRibera/sss/releases)
 
 ## Configuration
-> [!INFO]
+> [!NOTE]
 > To know how to configure it from a file, you can review the [default.toml](./examples/default_config.toml) file
+> 
 All cli arguments can be set from a single file in the path `~/.config/sss/config.toml` right here you can place the configuration for `sss_code` and `sss`
 
 ## Acknowledgments
