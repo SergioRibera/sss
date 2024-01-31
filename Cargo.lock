@@ -2434,7 +2434,7 @@ dependencies = [
 
 [[package]]
 name = "sss_cli"
-version = "0.2.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "directories",
@@ -2449,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "sss_code"
-version = "0.2.0"
+version = "0.1.6"
 dependencies = [
  "clap",
  "clap-stdin",
