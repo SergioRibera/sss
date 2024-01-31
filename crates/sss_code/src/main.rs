@@ -1,20 +1,13 @@
 #![allow(clippy::expect_fun_call)]
 use std::borrow::Cow;
 
-use config::get_config;
-use img::ImageCode;
+use sss_code::config::get_config;
+use sss_code::ImageCode;
+use sss_code::{list_themes, load_theme, theme_from_vim};
 use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
-use theme::{list_themes, load_theme, theme_from_vim};
 
-mod config;
-mod error;
-mod img;
-mod theme;
-mod utils;
-
-// wl-paste | cargo run -p sss_code -- -t InspiredGitHub -e rs --lines 2..10 --vim-theme "Normal,#dab997,#262626,,;LineNr,#949494,#262626,,;Visual,,#4e4e4e,,;Cursor,#262626,#dab997;CursorLine,,#3a3a3a,,;Search,#3a3a3a,ffaf00;SpellBad,#d75f5f,,undercurl,;Title,#83adad,,,;MatchParen,,#8a8a8a,,;IdentBlanklineChar,#4e4e4e,,,;Number,#ff8700,,,;Character,#d75f5f,,,;String,#afaf00,,,;Constant,#ff8700,,,;Identifier,#d75f5f,,,;Keyword,#d485ad,,,;Comment,#8a8a8a,,,;Operator,#d485ad,,,;Statement,#d75f5f,,,;Type,#ffaf00,,,;StorageClass,#ffaf00,,,;Function,#83adad,,," -
 fn main() {
     let (config, mut g_config) = get_config();
 
