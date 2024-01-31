@@ -1,3 +1,4 @@
+#[cfg(target_os = "linux")]
 use arboard::SetExtLinux;
 use image::imageops::{horizontal_gradient, resize, vertical_gradient, FilterType};
 use image::{Rgba, RgbaImage};
@@ -123,9 +124,12 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
     if settings.copy {
         let mut c = arboard::Clipboard::new().unwrap();
 
-        c.set()
-            .clipboard(arboard::LinuxClipboardKind::Clipboard)
-            .wait()
+        let mut set = c.set();
+        #[cfg(target_os = "linux")]
+        {
+            set = set.clipboard(arboard::LinuxClipboardKind::Clipboard);
+        }
+        set.wait()
             .image(arboard::ImageData {
                 width: img.width() as usize,
                 height: img.height() as usize,

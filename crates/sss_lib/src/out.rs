@@ -1,6 +1,9 @@
 use image::codecs::png::PngEncoder;
 use image::{ImageBuffer, ImageEncoder, Rgba};
-use notify_rust::{Image, Notification};
+use notify_rust::Notification;
+
+#[cfg(target_os = "linux")]
+use notify_rust::Image;
 
 use crate::str_to_format;
 
@@ -23,6 +26,7 @@ pub fn make_output(
                 .unwrap();
 
             if show_notify {
+                #[cfg(all(unix, not(target_os = "macos"), not(target_os = "windows")))]
                 Notification::new()
                     .summary("Image generated")
                     .body(&format!("Image stored in {output}"))
@@ -30,6 +34,12 @@ pub fn make_output(
                         Image::from_rgba(img.width() as i32, img.height() as i32, img.to_vec())
                             .unwrap(),
                     )
+                    .show()
+                    .unwrap();
+                #[cfg(not(unix))]
+                Notification::new()
+                    .summary("Image generated")
+                    .body(&format!("Image stored in {output}"))
                     .show()
                     .unwrap();
             }
