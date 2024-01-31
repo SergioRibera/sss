@@ -1,0 +1,47 @@
+# This content should go in the path ~/.config/sss/config.toml
+# These parameters contain the same parameters and format as those of the arguments
+ 
+# These are the configurations for sss
+[cli]
+area = "x,y WxH"
+show_cursor = false
+current = false
+screen = false
+screen-id = ""
+
+# These are the configurations for sss_code
+[code]
+extra-syntaxes = ""
+line-numbers = true
+tab-width = 4
+theme = "base16-ocean.dark"
+vim-theme = ""
+code-background = ""
+
+# These are the configurations for both
+[general]
+author = "@SergioRibera"
+copy = false
+fonts = "Hack=12.0"
+padding-x = 80
+padding-y = 100
+radius = 15
+save-format = "png"
+notify = false
+shadow = true
+shadow-blur = 50.0
+shadow-image = true
+window-title = ""
+
+[general.colors]
+author = "#000000"
+background = "#FFFFFF"
+shadow = "#707070"
+title = "#FFFFFF"
+window-background = ""
+
+[general.window-controls]
+enable = false
+height = 40
+titlebar-padding = 10
+width = 120
