@@ -67,7 +67,10 @@ pub struct GenerationSettingsArgs {
     #[merge(strategy = swap_option)]
     pub shadow_blur: Option<f32>,
     // Saving options
-    #[clap(long = "notify", help = "Show Displays a notification when the screenshot has been created")]
+    #[clap(
+        long = "notify",
+        help = "Show Displays a notification when the screenshot has been created"
+    )]
     #[merge(strategy = overwrite_false)]
     #[serde(rename = "notify", default = "default_bool")]
     pub show_notify: bool,
