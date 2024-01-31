@@ -16,7 +16,7 @@ mod utils;
 
 // wl-paste | cargo run -p sss_code -- -t InspiredGitHub -e rs --lines 2..10 --vim-theme "Normal,#dab997,#262626,,;LineNr,#949494,#262626,,;Visual,,#4e4e4e,,;Cursor,#262626,#dab997;CursorLine,,#3a3a3a,,;Search,#3a3a3a,ffaf00;SpellBad,#d75f5f,,undercurl,;Title,#83adad,,,;MatchParen,,#8a8a8a,,;IdentBlanklineChar,#4e4e4e,,,;Number,#ff8700,,,;Character,#d75f5f,,,;String,#afaf00,,,;Constant,#ff8700,,,;Identifier,#d75f5f,,,;Keyword,#d485ad,,,;Comment,#8a8a8a,,,;Operator,#d485ad,,,;Statement,#d75f5f,,,;Type,#ffaf00,,,;StorageClass,#ffaf00,,,;Function,#83adad,,," -
 fn main() {
-    let (config, g_config) = get_config();
+    let (config, mut g_config) = get_config();
 
     let mut ss = SyntaxSet::load_defaults_newlines();
     let themes = ThemeSet::load_defaults();
@@ -59,6 +59,17 @@ fn main() {
             .map(Cow::Borrowed)
             .unwrap_or_else(|| Cow::Owned(load_theme(&theme, true)))
     };
+
+    if theme.settings.background.is_some()
+        && g_config.colors.windows_background
+            == sss_lib::Background::Solid(sss_lib::image::Rgba([0x42, 0x87, 0xf5, 255]))
+    {
+        g_config.colors.windows_background = theme
+            .settings
+            .background
+            .map(|c| sss_lib::Background::Solid(sss_lib::image::Rgba([c.r, c.g, c.b, c.a])))
+            .unwrap();
+    }
 
     generate_image(
         g_config.clone(),

@@ -9,13 +9,13 @@ use crate::font::FontStyle;
 use crate::out::make_output;
 use crate::{DynImageContent, GenerationSettings};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GradientType {
     Horizontal,
     Vertical,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Background {
     Solid(Rgba<u8>),
     Gradient(GradientType, Rgba<u8>, Rgba<u8>),
