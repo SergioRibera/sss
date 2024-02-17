@@ -50,6 +50,13 @@ in
         [pkgs.pkg-config]
         ++ lib.optionals stdenv.buildPlatform.isDarwin [
           pkgs.libiconv
+        ] ++ lib.optionals stdenv.buildPlatform.isLinux [
+          pkgs.libxkbcommon.dev
+          pkgs.xorg.libxcb
+          pkgs.xorg.libX11
+          pkgs.xorg.libXcursor
+          pkgs.xorg.libXrandr
+          pkgs.xorg.libXi
         ];
       inherit buildInputs;
     };
@@ -71,17 +78,20 @@ in
     # Build packages and `nix run` apps
     sss = cranixLib.buildCranixBundle (packageArgs "sss");
     sssCode = cranixLib.buildCranixBundle (packageArgs "sss_code");
+    sssLauncher = cranixLib.buildCranixBundle (packageArgs "sss_launcher");
   in {
     # `nix run`
     apps = rec {
       code = sssCode.app;
       cli = sss.app;
+      launcher = sssLauncher.app;
       default = cli;
     };
     # `nix build`
     packages = rec {
       code = sssCode.pkg;
       cli = sss.pkg;
+      launcher = sssLauncher.pkg;
       default = cli;
     };
     # `nix develop`
@@ -89,7 +99,6 @@ in
       packages = with pkgs;
         [
           toolchain
-          pkg-config
           oranda
           cargo-dist
           cargo-release

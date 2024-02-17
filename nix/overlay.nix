@@ -7,4 +7,5 @@
 in {
   sss = sss.packages.default;
   sssCode = sss.packages.code;
+  sssLauncher = sss.packages.launcher;
 }

@@ -1,0 +1,34 @@
+[package]
+name = "launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "sss_launcher"
+path = "./src/main.rs"
+
+[package.metadata.dist]
+dist = true
+
+[package.metadata.wix]
+upgrade-guid = "A9D922F2-0C2C-41AB-B43F-16F19A5C55CF"
+path-guid = "39EDE989-BE79-4232-B121-0EB8AAE2B5FE"
+license = false
+eula = false
+
+[dependencies]
+clap.workspace = true
+toml.workspace = true
+serde.workspace = true
+merge2.workspace = true
+directories.workspace = true
+display-info = "0.4.8"
+iced = { version = "0.12.0", default-features = false, features = ["svg"] }
+tiny-skia = { version = "0.11.4", default-features = false, features = [
+    "png",
+    "std",
+] }
