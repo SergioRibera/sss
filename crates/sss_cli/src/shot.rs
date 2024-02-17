@@ -261,9 +261,7 @@ impl ShotImpl {
         #[cfg(not(target_os = "linux"))]
         return Err("No Context loaded".to_string());
 
-        let Some(screen_name) = name else {
-            return Err("No name set".to_string());
-        };
+        let screen_name = name.unwrap_or_default();
 
         #[cfg(target_os = "linux")]
         self.wayland

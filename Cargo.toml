@@ -36,12 +36,15 @@ merge2 = "0.3.0"
 env_logger = "0.10.0"
 directories = "5.0.1"
 clap = { version = "4.4.8", features = [
-	"derive",
-	"color",
-	"env",
-	"suggestions",
-	"wrap_help",
+    "derive",
+    "color",
+    "env",
+    "suggestions",
+    "wrap_help",
 ] }
+
+[patch.crates-io]
+mouse_position = { git = "https://github.com/SergioRibera/mouse_position", branch = "compositors_protocols" }
 
 # Config for 'cargo dist'
 [workspace.metadata.dist]
@@ -55,10 +58,10 @@ installers = ["shell", "powershell", "homebrew", "msi"]
 tap = "SergioRibera/homebrew-tap"
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [
-	"x86_64-unknown-linux-gnu",
-	"aarch64-apple-darwin",
-	"x86_64-apple-darwin",
-	"x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
 ]
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]

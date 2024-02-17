@@ -1551,10 +1551,10 @@ dependencies = [
 [[package]]
 name = "mouse_position"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffd272ac3ad817af3d158eecd4d4ba6f92a1fa5f7255e3c0d63b72d4dac12edd"
+source = "git+https://github.com/SergioRibera/mouse_position?branch=compositors_protocols#d17b901b0d39885708b4b6b42c4caed8f799e914"
 dependencies = [
- "core-graphics 0.22.3",
+ "core-graphics 0.23.1",
+ "thiserror",
  "winapi",
  "x11-dl",
 ]
