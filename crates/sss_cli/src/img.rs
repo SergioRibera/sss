@@ -1,5 +1,4 @@
 use mouse_position::{Mouse, MouseExt};
-use screenshots::display_info::DisplayInfo;
 use sss_lib::DynImageContent;
 
 use crate::config::CliConfig;
