@@ -103,7 +103,7 @@ in
         position = mkOption {
           type = types.enum [ "left" "top" "right" "bottom" ];
           default = "bottom";
-          description = "Command to be executed at launcher startup (useful to run applications like satty)";
+          description = "Location for the launcher panel";
         };
         pre-command = mkOption {
           type = types.str;

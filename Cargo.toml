@@ -1,5 +1,5 @@
 [workspace.package]
-name = "Super ScreenShot"
+name = "Super-ScreenShot"
 version = "0.0.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"

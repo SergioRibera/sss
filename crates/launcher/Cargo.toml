@@ -27,7 +27,10 @@ serde.workspace = true
 merge2.workspace = true
 directories.workspace = true
 display-info = "0.4.8"
-iced = { version = "0.12.0", default-features = false, features = ["svg"] }
+iced = { version = "0.12.0", default-features = false, features = [
+    "svg",
+    "multi-window",
+] }
 tiny-skia = { version = "0.11.4", default-features = false, features = [
     "png",
     "std",

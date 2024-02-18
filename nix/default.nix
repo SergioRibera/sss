@@ -40,11 +40,25 @@ in
       fontconfig.dev
       libxkbcommon.dev
       xorg.libxcb
+      # libwayland
+      # libgbm
+      # libseat
+      # libudev
+      wayland
+      wayland.dev
+      wayland-protocols
+      xorg.libX11
+      xorg.libXcursor
+      xorg.libXrandr
+      xorg.libXi
     ];
 
     # Base args, need for build all crate artifacts and caching this for late builds
     commonArgs = {
-      src = ./..;
+      src = lib.cleanSourceWith {
+        src = craneLib.path ./..;
+        filter = craneLib.filterCargoSources;
+      };
       doCheck = false;
       nativeBuildInputs =
         [pkgs.pkg-config]
@@ -52,12 +66,9 @@ in
           pkgs.libiconv
         ] ++ lib.optionals stdenv.buildPlatform.isLinux [
           pkgs.libxkbcommon.dev
-          pkgs.xorg.libxcb
-          pkgs.xorg.libX11
-          pkgs.xorg.libXcursor
-          pkgs.xorg.libXrandr
-          pkgs.xorg.libXi
         ];
+      runtimeDependencies = lib.optionals stdenv.isLinux [
+      ];
       inherit buildInputs;
     };
 
