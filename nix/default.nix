@@ -40,17 +40,35 @@ in
       fontconfig.dev
       libxkbcommon.dev
       xorg.libxcb
+      # libwayland
+      # libgbm
+      # libseat
+      # libudev
+      wayland
+      wayland.dev
+      wayland-protocols
+      xorg.libX11
+      xorg.libXcursor
+      xorg.libXrandr
+      xorg.libXi
     ];
 
     # Base args, need for build all crate artifacts and caching this for late builds
     commonArgs = {
-      src = ./..;
+      src = lib.cleanSourceWith {
+        src = craneLib.path ./..;
+        filter = craneLib.filterCargoSources;
+      };
       doCheck = false;
       nativeBuildInputs =
         [pkgs.pkg-config]
         ++ lib.optionals stdenv.buildPlatform.isDarwin [
           pkgs.libiconv
+        ] ++ lib.optionals stdenv.buildPlatform.isLinux [
+          pkgs.libxkbcommon.dev
         ];
+      runtimeDependencies = lib.optionals stdenv.isLinux [
+      ];
       inherit buildInputs;
     };
 
@@ -71,17 +89,20 @@ in
     # Build packages and `nix run` apps
     sss = cranixLib.buildCranixBundle (packageArgs "sss");
     sssCode = cranixLib.buildCranixBundle (packageArgs "sss_code");
+    sssLauncher = cranixLib.buildCranixBundle (packageArgs "sss_launcher");
   in {
     # `nix run`
     apps = rec {
       code = sssCode.app;
       cli = sss.app;
+      launcher = sssLauncher.app;
       default = cli;
     };
     # `nix build`
     packages = rec {
       code = sssCode.pkg;
       cli = sss.pkg;
+      launcher = sssLauncher.pkg;
       default = cli;
     };
     # `nix develop`
@@ -89,7 +110,6 @@ in
       packages = with pkgs;
         [
           toolchain
-          pkg-config
           oranda
           cargo-dist
           cargo-release

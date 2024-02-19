@@ -14,6 +14,7 @@ with lib; let
     system = pkgs.system;
   };
   cfgSSS = config.programs.sss;
+  cfgLauncher = config.programs.launcher;
   tomlFormat = pkgs.formats.toml { };
   configDir =
     if pkgs.stdenv.isDarwin
@@ -96,6 +97,35 @@ in
           };
         };
       };
+    launcher =
+      {
+        enable = mkEnableOption "gui launcher of sss";
+        position = mkOption {
+          type = types.enum [ "left" "top" "right" "bottom" ];
+          default = "bottom";
+          description = "Location for the launcher panel";
+        };
+        pre-command = mkOption {
+          type = types.str;
+          default = "";
+          description = "Command to be executed at launcher startup (useful to run applications like satty)";
+        };
+        area-command = mkOption {
+          type = types.str;
+          default = "sss --area \"$(slurp -d)\"";
+          description = "Command to launch sss";
+        };
+        screen-command = mkOption {
+          type = types.str;
+          default = "sss --screen --current";
+          description = "Command to launch sss";
+        };
+        all-command = mkOption {
+          type = types.str;
+          default = "sss --screen";
+          description = "Command to launch sss";
+        };
+      };
   };
 
   config = mkIf cfgSSS.enable {
@@ -104,6 +134,10 @@ in
     home.file."${configDir}/sss/config.toml" = mkIf cfgSSS.enable {
       source =
         tomlFormat.generate "config.toml" (filterConfig cfgSSS);
+    };
+    home.file."${configDir}/sss/launcher.toml" = mkIf cfgLauncher.enable {
+      source =
+        tomlFormat.generate "launcher.toml" (filterConfig cfgLauncher);
     };
   };
 }
