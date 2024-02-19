@@ -42,7 +42,6 @@ in
       libxkbcommon.dev
       xorg.libxcb
       wayland
-      wayland.dev
       wayland-protocols
       xorg.libX11
       xorg.libXcursor
@@ -51,44 +50,45 @@ in
     ];
 
     # Base args, need for build all crate artifacts and caching this for late builds
-    commonArgs = {
-      src = lib.cleanSourceWith {
-        src = craneLib.path ./..;
-        filter = craneLib.filterCargoSources;
-      };
-      doCheck = false;
-      nativeBuildInputs =
-        [pkgs.pkg-config pkgs.autoPatchelfHook]
+    deps = {
+      nativeBuildInputs = with pkgs;
+        [
+          pkg-config
+          autoPatchelfHook
+        ]
         ++ lib.optionals stdenv.buildPlatform.isDarwin [
           pkgs.libiconv
         ]
         ++ lib.optionals stdenv.buildPlatform.isLinux [
           pkgs.libxkbcommon.dev
         ];
-      runtimeDependencies = lib.optionals stdenv.isLinux [
-        pkgs.wayland
-      ];
+      runtimeDependencies = with pkgs;
+        lib.optionals stdenv.isLinux [
+          wayland
+          libxkbcommon
+        ];
       inherit buildInputs;
     };
 
-    # sss artifacts
-    sssDeps = cranixLib.buildCranixDepsOnly commonArgs;
-
     # Lambda for build packages with cached artifacts
-    packageArgs = targetName:
-      commonArgs
+    commonArgs = targetName:
+      deps
       // {
+        src = lib.cleanSourceWith {
+          src = craneLib.path ./..;
+          filter = craneLib.filterCargoSources;
+        };
+        doCheck = false;
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "${stdenv.cc.targetPrefix}cc";
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER = "qemu-aarch64";
         HOST_CC = "${stdenv.cc.nativePrefix}cc";
-        cargoArtifacts = sssDeps;
         workspaceTargetName = targetName;
       };
 
     # Build packages and `nix run` apps
-    sss = cranixLib.buildCranixBundle (packageArgs "sss");
-    sssCode = cranixLib.buildCranixBundle (packageArgs "sss_code");
-    sssLauncher = cranixLib.buildCranixBundle (packageArgs "sss_launcher");
+    sss = cranixLib.buildCranixBundle (commonArgs "sss");
+    sssCode = cranixLib.buildCranixBundle (commonArgs "sss_code");
+    sssLauncher = cranixLib.buildCranixBundle (commonArgs "sss_launcher");
   in {
     # `nix run`
     apps = rec {
