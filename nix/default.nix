@@ -37,13 +37,10 @@ in
 
     # buildInputs for SSS
     buildInputs = with pkgs; [
+      stdenv.cc.cc.lib
       fontconfig.dev
       libxkbcommon.dev
       xorg.libxcb
-      # libwayland
-      # libgbm
-      # libseat
-      # libudev
       wayland
       wayland.dev
       wayland-protocols
@@ -61,13 +58,15 @@ in
       };
       doCheck = false;
       nativeBuildInputs =
-        [pkgs.pkg-config]
+        [pkgs.pkg-config pkgs.autoPatchelfHook]
         ++ lib.optionals stdenv.buildPlatform.isDarwin [
           pkgs.libiconv
-        ] ++ lib.optionals stdenv.buildPlatform.isLinux [
+        ]
+        ++ lib.optionals stdenv.buildPlatform.isLinux [
           pkgs.libxkbcommon.dev
         ];
       runtimeDependencies = lib.optionals stdenv.isLinux [
+        pkgs.wayland
       ];
       inherit buildInputs;
     };
