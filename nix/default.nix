@@ -67,6 +67,8 @@ in
           wayland
           libxkbcommon
         ];
+      runtimeDependencies = lib.optionals stdenv.isLinux [
+      ];
       inherit buildInputs;
     };
 
