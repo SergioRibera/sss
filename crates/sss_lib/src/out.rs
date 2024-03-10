@@ -36,7 +36,7 @@ pub fn make_output(
                     )
                     .show()
                     .unwrap();
-                #[cfg(not(unix))]
+                #[cfg(all(target_os = "macos", target_os = "windows"))]
                 Notification::new()
                     .summary("Image generated")
                     .body(&format!("Image stored in {output}"))

@@ -124,11 +124,10 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
     if settings.copy {
         let mut c = arboard::Clipboard::new().unwrap();
 
-        let mut set = c.set();
         #[cfg(target_os = "linux")]
-        {
-            set = set.clipboard(arboard::LinuxClipboardKind::Clipboard).wait();
-        }
+        let set = c.set().clipboard(arboard::LinuxClipboardKind::Clipboard).wait();
+        #[cfg(not(target_os = "linux"))]
+        let set = c.set();
         set.image(arboard::ImageData {
             width: img.width() as usize,
             height: img.height() as usize,
