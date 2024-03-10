@@ -125,7 +125,10 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
         let mut c = arboard::Clipboard::new().unwrap();
 
         #[cfg(target_os = "linux")]
-        let set = c.set().clipboard(arboard::LinuxClipboardKind::Clipboard).wait();
+        let set = c
+            .set()
+            .clipboard(arboard::LinuxClipboardKind::Clipboard)
+            .wait();
         #[cfg(not(target_os = "linux"))]
         let set = c.set();
         set.image(arboard::ImageData {
