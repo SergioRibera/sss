@@ -1,6 +1,6 @@
 [workspace.package]
 name = "Super ScreenShot"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["SergioRibera"]
@@ -49,7 +49,7 @@ mouse_position = { git = "https://github.com/SergioRibera/mouse_position", branc
 # Config for 'cargo dist'
 [workspace.metadata.dist]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.5.0"
+cargo-dist-version = "0.7.2"
 # CI backends to support
 ci = ["github"]
 # The installers to generate for each app
