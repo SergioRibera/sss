@@ -81,6 +81,25 @@ pub struct CodeConfig {
     pub tab_width: Option<u8>,
 }
 
+impl Default for CodeConfig {
+    fn default() -> Self {
+        Self {
+            content: None,
+            theme: Some("base16-ocean.dark".to_string()),
+            vim_theme: None,
+            list_file_types: false,
+            list_themes: false,
+            extra_syntaxes: None,
+            extension: None,
+            code_background: Some("#323232".to_string()),
+            lines: Some(Range { start: 0, end: usize::MAX }),
+            highlight_lines: Some(Range { start: 0, end: usize::MAX }),
+            line_numbers: true,
+            tab_width: Some(4),
+        }
+    }
+}
+
 pub fn get_config() -> (CodeConfig, sss_lib::GenerationSettings) {
     let mut args = ClapConfig::parse();
 
@@ -102,10 +121,10 @@ pub fn get_config() -> (CodeConfig, sss_lib::GenerationSettings) {
         // println!("Merging from config file");
         let mut config: ClapConfig = toml::from_str(&cfg_content).unwrap();
         config.merge(&mut args);
-        return (config.code.unwrap(), config.lib_config.into());
+        return (config.code.unwrap_or_default(), config.lib_config.into());
     }
     let config = ClapConfig::parse();
-    (config.code.unwrap(), config.lib_config.into())
+    (config.code.unwrap_or_default(), config.lib_config.into())
 }
 
 fn parse_range(s: &str) -> Result<Range<usize>, CodeScreenshotError> {

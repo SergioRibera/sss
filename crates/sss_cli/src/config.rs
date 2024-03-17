@@ -23,7 +23,7 @@ struct ClapConfig {
     pub lib_config: sss_lib::GenerationSettingsArgs,
 }
 
-#[derive(Clone, Debug, Deserialize, Merge, Parser, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Merge, Parser, Serialize)]
 pub struct CliConfig {
     #[clap(
         long,
@@ -69,8 +69,8 @@ pub fn get_config() -> (CliConfig, sss_lib::GenerationSettings) {
         // println!("Merging from config file");
         let mut config: ClapConfig = toml::from_str(&cfg_content).unwrap();
         config.merge(&mut args);
-        return (config.cli.unwrap(), config.lib_config.into());
+        return (config.cli.unwrap_or_default(), config.lib_config.into());
     }
     let config = ClapConfig::parse();
-    (config.cli.unwrap(), config.lib_config.into())
+    (config.cli.unwrap_or_default(), config.lib_config.into())
 }
