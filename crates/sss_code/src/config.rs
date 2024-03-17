@@ -31,6 +31,10 @@ pub struct CodeConfig {
     #[serde(skip)]
     #[merge(skip)]
     pub content: Option<FileOrStdin<String>>,
+    #[clap(long, help = "Generate cache of theme and/or syntaxes")]
+    #[serde(skip)]
+    #[merge(skip)]
+    pub build_cache: Option<PathBuf>,
     #[clap(
         long,
         short,
@@ -44,7 +48,7 @@ pub struct CodeConfig {
     )]
     pub vim_theme: Option<String>,
     // Setting synctect
-    #[clap(long, short = 'l', help = "Lists supported file types")]
+    #[clap(long, short = 'l', conflicts_with="list_themes", help = "Lists supported file types")]
     #[merge(strategy = overwrite_false)]
     #[serde(skip)]
     pub list_file_types: bool,
@@ -85,6 +89,7 @@ impl Default for CodeConfig {
     fn default() -> Self {
         Self {
             content: None,
+            build_cache: None,
             theme: Some("base16-ocean.dark".to_string()),
             vim_theme: None,
             list_file_types: false,
@@ -123,8 +128,7 @@ pub fn get_config() -> (CodeConfig, sss_lib::GenerationSettings) {
         config.merge(&mut args);
         return (config.code.unwrap_or_default(), config.lib_config.into());
     }
-    let config = ClapConfig::parse();
-    (config.code.unwrap_or_default(), config.lib_config.into())
+    (args.code.unwrap_or_default(), args.lib_config.into())
 }
 
 fn parse_range(s: &str) -> Result<Range<usize>, CodeScreenshotError> {

@@ -1,5 +1,6 @@
 #![allow(clippy::expect_fun_call)]
 use std::borrow::Cow;
+use std::path::PathBuf;
 
 use sss_code::config::get_config;
 use sss_code::ImageCode;
@@ -8,16 +9,38 @@ use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
+const DEFAULT_SYNTAXSET: &[u8] = include_bytes!("../../../assets/syntaxes.bin");
+const DEFAULT_THEMESET: &[u8] = include_bytes!("../../../assets/themes.bin");
+
 fn main() {
     let (config, mut g_config) = get_config();
 
-    let mut ss = SyntaxSet::load_defaults_newlines();
-    let themes = ThemeSet::load_defaults();
+    let cache_path = directories::BaseDirs::new()
+        .unwrap()
+        .cache_dir()
+        .join("sss");
+
+    let mut ss: SyntaxSet =
+        if let Ok(ss) = syntect::dumps::from_dump_file(cache_path.join("syntaxes.bin")) {
+            ss
+        } else {
+            syntect::dumps::from_binary(DEFAULT_SYNTAXSET)
+        };
+    let mut themes: ThemeSet =
+        if let Ok(ts) = syntect::dumps::from_dump_file(cache_path.join("themes.bin")) {
+            ts
+        } else {
+            syntect::dumps::from_binary(DEFAULT_THEMESET)
+        };
 
     if let Some(dir) = &config.extra_syntaxes {
         let mut builder = ss.into_builder();
-        builder.add_from_folder(dir, true).unwrap();
+        builder
+            .add_from_folder(dir, true)
+            .expect("Cannot add syntax from folder");
         ss = builder.build();
+        syntect::dumps::dump_to_file(&ss, cache_path.join("syntaxes.bin"))
+            .expect("Cannot dump syntaxes to file");
     }
 
     if config.list_themes {
@@ -30,7 +53,32 @@ fn main() {
         return;
     }
 
-    let content = config.content.clone().unwrap().contents().unwrap();
+    // build cache of themes or syntaxes
+    if let Some(from) = config.build_cache.as_ref() {
+        let to = PathBuf::from(&g_config.output);
+
+        themes
+            .add_from_folder(from.join("themes"))
+            .expect("Cannot add themes from current folder");
+        let mut builder = ss.clone().into_builder();
+        builder
+            .add_from_folder(from.join("syntaxes"), true)
+            .expect("Cannot add syntaxes from current folder");
+        ss = builder.build();
+
+        syntect::dumps::dump_to_file(&themes, to.join("themes.bin"))
+            .expect("Cannot dump themes to file");
+        syntect::dumps::dump_to_file(&ss, to.join("syntaxes.bin"))
+            .expect("Cannot dump syntaxes to file");
+        std::process::exit(0);
+    }
+
+    let content = config
+        .content
+        .clone()
+        .expect("Cannot get content from args")
+        .contents()
+        .expect("Cannot get content to render");
     let syntax = if let Some(ext) = &config.extension {
         ss.find_syntax_by_extension(ext)
             .expect(&format!("Extension not found: {ext}"))
