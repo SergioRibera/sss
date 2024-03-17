@@ -39,17 +39,9 @@ impl<'a> ImageCode<'a> {
     }
 
     /// calculate the Y coordinate of a line
-    fn get_line_y(&self, lineno: u32) -> u32 {
-        lineno * self.get_line_height()
-            + CODE_PADDING
-            + if self.lib_config.window_controls.enable
-                || self.lib_config.window_controls.title.is_some()
-            {
-                self.lib_config.window_controls.height
-                    + self.lib_config.window_controls.title_padding
-            } else {
-                0
-            }
+    fn get_line_y(&self, lineno: u32, max_h: u32) -> u32 {
+        (lineno * self.get_line_height())
+            + max_h
     }
 
     /// Calculate where code start
@@ -74,8 +66,9 @@ impl<'a> ImageCode<'a> {
         tab: &str,
         tokens: &[(Style, &str)],
         max_width: &mut u32,
+        max_h: u32,
     ) -> Vec<Drawable> {
-        let height = self.get_line_y(n as u32);
+        let height = self.get_line_y(n as u32, max_h);
         let mut width = self.get_left_pad(max_lineno);
         let mut drawables = Vec::new();
 
@@ -108,6 +101,7 @@ impl<'a> ImageCode<'a> {
         lines: Range<usize>,
         line_hi: Range<usize>,
         lineno: u32,
+        max_h: u32,
         mut color: Rgba<u8>,
     ) {
         for i in color.0.iter_mut() {
@@ -132,7 +126,7 @@ impl<'a> ImageCode<'a> {
                     no_hi_color
                 },
                 CODE_PADDING,
-                self.get_line_y(i as u32),
+                self.get_line_y(i as u32, max_h),
                 FontStyle::Regular,
                 &line_mumber,
             );
@@ -184,6 +178,13 @@ impl<'a> DynImageContent for ImageCode<'a> {
             })
             .unwrap_or_default();
         let max_lineno = line_range.len() as u32;
+        let max_h_controls = if self.lib_config.window_controls.enable
+            || self.lib_config.window_controls.title.is_some()
+        {
+            LINE_SPACE
+        } else {
+            CODE_PADDING
+        };
 
         for (n, line) in lines[line_range.clone()].iter().enumerate() {
             let line = h.highlight_line(line, self.syntax_set).unwrap();
@@ -194,12 +195,13 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 &tab,
                 &line,
                 &mut max_width,
+                max_h_controls,
             ));
         }
 
         let size = (
             max_width + CODE_PADDING,
-            self.get_line_y(max_lineno) + CODE_PADDING,
+            self.get_line_y(max_lineno, max_h_controls) + CODE_PADDING,
         );
 
         let mut img = background.to_image(size.0, size.1);
@@ -211,6 +213,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 line_range,
                 line_hi,
                 max_lineno,
+                max_h_controls,
                 color_to_rgba(foreground),
             );
         }
