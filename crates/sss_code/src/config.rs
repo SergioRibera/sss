@@ -48,7 +48,12 @@ pub struct CodeConfig {
     )]
     pub vim_theme: Option<String>,
     // Setting synctect
-    #[clap(long, short = 'l', conflicts_with="list_themes", help = "Lists supported file types")]
+    #[clap(
+        long,
+        short = 'l',
+        conflicts_with = "list_themes",
+        help = "Lists supported file types"
+    )]
     #[merge(strategy = overwrite_false)]
     #[serde(skip)]
     pub list_file_types: bool,
@@ -97,8 +102,14 @@ impl Default for CodeConfig {
             extra_syntaxes: None,
             extension: None,
             code_background: Some("#323232".to_string()),
-            lines: Some(Range { start: 0, end: usize::MAX }),
-            highlight_lines: Some(Range { start: 0, end: usize::MAX }),
+            lines: Some(Range {
+                start: 0,
+                end: usize::MAX,
+            }),
+            highlight_lines: Some(Range {
+                start: 0,
+                end: usize::MAX,
+            }),
             line_numbers: true,
             tab_width: Some(4),
         }
