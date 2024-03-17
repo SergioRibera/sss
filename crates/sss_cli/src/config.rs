@@ -71,6 +71,5 @@ pub fn get_config() -> (CliConfig, sss_lib::GenerationSettings) {
         config.merge(&mut args);
         return (config.cli.unwrap_or_default(), config.lib_config.into());
     }
-    let config = ClapConfig::parse();
-    (config.cli.unwrap_or_default(), config.lib_config.into())
+    (args.cli.unwrap_or_default(), args.lib_config.into())
 }
