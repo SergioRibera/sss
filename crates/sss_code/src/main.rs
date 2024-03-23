@@ -98,7 +98,7 @@ fn main() {
             .themes
             .get(&theme)
             .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(load_theme(&theme, true)))
+            .unwrap_or_else(|| Cow::Owned(load_theme(&theme, false)))
     };
 
     if theme.settings.background.is_some()

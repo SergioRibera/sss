@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use clap_stdin::FileOrStdin;
-use merge2::{bool::overwrite_false, Merge};
+use merge2::{bool::overwrite_false, option::recursive, Merge};
 use serde::{Deserialize, Serialize};
 use sss_lib::{default_bool, swap_option};
 
@@ -17,7 +17,7 @@ struct ClapConfig {
     #[merge(skip)]
     config: Option<PathBuf>,
     #[clap(flatten)]
-    #[merge(strategy = swap_option)]
+    #[merge(strategy = recursive)]
     pub code: Option<CodeConfig>,
     // lib configs
     #[clap(flatten)]
@@ -29,23 +29,24 @@ struct ClapConfig {
 pub struct CodeConfig {
     #[clap(help = "Content to take screenshot. It accepts stdin or File")]
     #[serde(skip)]
-    #[merge(skip)]
+    #[merge(strategy = swap_option)]
     pub content: Option<FileOrStdin<String>>,
     #[clap(long, help = "Generate cache of theme and/or syntaxes")]
     #[serde(skip)]
-    #[merge(skip)]
+    #[merge(strategy = swap_option)]
     pub build_cache: Option<PathBuf>,
     #[clap(
         long,
         short,
-        default_value = "base16-ocean.dark",
         help = "Theme file to use. May be a path, or an embedded theme. Embedded themes will take precendence."
     )]
+    #[merge(strategy = swap_option)]
     pub theme: Option<String>,
     #[clap(
         long,
         help = "[Not recommended for manual use] Set theme from vim highlights, format: group,bg,fg,style;group,bg,fg,style;"
     )]
+    #[merge(strategy = swap_option)]
     pub vim_theme: Option<String>,
     // Setting synctect
     #[clap(
@@ -65,6 +66,7 @@ pub struct CodeConfig {
         long,
         help = "Additional folder to search for .sublime-syntax files in"
     )]
+    #[merge(strategy = swap_option)]
     pub extra_syntaxes: Option<String>,
     #[clap(long, short, help = "Set the extension of language input")]
     #[serde(skip)]
@@ -86,7 +88,8 @@ pub struct CodeConfig {
     #[merge(strategy = overwrite_false)]
     #[serde(default = "default_bool")]
     pub line_numbers: bool,
-    #[clap(long, default_value = "4", help = "Tab width")]
+    #[clap(long, help = "Tab width")]
+    #[merge(strategy = swap_option)]
     pub tab_width: Option<u8>,
 }
 

@@ -24,11 +24,12 @@ pub fn load_theme(tm_file: &str, enable_caching: bool) -> Theme {
         if tm_cache.exists() {
             from_dump_file(tm_cache).unwrap()
         } else {
-            let theme = ThemeSet::get_theme(tm_path).unwrap();
+            let theme =
+                ThemeSet::get_theme(tm_path).expect(&format!("Theme {tm_path:?} not found"));
             dump_to_file(&theme, tm_cache).unwrap();
             theme
         }
     } else {
-        ThemeSet::get_theme(tm_path).unwrap()
+        ThemeSet::get_theme(tm_path).expect(&format!("Theme {tm_path:?} not found"))
     }
 }

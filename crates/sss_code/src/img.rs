@@ -157,7 +157,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 .background
                 .map(|b| Background::Solid(Rgba([b.r, b.g, b.b, b.a]))))
             .unwrap();
-        let tab = " ".repeat(self.config.tab_width.unwrap() as usize);
+        let tab = " ".repeat(self.config.tab_width.unwrap_or(4) as usize);
         let lines = self.content.split('\n').collect::<Vec<&str>>();
         let line_range = self
             .config

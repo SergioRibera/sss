@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use merge2::{bool::overwrite_false, Merge};
+use merge2::{bool::overwrite_false, option::recursive, Merge};
 use serde::{Deserialize, Serialize};
 use sss_lib::{default_bool, swap_option};
 
@@ -15,7 +15,7 @@ struct ClapConfig {
     #[merge(skip)]
     config: Option<PathBuf>,
     #[clap(flatten)]
-    #[merge(strategy = swap_option)]
+    #[merge(strategy = recursive)]
     pub cli: Option<CliConfig>,
     // lib configs
     #[clap(flatten)]
