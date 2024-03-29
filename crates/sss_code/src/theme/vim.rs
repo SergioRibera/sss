@@ -49,7 +49,7 @@ pub fn theme_from_vim(vim: &str) -> Theme {
     let &(fg_bad, _, _) = values.get("SpellBad").unwrap();
     let &(fg_tag, _, _) = values.get("Title").unwrap();
     let (fg_brk, bg_brk, s_brk) = values.get("MatchParen").unwrap();
-    let &(fg_ibl, _, _) = values.get("IdentBlanklineChar").unwrap();
+    let &(fg_ibl, _, _) = values.get("IndentBlanklineChar").unwrap();
 
     Theme {
         scopes,
