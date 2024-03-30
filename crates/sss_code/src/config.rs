@@ -163,7 +163,6 @@ fn parse_range(s: &str) -> Result<Range<usize>, CodeScreenshotError> {
         end_str
             .replace(other, "")
             .parse::<usize>()
-            .map(|s| s + 1)
             .unwrap_or(usize::MAX),
     );
 
