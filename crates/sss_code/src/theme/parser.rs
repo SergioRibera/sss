@@ -16,7 +16,7 @@ pub fn parse_vim(vim: &str) -> HashMap<&str, VimHighlight> {
             let style = values
                 .next()
                 .and_then(|v| (!v.is_empty()).then_some(v.to_string()));
-            (name, (bg, fg, style))
+            (name, (fg, bg, style))
         })
         .collect::<HashMap<&str, VimHighlight>>()
 }
@@ -27,18 +27,18 @@ const VIM_NAMES: [(&str, &str); 19] = [
     ("String", "string"),
     ("Constant", "constant"),
     ("Identifier", "variable"),
-    ("Keyword", "keyword"),
+    ("Keyword", "keyword, storage"),
     ("Comment", "comment"),
     ("Operator", "keyword.operator, operator"),
     ("Statement", "variable.parameter.function"),
-    ("Type", "entity.name.class, meta.class, support.class, type, typeParameter, entity.type.name, entity.name.type, meta.type.name, storage"),
+    ("Type", "entity.name.class, meta.class, support.class, type, typeParameter, entity.type.name, entity.name.type, meta.type.name"),
     ("Structure", "enum, struct"),
-    ("StorageClass", "storage"),
+    ("StorageClass", "support"),
     ("Function", "entity.name.function, support.function, function"),
     ("Macro", "macro, entity.name.function.macro"),
     ("TSField", "property"),
     ("TSParameter", "parameter"),
-    ("parens", "brace"),
+    ("Delimiter", "brace"),
     ("Conditional", "conditional, keyword.conditional, keyword.control.conditional"),
     ("MyTag", "brackethighlighter.tag, brackethighlighter.angle, brackethighlighter.round, brackethighlighter.square"),
 ];

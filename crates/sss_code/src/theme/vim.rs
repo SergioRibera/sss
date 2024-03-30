@@ -54,8 +54,8 @@ pub fn theme_from_vim(vim: &str) -> Theme {
     Theme {
         scopes,
         settings: ThemeSettings {
-            foreground: fg_n,
-            background: bg_n,
+            foreground: fg_n.or(Some(syntect::highlighting::Color::WHITE)),
+            background: bg_n.or(Some(syntect::highlighting::Color::BLACK)),
             caret: bg_cur,
             line_highlight: bg_cur_line,
             misspelling: fg_bad,
