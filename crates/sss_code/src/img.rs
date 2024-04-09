@@ -40,8 +40,7 @@ impl<'a> ImageCode<'a> {
 
     /// calculate the Y coordinate of a line
     fn get_line_y(&self, lineno: u32, max_h: u32) -> u32 {
-        (lineno * self.get_line_height())
-            + max_h
+        (lineno * self.get_line_height()) + max_h
     }
 
     /// Calculate where code start
