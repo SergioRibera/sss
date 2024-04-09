@@ -2671,7 +2671,7 @@ dependencies = [
 
 [[package]]
 name = "sss_code"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "clap",
  "clap-stdin",
