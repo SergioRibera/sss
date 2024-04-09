@@ -397,9 +397,9 @@ dependencies = [
 
 [[package]]
 name = "built"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38d17f4d6e4dc36d1a02fbedc2753a096848e7c1b0772f7654eab8e2c927dd53"
+checksum = "41bfbdb21256b87a8b5e80fab81a8eed158178e812fd7ba451907518b2742f16"
 
 [[package]]
 name = "bumpalo"
@@ -1691,7 +1691,7 @@ dependencies = [
 [[package]]
 name = "mouse_position"
 version = "0.1.3"
-source = "git+https://github.com/SergioRibera/mouse_position?branch=compositors_protocols#7eb7c939102d397612ca33c35a349974d8714a79"
+source = "git+https://github.com/SergioRibera/mouse_position?branch=compositors_protocols#11b753a3eeab4d7800a3df57287093ec2b5716c5"
 dependencies = [
  "core-graphics 0.23.2",
  "thiserror",
