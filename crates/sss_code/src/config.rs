@@ -7,7 +7,7 @@ use merge2::{bool::overwrite_false, option::recursive, Merge};
 use serde::{Deserialize, Serialize};
 use sss_lib::{default_bool, swap_option};
 
-use crate::error::CodeScreenshotError;
+use crate::error::{CodeScreenshot as CodeScreenshotError, Configuration as ConfigurationError};
 
 #[derive(Clone, Debug, Deserialize, Merge, Parser, Serialize)]
 #[clap(author, version, about)]
@@ -119,14 +119,14 @@ impl Default for CodeConfig {
     }
 }
 
-pub fn get_config() -> (CodeConfig, sss_lib::GenerationSettings) {
+pub fn get_config() -> Result<(CodeConfig, sss_lib::GenerationSettings), ConfigurationError> {
     let mut args = ClapConfig::parse();
 
     let config_path = if let Some(path) = args.config.as_ref() {
         path.clone()
     } else {
         let config_path = directories::BaseDirs::new()
-            .unwrap()
+            .ok_or(ConfigurationError::InvalidHome)?
             .config_dir()
             .join("sss");
 
@@ -138,11 +138,11 @@ pub fn get_config() -> (CodeConfig, sss_lib::GenerationSettings) {
 
     if let Ok(cfg_content) = std::fs::read_to_string(config_path) {
         // println!("Merging from config file");
-        let mut config: ClapConfig = toml::from_str(&cfg_content).unwrap();
+        let mut config: ClapConfig = toml::from_str(&cfg_content)?;
         config.merge(&mut args);
-        return (config.code.unwrap_or_default(), config.lib_config.into());
+        return Ok((config.code.unwrap_or_default(), config.lib_config.into()));
     }
-    (args.code.unwrap_or_default(), args.lib_config.into())
+    Ok((args.code.unwrap_or_default(), args.lib_config.into()))
 }
 
 fn parse_range(s: &str) -> Result<Range<usize>, CodeScreenshotError> {
