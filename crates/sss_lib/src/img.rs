@@ -77,7 +77,7 @@ pub fn generate_image(
             settings.window_controls.height,
             settings.window_controls.title_padding,
             settings.window_controls.width / 3 / 4,
-        );
+        )?;
     }
 
     if let Some(title) = settings.window_controls.title.as_ref() {
@@ -90,7 +90,7 @@ pub fn generate_image(
             settings.window_controls.enable,
             settings.window_controls.width,
             settings.window_controls.height,
-        );
+        )?;
     }
 
     if show_winbar {
@@ -121,7 +121,7 @@ pub fn generate_image(
             h - p_y / 2,
             FontStyle::Bold,
             &author,
-        );
+        )?;
     }
 
     if settings.copy {
