@@ -3,8 +3,10 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use sss_code::config::get_config;
+use sss_code::error::{CodeScreenshot, Configuration as ConfigurationError};
 use sss_code::ImageCode;
 use sss_code::{list_themes, load_theme, theme_from_vim};
+use sss_lib::error::PrettyErrorWrapper;
 use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -12,7 +14,7 @@ use syntect::parsing::SyntaxSet;
 const DEFAULT_SYNTAXSET: &[u8] = include_bytes!("../../../assets/syntaxes.bin");
 const DEFAULT_THEMESET: &[u8] = include_bytes!("../../../assets/themes.bin");
 
-fn main() -> Result<(), sss_lib::error::PrettyErrorWrapper<sss_code::error::CodeScreenshot>> {
+fn main() -> Result<(), PrettyErrorWrapper<CodeScreenshot>> {
     let (config, mut g_config) = get_config()?;
 
     let cache_path = directories::BaseDirs::new()
@@ -35,12 +37,9 @@ fn main() -> Result<(), sss_lib::error::PrettyErrorWrapper<sss_code::error::Code
 
     if let Some(dir) = &config.extra_syntaxes {
         let mut builder = ss.into_builder();
-        builder
-            .add_from_folder(dir, true)
-            .expect("Cannot add syntax from folder");
+        builder.add_from_folder(dir, true)?;
         ss = builder.build();
-        syntect::dumps::dump_to_file(&ss, cache_path.join("syntaxes.bin"))
-            .expect("Cannot dump syntaxes to file");
+        syntect::dumps::dump_to_file(&ss, cache_path.join("syntaxes.bin"))?;
     }
 
     if config.list_themes {
@@ -57,19 +56,13 @@ fn main() -> Result<(), sss_lib::error::PrettyErrorWrapper<sss_code::error::Code
     if let Some(from) = config.build_cache.as_ref() {
         let to = PathBuf::from(&g_config.output);
 
-        themes
-            .add_from_folder(from.join("themes"))
-            .expect("Cannot add themes from current folder");
+        themes.add_from_folder(from.join("themes"))?;
         let mut builder = ss.clone().into_builder();
-        builder
-            .add_from_folder(from.join("syntaxes"), true)
-            .expect("Cannot add syntaxes from current folder");
+        builder.add_from_folder(from.join("syntaxes"), true)?;
         ss = builder.build();
 
-        syntect::dumps::dump_to_file(&themes, to.join("themes.bin"))
-            .expect("Cannot dump themes to file");
-        syntect::dumps::dump_to_file(&ss, to.join("syntaxes.bin"))
-            .expect("Cannot dump syntaxes to file");
+        syntect::dumps::dump_to_file(&themes, to.join("themes.bin"))?;
+        syntect::dumps::dump_to_file(&ss, to.join("syntaxes.bin"))?;
         std::process::exit(0);
     }
 
@@ -80,8 +73,7 @@ fn main() -> Result<(), sss_lib::error::PrettyErrorWrapper<sss_code::error::Code
         .contents()
         .expect("Cannot get content to render");
     let syntax = if let Some(ext) = &config.extension {
-        ss.find_syntax_by_extension(ext)
-            .expect(&format!("Extension not found: {ext}"))
+        ss.find_syntax_by_extension(ext)?
     } else {
         ss.find_syntax_for_file(&content)?
             .expect(&format!("Extension not found from stdin or file"))
@@ -109,7 +101,7 @@ fn main() -> Result<(), sss_lib::error::PrettyErrorWrapper<sss_code::error::Code
             .settings
             .background
             .map(|c| sss_lib::Background::Solid(sss_lib::image::Rgba([c.r, c.g, c.b, c.a])))
-            .ok_or(sss_code::error::Configuration::ParamNotFound(
+            .ok_or(sss_code::error::ConfigurationError::ParamNotFound(
                 "background".to_owned(),
             ))?
     }

@@ -8,6 +8,8 @@ pub enum CodeScreenshot {
     #[error("Generation Image")]
     GenerationImage(#[from] sss_lib::error::ImagenGeneration),
     Directories(#[from] Configuration),
+    Syntect(#[from] syntect::Error),
+    SyntectLoading(#[from] syntect::LoadingError),
 }
 
 #[derive(Debug, Error)]
