@@ -1,6 +1,8 @@
+use font_kit::error::{FontLoadingError, GlyphLoadingError, SelectionError};
+use image::ImageError;
+use notify_rust::{error::Error as NotificationError, ImageError as NotificationImageError};
 use std::error::Error;
 use std::fmt::{self, Write};
-use font_kit::error::{FontLoadingError, SelectionError};
 use std::num::ParseIntError;
 
 use thiserror::Error;
@@ -11,6 +13,9 @@ pub enum ImagenGeneration {
     Color(#[from] ParseColor),
     Background(#[from] Background),
     Font(#[from] FontError),
+    Image(#[from] ImageError),
+    Notification(#[from] NotificationError),
+    NotificationImage(#[from] NotificationImageError),
 }
 
 #[derive(Debug, Error)]
@@ -38,6 +43,13 @@ pub enum ParseColor {
 pub enum FontError {
     SelectionError(#[from] SelectionError),
     FontLoadingError(#[from] FontLoadingError),
+    GlyphLoading(#[from] GlyphLoadingError),
+    #[error("Bad format at parse font: {0}")]
+    BadFormat(String),
+    #[error("Failed to get font by style: {0}")]
+    LoadByStyle(String),
+    #[error("Cannot get font height from fronts loaded")]
+    GetHeight,
 }
 
 // this code is inspiration from https://github.com/Kijewski/pretty-error-debug/blob/main/src/implementation.rs
