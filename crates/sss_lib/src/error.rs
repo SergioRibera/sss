@@ -11,6 +11,7 @@ use thiserror::Error;
 #[error(transparent)]
 pub enum ImagenGeneration {
     Color(#[from] ParseColor),
+    Clipboard(#[from] arboard::Error),
     Background(#[from] Background),
     Font(#[from] FontError),
     Image(#[from] ImageError),
@@ -19,7 +20,9 @@ pub enum ImagenGeneration {
 }
 
 #[derive(Debug, Error)]
+#[error(transparent)]
 pub enum Background {
+    Color(#[from] ParseColor),
     #[error("Cannot Parse Background from String")]
     CannotParse,
     #[error("Invalid format of String")]
