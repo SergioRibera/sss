@@ -12,11 +12,11 @@ use syntect::parsing::SyntaxSet;
 const DEFAULT_SYNTAXSET: &[u8] = include_bytes!("../../../assets/syntaxes.bin");
 const DEFAULT_THEMESET: &[u8] = include_bytes!("../../../assets/themes.bin");
 
-fn main() {
-    let (config, mut g_config) = get_config();
+fn main() -> Result<(), sss_lib::error::PrettyErrorWrapper<sss_code::error::CodeScreenshot>> {
+    let (config, mut g_config) = get_config()?;
 
     let cache_path = directories::BaseDirs::new()
-        .unwrap()
+        .ok_or(ConfigurationError::InvalidHome)?
         .cache_dir()
         .join("sss");
 
@@ -45,12 +45,12 @@ fn main() {
 
     if config.list_themes {
         list_themes(&themes);
-        return;
+        return Ok(());
     }
 
     if config.list_file_types {
         list_file_types(&ss);
-        return;
+        return Ok(());
     }
 
     // build cache of themes or syntaxes
@@ -83,8 +83,8 @@ fn main() {
         ss.find_syntax_by_extension(ext)
             .expect(&format!("Extension not found: {ext}"))
     } else {
-        ss.find_syntax_by_first_line(content.split('\n').next().unwrap())
-            .expect("Extension not found by code")
+        ss.find_syntax_for_file(&content)?
+            .expect(&format!("Extension not found from stdin or file"))
     };
 
     let theme = if let Some(vim_theme) = &config.vim_theme {
@@ -109,10 +109,12 @@ fn main() {
             .settings
             .background
             .map(|c| sss_lib::Background::Solid(sss_lib::image::Rgba([c.r, c.g, c.b, c.a])))
-            .unwrap();
+            .ok_or(sss_code::error::Configuration::ParamNotFound(
+                "background".to_owned(),
+            ))?
     }
 
-    generate_image(
+    Ok(generate_image(
         g_config.clone(),
         ImageCode {
             config,
@@ -123,7 +125,7 @@ fn main() {
             content: &content,
             font: g_config.fonts,
         },
-    );
+    )?)
 }
 
 fn list_file_types(ss: &SyntaxSet) {
