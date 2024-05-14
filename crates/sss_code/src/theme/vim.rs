@@ -4,6 +4,8 @@ use syntect::highlighting::{
     FontStyle, ScopeSelectors, StyleModifier, Theme, ThemeItem, ThemeSettings, UnderlineOption,
 };
 
+use crate::error::VimTheme;
+
 use super::parser::{parse_vim, vim_to_scope_str};
 
 fn font_style(v: String) -> Option<FontStyle> {
@@ -24,7 +26,7 @@ fn underline(v: String) -> UnderlineOption {
     }
 }
 
-pub fn theme_from_vim(vim: &str) -> Theme {
+pub fn theme_from_vim(vim: &str) -> Result<Theme, VimTheme> {
     let values = parse_vim(vim);
     let scopes = values
         .iter()
@@ -40,18 +42,41 @@ pub fn theme_from_vim(vim: &str) -> Theme {
         })
         .collect::<Vec<_>>();
 
-    let &(fg_n, bg_n, _) = values.get("Normal").unwrap();
-    let &(fg_nr, bg_nr, _) = values.get("LineNr").unwrap();
-    let &(fg_sel, bg_sel, _) = values.get("Visual").unwrap();
-    let &(_, bg_cur, _) = values.get("Cursor").unwrap();
-    let &(_, bg_cur_line, _) = values.get("CursorLine").unwrap();
-    let &(fg_find, bg_find, _) = values.get("Search").unwrap();
-    let &(fg_bad, _, _) = values.get("SpellBad").unwrap();
-    let &(fg_tag, _, _) = values.get("Title").unwrap();
-    let (fg_brk, bg_brk, s_brk) = values.get("MatchParen").unwrap();
-    let &(fg_ibl, _, _) = values.get("IndentBlanklineChar").unwrap();
+    let &(fg_n, bg_n, _) = values
+        .get("Normal")
+        .ok_or(VimTheme::ParamNotFound("Normal".to_owned()))?;
+    let &(fg_nr, bg_nr, _) = values
+        .get("LineNr")
+        .ok_or(VimTheme::ParamNotFound("LineNr".to_owned()))?;
+    let &(fg_sel, bg_sel, _) = values
+        .get("Visual")
+        .ok_or(VimTheme::ParamNotFound("Visual".to_owned()))?;
+    let &(_, bg_cur, _) = values
+        .get("Cursor")
+        .ok_or(VimTheme::ParamNotFound("Cursor".to_owned()))?;
+    let &(_, bg_cur_line, _) = values
+        .get("CursorLine")
+        .ok_or(VimTheme::ParamNotFound("CursorLine".to_owned()))?;
+    let &(fg_find, bg_find, _) = values
+        .get("Search")
+        .ok_or(VimTheme::ParamNotFound("Search".to_owned()))?;
+    let &(fg_bad, _, _) = values
+        .get("SpellBad")
+        .ok_or(VimTheme::ParamNotFound("SpellBad".to_owned()))?;
+    let &(fg_tag, _, _) = values
+        .get("Title")
+        .ok_or(VimTheme::ParamNotFound("Title".to_owned()))?;
+    let (fg_brk, bg_brk, s_brk) = values
+        .get("MatchParen")
+        .ok_or(VimTheme::ParamNotFound("MatchParen".to_owned()))?;
+    let &(fg_ibl, _, _) = values
+        .get("IndentBlanklineChar")
+        .ok_or(VimTheme::ParamNotFound("IndentBlanklineChar".to_owned()))
+        .or(values
+            .get("LineNr")
+            .ok_or(VimTheme::ParamNotFound("LineNr".to_owned())))?;
 
-    Theme {
+    Ok(Theme {
         scopes,
         settings: ThemeSettings {
             foreground: fg_n.or(Some(syntect::highlighting::Color::WHITE)),
@@ -83,5 +108,5 @@ pub fn theme_from_vim(vim: &str) -> Theme {
             ..Default::default()
         },
         ..Default::default()
-    }
+    })
 }

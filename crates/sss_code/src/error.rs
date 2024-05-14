@@ -10,6 +10,7 @@ pub enum CodeScreenshot {
     Directories(#[from] Configuration),
     Syntect(#[from] syntect::Error),
     SyntectLoading(#[from] syntect::LoadingError),
+    VimTheme(#[from] VimTheme),
 }
 
 #[derive(Debug, Error)]
@@ -19,5 +20,12 @@ pub enum Configuration {
     #[error("Invalid Home directory path from operating system")]
     InvalidHome,
     #[error("Not found `{0}` param in configuration")]
+    ParamNotFound(String),
+}
+
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub enum VimTheme {
+    #[error("Not found `{0}` param in `vim theme` argument")]
     ParamNotFound(String),
 }
