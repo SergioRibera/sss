@@ -2,11 +2,11 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+use color_eyre::eyre::Report;
 use sss_code::config::get_config;
-use sss_code::error::{CodeScreenshot, Configuration as ConfigurationError};
+use sss_code::error::Configuration as ConfigurationError;
 use sss_code::ImageCode;
 use sss_code::{list_themes, load_theme, theme_from_vim};
-use sss_lib::error::PrettyErrorWrapper;
 use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -14,7 +14,7 @@ use syntect::parsing::SyntaxSet;
 const DEFAULT_SYNTAXSET: &[u8] = include_bytes!("../../../assets/syntaxes.bin");
 const DEFAULT_THEMESET: &[u8] = include_bytes!("../../../assets/themes.bin");
 
-fn main() -> Result<(), PrettyErrorWrapper<CodeScreenshot>> {
+fn main() -> Result<(), Report> {
     let (config, mut g_config) = get_config()?;
 
     let cache_path = directories::BaseDirs::new()
@@ -73,14 +73,14 @@ fn main() -> Result<(), PrettyErrorWrapper<CodeScreenshot>> {
         .contents()
         .expect("Cannot get content to render");
     let syntax = if let Some(ext) = &config.extension {
-        ss.find_syntax_by_extension(ext)?
+        ss.find_syntax_by_extension(ext).unwrap()
     } else {
         ss.find_syntax_for_file(&content)?
             .expect(&format!("Extension not found from stdin or file"))
     };
 
     let theme = if let Some(vim_theme) = &config.vim_theme {
-        Cow::Owned(theme_from_vim(vim_theme))
+        Cow::Owned(theme_from_vim(vim_theme)?)
     } else {
         let theme = config
             .theme
@@ -90,7 +90,7 @@ fn main() -> Result<(), PrettyErrorWrapper<CodeScreenshot>> {
             .themes
             .get(&theme)
             .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(load_theme(&theme, false)?))
+            .unwrap_or(Cow::Owned(load_theme(&theme, false)?))
     };
 
     if theme.settings.background.is_some()
@@ -101,7 +101,7 @@ fn main() -> Result<(), PrettyErrorWrapper<CodeScreenshot>> {
             .settings
             .background
             .map(|c| sss_lib::Background::Solid(sss_lib::image::Rgba([c.r, c.g, c.b, c.a])))
-            .ok_or(sss_code::error::ConfigurationError::ParamNotFound(
+            .ok_or(ConfigurationError::ParamNotFound(
                 "background".to_owned(),
             ))?
     }

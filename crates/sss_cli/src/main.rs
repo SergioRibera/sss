@@ -1,3 +1,4 @@
+use color_eyre::eyre::Report;
 use config::get_config;
 use img::Screenshot;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -15,10 +16,10 @@ pub struct Area {
     height: u32,
 }
 
-fn main() {
+fn main() -> Result<(), Report> {
     let (config, g_config) = get_config();
 
-    generate_image(g_config, Screenshot { config });
+    Ok(generate_image(g_config, Screenshot { config })?)
 }
 
 fn str_to_area(s: &str) -> Result<Area, String> {
