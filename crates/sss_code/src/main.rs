@@ -10,11 +10,29 @@ use sss_code::{list_themes, load_theme, theme_from_vim};
 use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 const DEFAULT_SYNTAXSET: &[u8] = include_bytes!("../../../assets/syntaxes.bin");
 const DEFAULT_THEMESET: &[u8] = include_bytes!("../../../assets/themes.bin");
 
 fn main() -> Result<(), Report> {
+    // install tracing
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("off"))?)
+        .init();
+
+    // install color eyre
+    color_eyre::config::HookBuilder::default()
+        .issue_url(concat!(env!("CARGO_PKG_REPOSITORY"), "/issues/new"))
+        .add_issue_metadata("version", env!("CARGO_PKG_VERSION"))
+        .issue_filter(|kind| match kind {
+            color_eyre::ErrorKind::NonRecoverable(_) => false,
+            color_eyre::ErrorKind::Recoverable(_) => true,
+        })
+        .install()?;
+
     let (config, mut g_config) = get_config()?;
 
     let cache_path = directories::BaseDirs::new()
@@ -101,9 +119,7 @@ fn main() -> Result<(), Report> {
             .settings
             .background
             .map(|c| sss_lib::Background::Solid(sss_lib::image::Rgba([c.r, c.g, c.b, c.a])))
-            .ok_or(ConfigurationError::ParamNotFound(
-                "background".to_owned(),
-            ))?
+            .ok_or(ConfigurationError::ParamNotFound("background".to_owned()))?
     }
 
     Ok(generate_image(

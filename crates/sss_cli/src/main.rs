@@ -3,6 +3,9 @@ use config::get_config;
 use img::Screenshot;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sss_lib::generate_image;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 mod config;
 mod img;
@@ -17,6 +20,21 @@ pub struct Area {
 }
 
 fn main() -> Result<(), Report> {
+    // install tracing
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("off"))?)
+        .init();
+
+    // install color eyre
+    color_eyre::config::HookBuilder::default()
+        .issue_url(concat!(env!("CARGO_PKG_REPOSITORY"), "/issues/new"))
+        .add_issue_metadata("version", env!("CARGO_PKG_VERSION"))
+        .issue_filter(|kind| match kind {
+            color_eyre::ErrorKind::NonRecoverable(_) => false,
+            color_eyre::ErrorKind::Recoverable(_) => true,
+        })
+        .install()?;
+
     let (config, g_config) = get_config();
 
     Ok(generate_image(g_config, Screenshot { config })?)
