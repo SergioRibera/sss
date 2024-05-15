@@ -90,7 +90,7 @@ fn main() -> Result<(), PrettyErrorWrapper<CodeScreenshot>> {
             .themes
             .get(&theme)
             .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(load_theme(&theme, false)))
+            .unwrap_or_else(|| Cow::Owned(load_theme(&theme, false)?))
     };
 
     if theme.settings.background.is_some()

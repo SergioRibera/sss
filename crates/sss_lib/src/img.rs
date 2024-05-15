@@ -50,7 +50,7 @@ pub fn generate_image(
     settings: GenerationSettings,
     content: impl DynImageContent,
 ) -> Result<(), ImagenGeneration> {
-    let mut inner = content.content();
+    let mut inner = content.content()?;
     let show_winbar = settings.window_controls.enable || settings.window_controls.title.is_some();
     let (p_x, p_y) = settings.padding;
     let win_bar_h = if show_winbar {

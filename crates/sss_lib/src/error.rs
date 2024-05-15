@@ -17,7 +17,12 @@ pub enum ImagenGeneration {
     Image(#[from] ImageError),
     Notification(#[from] NotificationError),
     NotificationImage(#[from] NotificationImageError),
+    #[error("{0}")]
+    Custom(String),
 }
+
+unsafe impl Send for ImagenGeneration {}
+unsafe impl Sync for ImagenGeneration {}
 
 #[derive(Debug, Error)]
 #[error(transparent)]
@@ -31,6 +36,9 @@ pub enum Background {
     InvalidPath,
 }
 
+unsafe impl Send for Background {}
+unsafe impl Sync for Background {}
+
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum ParseColor {
     #[error("Invalid length of String")]
@@ -40,6 +48,9 @@ pub enum ParseColor {
     #[error("Error parsing number")]
     Parse(#[from] ParseIntError),
 }
+
+unsafe impl Send for ParseColor {}
+unsafe impl Sync for ParseColor {}
 
 #[derive(Debug, Error)]
 #[error(transparent)]
@@ -55,12 +66,18 @@ pub enum FontError {
     GetHeight,
 }
 
+unsafe impl Send for FontError {}
+unsafe impl Sync for FontError {}
+
 // this code is inspiration from https://github.com/Kijewski/pretty-error-debug/blob/main/src/implementation.rs
 /// Wrap an [`Error`] to display its error chain in debug messages ([`format!("{:?}")`][fmt::Debug]).
 ///
 /// ```
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PrettyErrorWrapper<E: 'static + Error>(pub E);
+
+unsafe impl<E: 'static + Error> Send for PrettyErrorWrapper<E> {}
+unsafe impl<E: 'static + Error> Sync for PrettyErrorWrapper<E> {}
 
 impl<E: 'static + Error> PrettyErrorWrapper<E> {
     /// Return the wrapped argument.
