@@ -2,7 +2,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use color_eyre::eyre::Report;
+use color_eyre::eyre::{ContextCompat, Report};
 use sss_code::config::get_config;
 use sss_code::error::Configuration as ConfigurationError;
 use sss_code::ImageCode;
@@ -87,14 +87,14 @@ fn main() -> Result<(), Report> {
     let content = config
         .content
         .clone()
-        .expect("Cannot get content from args")
+        .wrap_err("Cannot get content from args")?
         .contents()
         .expect("Cannot get content to render");
     let syntax = if let Some(ext) = &config.extension {
         ss.find_syntax_by_extension(ext).unwrap()
     } else {
         ss.find_syntax_for_file(&content)?
-            .expect(&format!("Extension not found from stdin or file"))
+            .wrap_err("Extension not found from stdin or file")?
     };
 
     let theme = if let Some(vim_theme) = &config.vim_theme {
