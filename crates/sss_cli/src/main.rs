@@ -1,13 +1,14 @@
 use color_eyre::eyre::Report;
 use config::get_config;
 use img::Screenshot;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 use sss_lib::generate_image;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 mod config;
+mod error;
 mod img;
 mod shot;
 
@@ -35,7 +36,7 @@ fn main() -> Result<(), Report> {
         })
         .install()?;
 
-    let (config, g_config) = get_config();
+    let (config, g_config) = get_config()?;
 
     Ok(generate_image(g_config, Screenshot { config })?)
 }
@@ -69,7 +70,7 @@ impl<'de> Deserialize<'de> for Area {
     where
         D: Deserializer<'de>,
     {
-        Ok(str_to_area(&String::deserialize(deserializer)?).unwrap())
+        str_to_area(&String::deserialize(deserializer)?).map_err(D::Error::custom)
     }
 }
 
