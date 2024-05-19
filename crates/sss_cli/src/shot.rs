@@ -33,6 +33,8 @@ fn wayland_detect() -> bool {
         .to_string_lossy()
         .to_string();
 
+    tracing::info!("XDG SESSION: {xdg_session_type:?} - WAYLAND DISPLAY: {wayland_display:?}");
+
     xdg_session_type.eq("wayland") || wayland_display.to_lowercase().contains("wayland")
 }
 

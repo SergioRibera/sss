@@ -37,6 +37,7 @@ fn main() -> Result<(), Report> {
         .install()?;
 
     let (config, g_config) = get_config()?;
+    tracing::trace!("Configs loaded");
 
     Ok(generate_image(g_config, Screenshot { config })?)
 }
