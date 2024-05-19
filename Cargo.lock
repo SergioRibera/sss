@@ -2814,7 +2814,6 @@ dependencies = [
  "clap-stdin",
  "color-eyre",
  "directories",
- "log",
  "merge2",
  "serde",
  "sss_lib",
@@ -2835,13 +2834,13 @@ dependencies = [
  "font-kit",
  "image 0.24.9",
  "imageproc",
- "log",
  "merge2",
  "notify-rust",
  "pathfinder_geometry",
  "rayon",
  "serde",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

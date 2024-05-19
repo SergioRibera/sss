@@ -28,7 +28,6 @@ inherits = "release"
 lto = "thin"
 
 [workspace.dependencies]
-log = "0.4.20"
 thiserror = "1"
 serde = { version = "1.0.8", features = ["serde_derive"] }
 toml = "0.8.8"
