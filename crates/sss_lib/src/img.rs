@@ -53,6 +53,7 @@ pub fn generate_image(
     let mut inner = content.content()?;
     let show_winbar = settings.window_controls.enable || settings.window_controls.title.is_some();
     let (p_x, p_y) = settings.padding;
+    tracing::info!("Padding: ({p_x}, {p_y})");
     let win_bar_h = if show_winbar {
         settings.window_controls.height
     } else {
@@ -62,6 +63,8 @@ pub fn generate_image(
         inner.width() + (p_x * 2),
         inner.height() + (p_y * 2) + win_bar_h,
     );
+
+    tracing::info!("Total size: ({w}, {h})");
 
     let mut winbar = settings
         .colors

@@ -13,7 +13,7 @@ pub fn make_output(
     show_notify: bool,
     fmt: Option<&str>,
 ) -> Result<(), error::ImagenGeneration> {
-    log::trace!("Making Output");
+    tracing::trace!("Making Output");
     match output {
         "raw" => {
             let mut stdout = std::io::stdout();
@@ -22,11 +22,11 @@ pub fn make_output(
         }
         _ => {
             let format_img = str_to_format(fmt.unwrap_or("png"))?;
-            log::debug!("Format Image to save: {format_img:?}");
+            tracing::debug!("Format Image to save: {format_img:?}");
             img.save_with_format(&output, format_img)?;
 
             if show_notify {
-                log::trace!("Show notification");
+                tracing::trace!("Show notification");
                 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "windows")))]
                 Notification::new()
                     .summary("Image generated")
@@ -45,6 +45,6 @@ pub fn make_output(
             }
         }
     }
-    log::trace!("End Output");
+    tracing::trace!("End Output");
     Ok(())
 }

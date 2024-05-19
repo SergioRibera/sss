@@ -94,14 +94,14 @@ impl ImageFont {
         let family = SystemSource::new().select_family_by_name(name)?;
         let handles = family.fonts();
 
-        log::debug!("{:?}", handles);
+        tracing::debug!("{:?}", handles);
 
         for handle in handles {
             let font = handle.load()?;
 
             let properties: Properties = font.properties();
 
-            log::debug!("{:?} - {:?}", font, properties);
+            tracing::debug!("{:?} - {:?}", font, properties);
 
             // cannot use match because `Weight` didn't derive `Eq`
             match properties.style {
@@ -196,7 +196,7 @@ impl FontCollection {
                 return Ok(Some((id, font, result)));
             }
         }
-        log::warn!("No font found for character `{}`", c);
+        tracing::warn!("No font found for character `{}`", c);
         Ok(None)
     }
 
