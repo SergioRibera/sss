@@ -184,25 +184,18 @@ impl ShotImpl {
                 .iter()
                 .find(|s| {
                     x >= s.display_info.x
-                        && (x - s.display_info.width as i32)
+                        && (x as i32)
                             < s.display_info.x + s.display_info.width as i32
                         && y >= s.display_info.y
-                        && (y - s.display_info.height as i32)
+                        && (y as i32)
                             < s.display_info.y + s.display_info.height as i32
                 })
                 .unwrap();
+
             return Ok(screen
                 .capture_area(
-                    if x >= screen.display_info.width as i32 {
-                        x - screen.display_info.width as i32
-                    } else {
-                        x
-                    },
-                    if y >= screen.display_info.height as i32 {
-                        y - screen.display_info.height as i32
-                    } else {
-                        y
-                    },
+                    x - screen.display_info.x,
+                    y - screen.display_info.y,
                     w,
                     h,
                 )
