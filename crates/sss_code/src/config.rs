@@ -123,6 +123,7 @@ pub fn get_config() -> Result<(CodeConfig, sss_lib::GenerationSettings), Configu
     let mut args = ClapConfig::parse();
 
     let config_path = if let Some(path) = args.config.as_ref() {
+        tracing::trace!("Loading custom path");
         path.clone()
     } else {
         let config_path = directories::BaseDirs::new()
@@ -132,12 +133,13 @@ pub fn get_config() -> Result<(CodeConfig, sss_lib::GenerationSettings), Configu
 
         let _ = std::fs::create_dir_all(config_path.clone());
 
+        tracing::trace!("Loading global config");
         config_path.join("config.toml")
     };
-    // println!("Reading configs from path: {config_path:?}");
+    tracing::info!("Reading configs from path: {config_path:?}");
 
     if let Ok(cfg_content) = std::fs::read_to_string(config_path) {
-        // println!("Merging from config file");
+        tracing::debug!("Merging from config file");
         let mut config: ClapConfig = toml::from_str(&cfg_content)?;
         config.merge(&mut args);
         return Ok((config.code.unwrap_or_default(), config.lib_config.into()));

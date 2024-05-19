@@ -34,6 +34,7 @@ fn main() -> Result<(), Report> {
         .install()?;
 
     let (config, mut g_config) = get_config()?;
+    tracing::trace!("Configs loaded");
 
     let cache_path = directories::BaseDirs::new()
         .ok_or(ConfigurationError::InvalidHome)?
@@ -42,14 +43,18 @@ fn main() -> Result<(), Report> {
 
     let mut ss: SyntaxSet =
         if let Ok(ss) = syntect::dumps::from_dump_file(cache_path.join("syntaxes.bin")) {
+            tracing::info!("Loading syntaxes from cache");
             ss
         } else {
+            tracing::info!("Loading default syntaxes");
             syntect::dumps::from_binary(DEFAULT_SYNTAXSET)
         };
     let mut themes: ThemeSet =
         if let Ok(ts) = syntect::dumps::from_dump_file(cache_path.join("themes.bin")) {
+            tracing::info!("Loading themes from cache");
             ts
         } else {
+            tracing::info!("Loading default themes");
             syntect::dumps::from_binary(DEFAULT_THEMESET)
         };
 
@@ -57,6 +62,7 @@ fn main() -> Result<(), Report> {
         let mut builder = ss.into_builder();
         builder.add_from_folder(dir, true)?;
         ss = builder.build();
+        tracing::debug!("Trying to load extra syntaxes");
         syntect::dumps::dump_to_file(&ss, cache_path.join("syntaxes.bin"))?;
     }
 
@@ -73,6 +79,7 @@ fn main() -> Result<(), Report> {
     // build cache of themes or syntaxes
     if let Some(from) = config.build_cache.as_ref() {
         let to = PathBuf::from(&g_config.output);
+        tracing::trace!("Building cache of themes and syntaxes");
 
         themes.add_from_folder(from.join("themes"))?;
         let mut builder = ss.clone().into_builder();
@@ -81,7 +88,8 @@ fn main() -> Result<(), Report> {
 
         syntect::dumps::dump_to_file(&themes, to.join("themes.bin"))?;
         syntect::dumps::dump_to_file(&ss, to.join("syntaxes.bin"))?;
-        std::process::exit(0);
+        tracing::debug!("Cache build success");
+        return Ok(());
     }
 
     let content = config
@@ -104,6 +112,7 @@ fn main() -> Result<(), Report> {
             .theme
             .clone()
             .unwrap_or("base16-ocean.dark".to_string());
+        tracing::trace!("Trying load {theme:?}");
         themes
             .themes
             .get(&theme)

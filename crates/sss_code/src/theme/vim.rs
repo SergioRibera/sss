@@ -9,6 +9,7 @@ use crate::error::VimTheme;
 use super::parser::{parse_vim, vim_to_scope_str};
 
 fn font_style(v: String) -> Option<FontStyle> {
+    tracing::info!("Font Style: {v:?}");
     match v.to_lowercase().as_str() {
         "bold" => Some(FontStyle::BOLD),
         "italic" => Some(FontStyle::ITALIC),
@@ -18,6 +19,7 @@ fn font_style(v: String) -> Option<FontStyle> {
 }
 
 fn underline(v: String) -> UnderlineOption {
+    tracing::info!("Underline Style: {v:?}");
     match v.to_lowercase().as_str() {
         "underline" => UnderlineOption::Underline,
         "undercurl" => UnderlineOption::SquigglyUnderline,

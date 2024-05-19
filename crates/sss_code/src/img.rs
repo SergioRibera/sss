@@ -139,6 +139,7 @@ impl<'a> ImageCode<'a> {
 
 impl<'a> DynImageContent for ImageCode<'a> {
     fn content(&self) -> Result<RgbaImage, ImagenGenerationError> {
+        tracing::trace!("Generating Image");
         let mut h = HighlightLines::new(self.syntax, &self.theme);
         let mut drawables = Vec::new();
         let mut max_width = 0;
@@ -151,6 +152,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
             .ok_or(ImagenGenerationError::Custom(
                 ConfigurationError::ParamNotFound("theme.foreground".to_owned()).to_string(),
             ))?;
+        tracing::debug!("Default Foreground of Theme {foreground:?}");
         let background = self
             .config
             .code_background
@@ -164,6 +166,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
             .ok_or(ImagenGenerationError::Custom(
                 ConfigurationError::ParamNotFound("theme.code_background".to_owned()).to_string(),
             ))?;
+        tracing::debug!("Default Background {background:?}");
         let tab = " ".repeat(self.config.tab_width.unwrap_or(4) as usize);
         let lines = self.content.split('\n').collect::<Vec<&str>>();
         let line_range = self
@@ -175,6 +178,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 ..l
             })
             .unwrap_or_default();
+        tracing::debug!("Line Range: {line_range:?}");
         let line_hi = self
             .config
             .highlight_lines
@@ -184,7 +188,9 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 ..l
             })
             .unwrap_or_default();
+        tracing::debug!("Lines to highlight: {line_hi:?}");
         let max_lineno = line_range.len() as u32;
+        tracing::debug!("Max Line number: {max_lineno:?}");
         let max_h_controls = if self.lib_config.window_controls.enable
             || self.lib_config.window_controls.title.is_some()
         {
@@ -212,11 +218,13 @@ impl<'a> DynImageContent for ImageCode<'a> {
             max_width + CODE_PADDING,
             self.get_line_y(max_lineno, max_h_controls)? + CODE_PADDING,
         );
+        tracing::debug!("Size code image: {size:?}");
 
         let mut img = background.to_image(size.0, size.1);
 
         // Draw line numbers
         if self.config.line_numbers {
+            tracing::trace!("Draw line numbers");
             self.draw_line_number(
                 &mut img,
                 line_range,
@@ -228,6 +236,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
         }
 
         // Draw lines
+        tracing::trace!("Draw code");
         for (x, y, color, style, text) in &drawables {
             let color = color_to_rgba(color.unwrap_or(foreground));
             self.font

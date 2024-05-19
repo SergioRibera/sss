@@ -21,16 +21,21 @@ pub fn load_theme(tm_file: &str, enable_caching: bool) -> Result<Theme, CodeScre
     let tm_path = Path::new(tm_file);
 
     if enable_caching {
+        tracing::info!("Finding theme in cache");
         let tm_cache = tm_path.with_extension("tmdump");
 
         if tm_cache.exists() {
+            tracing::debug!("Loading theme {tm_path:?} from cache");
             Ok(from_dump_file(tm_cache).unwrap())
         } else {
+            tracing::debug!("Loading theme {tm_path:?} from ThemeSet");
             let theme = ThemeSet::get_theme(tm_path)?;
             dump_to_file(&theme, tm_cache).unwrap();
+            tracing::info!("Updating cache");
             Ok(theme)
         }
     } else {
+        tracing::info!("Loading theme {tm_path:?}");
         Ok(ThemeSet::get_theme(tm_path)?)
     }
 }
