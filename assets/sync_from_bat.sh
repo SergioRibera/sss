@@ -14,7 +14,11 @@ fi
 rm -rf ./syntaxes/* ./themes/*
 cp -r ../../bat/assets/syntaxes/* ./syntaxes/
 cp -r ../../bat/assets/themes/* ./themes/
+<<<<<<< HEAD
 cp -r ../../bat_themes/* ./themes
+=======
+cp -r ../../bat_themes/themes/* ./themes
+>>>>>>> e373941 (chore: add extra themes to sync bat themes script)
 
 cargo run -p sss_code -- --build-cache . -o .
 
