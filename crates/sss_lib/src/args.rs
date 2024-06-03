@@ -166,7 +166,7 @@ impl From<GenerationSettingsArgs> for GenerationSettings {
         GenerationSettings {
             copy: val.copy,
             show_notify: val.show_notify,
-            output: val.output.clone().unwrap_or(String::from("")),
+            output: val.output.clone().unwrap_or_default(),
             save_format: val.save_format.clone(),
             colors: val.colors.into(),
             padding: (val.padding_x.unwrap_or(80), val.padding_y.unwrap_or(100)),
