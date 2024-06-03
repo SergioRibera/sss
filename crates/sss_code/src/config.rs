@@ -52,13 +52,18 @@ pub struct CodeConfig {
     #[clap(
         long,
         short = 'l',
-        conflicts_with = "list_themes",
+        conflicts_with_all = &[ "list_themes", "output" ],
         help = "Lists supported file types"
     )]
     #[merge(strategy = overwrite_false)]
     #[serde(skip)]
     pub list_file_types: bool,
-    #[clap(long, short = 'L', help = "Lists themes")]
+    #[clap(
+        long,
+        short = 'L', 
+        conflicts_with = "output",
+        help = "Lists themes"
+    )]
     #[merge(strategy = overwrite_false)]
     #[serde(skip)]
     pub list_themes: bool,

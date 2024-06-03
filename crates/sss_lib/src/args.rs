@@ -84,7 +84,7 @@ pub struct GenerationSettingsArgs {
         help = "[values: raw or file path] If it is set then the result will be saved here"
     )]
     #[serde(skip)]
-    #[clap(required_unless_present_any = &["list_themes", "list_file_types"])]
+    #[clap(required = true)]
     pub output: Option<String>,
     #[clap(
         long,
