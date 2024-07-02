@@ -28,12 +28,10 @@ inherits = "release"
 lto = "thin"
 
 [workspace.dependencies]
-log = "0.4.20"
 thiserror = "1"
 serde = { version = "1.0.8", features = ["serde_derive"] }
 toml = "0.8.8"
 merge2 = "0.3.0"
-env_logger = "0.10.0"
 directories = "5.0.1"
 clap = { version = "4.4.8", features = [
     "derive",
@@ -42,6 +40,10 @@ clap = { version = "4.4.8", features = [
     "suggestions",
     "wrap_help",
 ] }
+
+tracing = "0.1.40"
+color-eyre = { version = "0.6.3", features = ["issue-url"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [patch.crates-io]
 mouse_position = { git = "https://github.com/SergioRibera/mouse_position", branch = "compositors_protocols" }

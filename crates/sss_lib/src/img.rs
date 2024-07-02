@@ -5,7 +5,7 @@ use image::{Rgba, RgbaImage};
 
 use crate::color::ToRgba;
 use crate::components::{add_window_controls, add_window_title, round_corner};
-use crate::error::Background as BackgroundError;
+use crate::error::{Background as BackgroundError, ImagenGeneration};
 use crate::font::FontStyle;
 use crate::out::make_output;
 use crate::{DynImageContent, GenerationSettings};
@@ -25,7 +25,7 @@ pub enum Background {
 
 impl Default for Background {
     fn default() -> Self {
-        Self::Solid("#323232".to_rgba().unwrap())
+        Self::Solid(Rgba([50, 50, 50, 255])) // #323232
     }
 }
 
@@ -46,10 +46,14 @@ impl Background {
     }
 }
 
-pub fn generate_image(settings: GenerationSettings, content: impl DynImageContent) {
-    let mut inner = content.content();
+pub fn generate_image(
+    settings: GenerationSettings,
+    content: impl DynImageContent,
+) -> Result<(), ImagenGeneration> {
+    let mut inner = content.content()?;
     let show_winbar = settings.window_controls.enable || settings.window_controls.title.is_some();
     let (p_x, p_y) = settings.padding;
+    tracing::info!("Padding: ({p_x}, {p_y})");
     let win_bar_h = if show_winbar {
         settings.window_controls.height
     } else {
@@ -59,6 +63,8 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
         inner.width() + (p_x * 2),
         inner.height() + (p_y * 2) + win_bar_h,
     );
+
+    tracing::info!("Total size: ({w}, {h})");
 
     let mut winbar = settings
         .colors
@@ -74,7 +80,7 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
             settings.window_controls.height,
             settings.window_controls.title_padding,
             settings.window_controls.width / 3 / 4,
-        );
+        )?;
     }
 
     if let Some(title) = settings.window_controls.title.as_ref() {
@@ -87,7 +93,7 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
             settings.window_controls.enable,
             settings.window_controls.width,
             settings.window_controls.height,
-        );
+        )?;
     }
 
     if show_winbar {
@@ -109,7 +115,7 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
     }
 
     if let Some(author) = settings.author {
-        let title_w = settings.fonts.get_text_len(&author);
+        let title_w = settings.fonts.get_text_len(&author)?;
 
         settings.fonts.draw_text_mut(
             &mut img,
@@ -118,11 +124,11 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
             h - p_y / 2,
             FontStyle::Bold,
             &author,
-        );
+        )?;
     }
 
     if settings.copy {
-        let mut c = arboard::Clipboard::new().unwrap();
+        let mut c = arboard::Clipboard::new()?;
 
         #[cfg(target_os = "linux")]
         let set = c
@@ -135,15 +141,15 @@ pub fn generate_image(settings: GenerationSettings, content: impl DynImageConten
             width: img.width() as usize,
             height: img.height() as usize,
             bytes: img.to_vec().into(),
-        })
-        .unwrap();
+        })?;
     }
+
     make_output(
         &img,
         &settings.output,
         settings.show_notify,
         settings.save_format.as_deref(),
-    );
+    )
 }
 
 impl TryFrom<String> for Background {
@@ -152,9 +158,15 @@ impl TryFrom<String> for Background {
     fn try_from(value: String) -> Result<Self, Self::Error> {
         if value.contains(';') {
             let mut split = value.splitn(3, ';');
-            let o = split.next().unwrap();
-            let start = split.next().unwrap().to_rgba().unwrap();
-            let stop = split.next().unwrap().to_rgba().unwrap();
+            let o = split.next().ok_or(BackgroundError::CannotParse)?;
+            let start = split
+                .next()
+                .ok_or(BackgroundError::CannotParse)?
+                .to_rgba()?;
+            let stop = split
+                .next()
+                .ok_or(BackgroundError::CannotParse)?
+                .to_rgba()?;
             let orientation = if o == "h" {
                 GradientType::Horizontal
             } else {

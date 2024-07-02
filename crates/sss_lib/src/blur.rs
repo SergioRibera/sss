@@ -36,7 +36,8 @@ pub fn gaussian_blur(image: RgbaImage, sigma: f32) -> RgbaImage {
         raw.set_len(len);
     }
 
-    RgbaImage::from_raw(width, height, raw).unwrap()
+    RgbaImage::from_raw(width, height, raw)
+        .expect("Cannot generate gaussian blurred image from raw")
 }
 
 fn gaussian_blur_impl(data: &mut [[u8; 4]], width: usize, height: usize, blur_radius: f32) {

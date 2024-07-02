@@ -206,12 +206,12 @@ impl From<ColorsArgs> for Colors {
                 .author_color
                 .unwrap_or("#FFFFFF".to_string())
                 .to_rgba()
-                .unwrap(),
+                .expect("Cannot convert 'author_color' into Rgba"),
             windows_title: val
                 .window_title_color
                 .unwrap_or("#FFFFFF".to_string())
                 .to_rgba()
-                .unwrap(),
+                .expect("Cannot convert 'window_title_color' into Rgba"),
         }
     }
 }

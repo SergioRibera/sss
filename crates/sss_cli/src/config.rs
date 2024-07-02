@@ -5,6 +5,7 @@ use merge2::{bool::overwrite_false, option::recursive, Merge};
 use serde::{Deserialize, Serialize};
 use sss_lib::{default_bool, swap_option};
 
+use crate::error::Configuration as ConfigurationError;
 use crate::{str_to_area, Area};
 
 #[derive(Clone, Debug, Deserialize, Merge, Parser, Serialize)]
@@ -48,28 +49,30 @@ pub struct CliConfig {
     pub area: Option<Area>,
 }
 
-pub fn get_config() -> (CliConfig, sss_lib::GenerationSettings) {
+pub fn get_config() -> Result<(CliConfig, sss_lib::GenerationSettings), ConfigurationError> {
     let mut args = ClapConfig::parse();
 
     let config_path = if let Some(path) = args.config.as_ref() {
+        tracing::trace!("Loading custom path");
         path.clone()
     } else {
         let config_path = directories::BaseDirs::new()
-            .unwrap()
+            .ok_or(ConfigurationError::InvalidHome)?
             .config_dir()
             .join("sss");
 
         let _ = std::fs::create_dir_all(config_path.clone());
 
+        tracing::trace!("Loading global config");
         config_path.join("config.toml")
     };
-    // println!("Reading configs from path: {config_path:?}");
+    tracing::info!("Reading configs from path: {config_path:?}");
 
     if let Ok(cfg_content) = std::fs::read_to_string(config_path) {
-        // println!("Merging from config file");
-        let mut config: ClapConfig = toml::from_str(&cfg_content).unwrap();
+        tracing::debug!("Merging from config file");
+        let mut config: ClapConfig = toml::from_str(&cfg_content)?;
         config.merge(&mut args);
-        return (config.cli.unwrap_or_default(), config.lib_config.into());
+        return Ok((config.cli.unwrap_or_default(), config.lib_config.into()));
     }
-    (args.cli.unwrap_or_default(), args.lib_config.into())
+    Ok((args.cli.unwrap_or_default(), args.lib_config.into()))
 }

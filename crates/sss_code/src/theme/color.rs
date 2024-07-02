@@ -76,11 +76,13 @@ pub fn color_from_term(term: &str) -> Option<Color> {
     LOOKUPTABLE
         .iter()
         .find(|(t, _)| t == &term)
+        .inspect(|s| tracing::debug!("Color {s:?} from Term {term:?}"))
         .and_then(|(_, v)| str_to_color(v))
 }
 
 pub fn str_to_color(s: &str) -> Option<Color> {
     s.to_rgba()
+        .inspect_err(|e| tracing::error!("Error to convert {s:?}: {e:?}"))
         .ok()
         .map(|rgba| {
             let [r, g, b, a] = rgba.0;

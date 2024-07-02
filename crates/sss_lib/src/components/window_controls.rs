@@ -2,6 +2,7 @@ use image::imageops::{resize, FilterType};
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::draw_filled_circle_mut;
 
+use crate::error::ImagenGeneration;
 use crate::font::{FontCollection, FontStyle};
 use crate::utils::copy_alpha;
 use crate::{Background, ToRgba};
@@ -13,7 +14,7 @@ pub fn add_window_controls(
     height: u32,
     padding: u32,
     radius: u32,
-) {
+) -> Result<(), ImagenGeneration> {
     let color = [
         ("#FF5F56", "#E0443E"),
         ("#FFBD2E", "#DEA123"),
@@ -30,13 +31,13 @@ pub fn add_window_controls(
             &mut controls,
             ((i as i32 * spacer + step) * 3, center_y * 3),
             (radius + 1) as i32 * 3,
-            outline.to_rgba().unwrap(),
+            outline.to_rgba()?,
         );
         draw_filled_circle_mut(
             &mut controls,
             ((i as i32 * spacer + step) * 3, center_y * 3),
             radius as i32 * 3,
-            fill.to_rgba().unwrap(),
+            fill.to_rgba()?,
         );
     }
     // create a big image and resize it to blur the edge
@@ -44,6 +45,8 @@ pub fn add_window_controls(
     let controls = resize(&controls, width, height, FilterType::Triangle);
 
     copy_alpha(&controls, image, padding, 0);
+
+    Ok(())
 }
 
 pub fn add_window_title(
@@ -55,7 +58,7 @@ pub fn add_window_title(
     window_controls: bool,
     controls_width: u32,
     controls_height: u32,
-) {
+) -> Result<(), ImagenGeneration> {
     font.draw_text_mut(
         image,
         color,
@@ -65,8 +68,10 @@ pub fn add_window_title(
             } else {
                 title_padding
             },
-        (controls_height / 2) - font.get_font_height() / 2,
+        (controls_height / 2) - font.get_font_height()? / 2,
         FontStyle::Bold,
         title,
-    );
+    )?;
+
+    Ok(())
 }
