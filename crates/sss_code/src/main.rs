@@ -19,9 +19,12 @@ const DEFAULT_THEMESET: &[u8] = include_bytes!("../../../assets/themes.bin");
 
 fn main() -> Result<(), Report> {
     // install tracing
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("off"))?)
-        .init();
+    let subscriber = tracing_subscriber::FmtSubscriber::builder()
+        .with_env_filter(EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("off"))?)
+        .with_timer(tracing_subscriber::fmt::time::Uptime::default())
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     // install color eyre
     color_eyre::config::HookBuilder::default()
