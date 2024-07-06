@@ -1,4 +1,6 @@
-use font_kit::error::{FontLoadingError, SelectionError};
+use font_kit::error::{FontLoadingError, GlyphLoadingError, SelectionError};
+use image::ImageError;
+use notify_rust::{error::Error as NotificationError, ImageError as NotificationImageError};
 use std::num::ParseIntError;
 
 use thiserror::Error;
@@ -7,12 +9,23 @@ use thiserror::Error;
 #[error(transparent)]
 pub enum ImagenGeneration {
     Color(#[from] ParseColor),
+    Clipboard(#[from] arboard::Error),
     Background(#[from] Background),
     Font(#[from] FontError),
+    Image(#[from] ImageError),
+    Notification(#[from] NotificationError),
+    NotificationImage(#[from] NotificationImageError),
+    #[error("{0}")]
+    Custom(String),
 }
 
+unsafe impl Send for ImagenGeneration {}
+unsafe impl Sync for ImagenGeneration {}
+
 #[derive(Debug, Error)]
+#[error(transparent)]
 pub enum Background {
+    Color(#[from] ParseColor),
     #[error("Cannot Parse Background from String")]
     CannotParse,
     #[error("Invalid format of String")]
@@ -20,6 +33,9 @@ pub enum Background {
     #[error("Invalid path of image")]
     InvalidPath,
 }
+
+unsafe impl Send for Background {}
+unsafe impl Sync for Background {}
 
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum ParseColor {
@@ -31,9 +47,22 @@ pub enum ParseColor {
     Parse(#[from] ParseIntError),
 }
 
+unsafe impl Send for ParseColor {}
+unsafe impl Sync for ParseColor {}
+
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub enum FontError {
     SelectionError(#[from] SelectionError),
     FontLoadingError(#[from] FontLoadingError),
+    GlyphLoading(#[from] GlyphLoadingError),
+    #[error("Bad format at parse font: {0}")]
+    BadFormat(String),
+    #[error("Failed to get font by style: {0}")]
+    LoadByStyle(String),
+    #[error("Cannot get font height from fronts loaded")]
+    GetHeight,
 }
+
+unsafe impl Send for FontError {}
+unsafe impl Sync for FontError {}

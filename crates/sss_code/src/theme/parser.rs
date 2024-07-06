@@ -9,6 +9,7 @@ pub type VimHighlight = (Option<Color>, Option<Color>, Option<String>);
 pub fn parse_vim(vim: &str) -> HashMap<&str, VimHighlight> {
     vim.split(';')
         .map(|group| {
+            tracing::debug!("Parsing Vim Group: {group:?}");
             let mut values = group.splitn(4, ',');
             let name = values.next().unwrap();
             let bg = values.next().and_then(str_to_color);
@@ -47,5 +48,6 @@ pub fn vim_to_scope_str(v: &str) -> Option<&str> {
     VIM_NAMES
         .iter()
         .find(|(n, _)| n.contains(v))
+        .inspect(|s| tracing::trace!("Scope {v:?} is: {s:?}"))
         .map(|(_, v)| *v)
 }

@@ -94,5 +94,5 @@ pub struct WindowControls {
 }
 
 pub trait DynImageContent {
-    fn content(&self) -> RgbaImage;
+    fn content(&self) -> Result<RgbaImage, error::ImagenGeneration>;
 }

@@ -11,7 +11,7 @@ use image::{GenericImage, Pixel};
 use imageproc::definitions::Clamp;
 use imageproc::pixelops::weighted_sum;
 use pathfinder_geometry::transform2d::Transform2F;
-use serde::de::{Deserialize, Deserializer};
+use serde::de::{Deserialize, Deserializer, Error};
 use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,7 +29,7 @@ use pathfinder_geometry::rect::RectI;
 use pathfinder_geometry::vector::Vector2I;
 use FontStyle::*;
 
-use crate::error::FontError;
+use crate::error::{FontError, ImagenGeneration};
 
 /// A single font with specific size
 #[derive(Clone, Debug)]
@@ -65,7 +65,8 @@ impl Default for ImageFont {
         ];
         let mut fonts = HashMap::new();
         for (style, bytes) in l {
-            let font = Font::from_bytes(Arc::new(bytes), 0).unwrap();
+            let font =
+                Font::from_bytes(Arc::new(bytes), 0).expect("Cannot load default font 'Hack'");
             fonts.insert(style, font);
         }
 
@@ -93,14 +94,14 @@ impl ImageFont {
         let family = SystemSource::new().select_family_by_name(name)?;
         let handles = family.fonts();
 
-        log::debug!("{:?}", handles);
+        tracing::debug!("{:?}", handles);
 
         for handle in handles {
             let font = handle.load()?;
 
             let properties: Properties = font.properties();
 
-            log::debug!("{:?} - {:?}", font, properties);
+            tracing::debug!("{:?} - {:?}", font, properties);
 
             // cannot use match because `Weight` didn't derive `Eq`
             match properties.style {
@@ -134,22 +135,28 @@ impl ImageFont {
     }
 
     /// Get a font by style. If there is no such a font, it will return the REGULAR font.
-    pub fn get_by_style(&self, style: FontStyle) -> &Font {
+    pub fn get_by_style(&self, style: FontStyle) -> Result<&Font, FontError> {
         self.fonts
             .get(&style)
-            .unwrap_or_else(|| self.fonts.get(&Regular).unwrap())
+            .or(self.fonts.get(&Regular))
+            .ok_or(FontError::LoadByStyle(format!("{style:?}")))
     }
 
     /// Get the regular font
-    pub fn get_regular(&self) -> &Font {
-        self.fonts.get(&Regular).unwrap()
+    pub fn get_regular(&self) -> Result<&Font, FontError> {
+        self.fonts
+            .get(&Regular)
+            .ok_or(FontError::LoadByStyle("Regular".to_owned()))
     }
 
     /// Get the height of the font
-    pub fn get_font_height(&self) -> u32 {
-        let font = self.get_regular();
+    pub fn get_font_height(&self) -> Result<u32, FontError> {
+        let font = self.get_regular()?;
         let metrics = font.metrics();
-        ((metrics.ascent - metrics.descent) / metrics.units_per_em as f32 * self.size).ceil() as u32
+        Ok(
+            ((metrics.ascent - metrics.descent) / metrics.units_per_em as f32 * self.size).ceil()
+                as u32,
+        )
     }
 }
 
@@ -171,82 +178,89 @@ impl Default for FontCollection {
 impl FontCollection {
     /// Create a FontCollection with several fonts.
     pub fn new<S: AsRef<str>>(font_list: &[(S, f32)]) -> Result<Self, FontError> {
-        let mut fonts = vec![];
-        for (name, size) in font_list {
-            let name = name.as_ref();
-            match ImageFont::new(name, *size) {
-                Ok(font) => fonts.push(font),
-                Err(err) => eprintln!("[error] Error occurs when load font `{}`: {}", name, err),
-            }
-        }
-        Ok(Self(fonts))
+        let fonts = font_list
+            .iter()
+            .map(|(name, size)| ImageFont::new(name.as_ref(), *size))
+            .collect::<Result<Vec<_>, FontError>>();
+        Ok(Self(fonts?))
     }
 
-    fn glyph_for_char(&self, c: char, style: FontStyle) -> Option<(u32, &ImageFont, &Font)> {
+    fn glyph_for_char(
+        &self,
+        c: char,
+        style: FontStyle,
+    ) -> Result<Option<(u32, &ImageFont, &Font)>, FontError> {
         for font in &self.0 {
-            let result = font.get_by_style(style);
+            let result = font.get_by_style(style)?;
             if let Some(id) = result.glyph_for_char(c) {
-                return Some((id, font, result));
+                return Ok(Some((id, font, result)));
             }
         }
-        eprintln!("[warning] No font found for character `{}`", c);
-        None
+        tracing::warn!("No font found for character `{}`", c);
+        Ok(None)
     }
 
     /// get max height of all the fonts
-    pub fn get_font_height(&self) -> u32 {
+    pub fn get_font_height(&self) -> Result<u32, FontError> {
         self.0
             .iter()
-            .map(|font| font.get_font_height())
+            .filter_map(|font| font.get_font_height().ok())
             .max()
-            .unwrap()
+            .ok_or(FontError::GetHeight)
     }
 
-    fn layout(&self, text: &str, style: FontStyle) -> (Vec<PositionedGlyph>, u32) {
+    fn layout(
+        &self,
+        text: &str,
+        style: FontStyle,
+    ) -> Result<(Vec<PositionedGlyph>, u32), FontError> {
         let mut delta_x = 0;
-        let height = self.get_font_height();
+        let height = self.get_font_height()?;
 
         let glyphs = text
             .chars()
             .filter_map(|c| {
-                self.glyph_for_char(c, style).map(|(id, imfont, font)| {
-                    let raster_rect = font
-                        .raster_bounds(
+                self.glyph_for_char(c, style)
+                    .and_then(|glyph| {
+                        let (id, imfont, font) = glyph.ok_or(FontError::GlyphLoading(
+                            font_kit::error::GlyphLoadingError::NoSuchGlyph,
+                        ))?;
+                        let raster_rect = font.raster_bounds(
                             id,
                             imfont.size,
                             Transform2F::default(),
                             HintingOptions::None,
                             RasterizationOptions::GrayscaleAa,
-                        )
-                        .unwrap();
-                    let position =
-                        Vector2I::new(delta_x as i32, height as i32) + raster_rect.origin();
-                    delta_x += Self::get_glyph_width(font, id, imfont.size);
+                        )?;
+                        let position =
+                            Vector2I::new(delta_x as i32, height as i32) + raster_rect.origin();
+                        delta_x += Self::get_glyph_width(font, id, imfont.size)?;
 
-                    PositionedGlyph {
-                        id,
-                        font: font.clone(),
-                        size: imfont.size,
-                        raster_rect,
-                        position,
-                    }
-                })
+                        Ok(PositionedGlyph {
+                            id,
+                            font: font.clone(),
+                            size: imfont.size,
+                            raster_rect,
+                            position,
+                        })
+                    })
+                    .ok()
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        (glyphs, delta_x)
+        Ok((glyphs, delta_x))
     }
 
     /// Get the width of the given glyph
-    fn get_glyph_width(font: &Font, id: u32, size: f32) -> u32 {
+    fn get_glyph_width(font: &Font, id: u32, size: f32) -> Result<u32, FontError> {
         let metrics = font.metrics();
-        let advance = font.advance(id).unwrap();
-        (advance / metrics.units_per_em as f32 * size).x().ceil() as u32
+        let advance = font.advance(id)?;
+        Ok((advance / metrics.units_per_em as f32 * size).x().ceil() as u32)
     }
 
     /// Get the width of the given text
-    pub fn get_text_len(&self, text: &str) -> u32 {
-        self.layout(text, Regular).1
+    pub fn get_text_len(&self, text: &str) -> Result<u32, FontError> {
+        self.layout(text, Regular).map(|l| l.1)
     }
 
     /// Draw the text to a image
@@ -259,16 +273,16 @@ impl FontCollection {
         y: u32,
         style: FontStyle,
         text: &str,
-    ) -> u32
+    ) -> Result<u32, ImagenGeneration>
     where
         I: GenericImage,
         <I::Pixel as Pixel>::Subpixel: ValueInto<f32> + Clamp<f32>,
     {
-        let metrics = self.0[0].get_regular().metrics();
+        let metrics = self.0[0].get_regular()?.metrics();
         let offset =
             (metrics.descent / metrics.units_per_em as f32 * self.0[0].size).round() as i32;
 
-        let (glyphs, width) = self.layout(text, style);
+        let (glyphs, width) = self.layout(text, style)?;
 
         for glyph in glyphs {
             glyph.draw(offset, |px, py, v| {
@@ -279,10 +293,10 @@ impl FontCollection {
                 let pixel = image.get_pixel(x, y);
                 let weighted_color = weighted_sum(pixel, color, 1.0 - v, v);
                 image.put_pixel(x, y, weighted_color);
-            })
+            })?
         }
 
-        width
+        Ok(width)
     }
 }
 
@@ -291,7 +305,7 @@ impl<'de> Deserialize<'de> for FontCollection {
     where
         D: Deserializer<'de>,
     {
-        Ok(parse_font_str(&String::deserialize(deserializer)?).unwrap())
+        parse_font_str(&String::deserialize(deserializer)?).map_err(D::Error::custom)
     }
 }
 
@@ -315,10 +329,12 @@ pub fn parse_font_str(s: &str) -> Result<FontCollection, FontError> {
         .split(';')
         .filter(|&f| !f.is_empty())
         .map(|f| {
-            let (name, size) = f.split_once('=').unwrap();
-            (name.to_owned(), size.parse::<f32>().unwrap_or(26.))
+            let (name, size) = f.split_once('=').ok_or(FontError::BadFormat(
+                "The font format should be 'Name=Size'".to_owned(),
+            ))?;
+            Ok((name.to_owned(), size.parse::<f32>().unwrap_or(26.)))
         })
-        .collect::<Vec<(String, f32)>>();
+        .collect::<Result<Vec<(String, f32)>, FontError>>()?;
 
     FontCollection::new(&fonts)
 }
@@ -332,21 +348,19 @@ struct PositionedGlyph {
 }
 
 impl PositionedGlyph {
-    fn draw<O: FnMut(i32, i32, f32)>(&self, offset: i32, mut o: O) {
+    fn draw<O: FnMut(i32, i32, f32)>(&self, offset: i32, mut o: O) -> Result<(), FontError> {
         let mut canvas = Canvas::new(self.raster_rect.size(), Format::A8);
 
         // don't rasterize whitespace(https://github.com/pcwalton/font-kit/issues/7)
         if canvas.size != Vector2I::new(0, 0) {
-            self.font
-                .rasterize_glyph(
-                    &mut canvas,
-                    self.id,
-                    self.size,
-                    Transform2F::from_translation(-self.raster_rect.origin().to_f32()),
-                    HintingOptions::None,
-                    RasterizationOptions::GrayscaleAa,
-                )
-                .unwrap();
+            self.font.rasterize_glyph(
+                &mut canvas,
+                self.id,
+                self.size,
+                Transform2F::from_translation(-self.raster_rect.origin().to_f32()),
+                HintingOptions::None,
+                RasterizationOptions::GrayscaleAa,
+            )?;
         }
 
         for y in (0..self.raster_rect.height()).rev() {
@@ -362,5 +376,7 @@ impl PositionedGlyph {
                 o(px, py, val);
             }
         }
+
+        Ok(())
     }
 }

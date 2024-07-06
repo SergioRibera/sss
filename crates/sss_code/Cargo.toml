@@ -23,14 +23,15 @@ license = false
 eula = false
 
 [dependencies]
-log.workspace = true
 toml.workspace = true
 clap.workspace = true
 serde.workspace = true
 merge2.workspace = true
 thiserror.workspace = true
-env_logger.workspace = true
 directories.workspace = true
+tracing.workspace = true
+color-eyre.workspace = true
+tracing-subscriber.workspace = true
 clap-stdin = "0.4.0"
 sss_lib = { path = "../sss_lib" }
 syntect = { version = "5.1.0", default-features = false, features = [
