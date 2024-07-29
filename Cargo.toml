@@ -33,7 +33,7 @@ serde = { version = "1.0.8", features = ["serde_derive"] }
 toml = "0.8.8"
 merge2 = "0.3.0"
 directories = "5.0.1"
-clap = { version = "4.5.8", features = [
+clap = { version = "4.5.11", features = [
     "derive",
     "color",
     "env",
