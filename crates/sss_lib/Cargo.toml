@@ -15,7 +15,7 @@ merge2.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 conv = "0.3.3"
-font-kit = "0.14.1"
+font-kit = "0.14.2"
 pathfinder_geometry = "0.5.1"
 imageproc = "0.25.0"
 arboard = { version = "3.4.0", features = ["wayland-data-control"] }
