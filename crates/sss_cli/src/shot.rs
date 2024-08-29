@@ -1,27 +1,18 @@
 use std::env::var_os;
 
-#[cfg(target_os = "linux")]
-use libwayshot::output::OutputPositioning;
-#[cfg(target_os = "linux")]
-use libwayshot::reexport::Transform;
-#[cfg(target_os = "linux")]
-use libwayshot::{CaptureRegion, WayshotConnection};
-use screenshots::display_info::DisplayInfo;
-use screenshots::image::imageops::overlay;
-#[cfg(target_os = "linux")]
-use screenshots::image::imageops::{rotate180, rotate270, rotate90};
-use screenshots::image::{Rgba, RgbaImage};
-use screenshots::Screen;
 use sss_lib::error::ImagenGeneration;
+use xcap::image::imageops::overlay;
+#[cfg(target_os = "linux")]
+use xcap::image::imageops::{rotate180, rotate270, rotate90};
+use xcap::image::{Rgba, RgbaImage};
+use xcap::Monitor;
 
 use crate::error::SSScreenshot;
 use crate::Area;
 
-#[cfg(target_os = "linux")]
-type ScreenImage = ((Area, Transform), RgbaImage);
-#[cfg(not(target_os = "linux"))]
-type ScreenImage = ((Area, ()), RgbaImage);
+type ScreenImage = ((Area, f32), RgbaImage);
 
+#[allow(unused)]
 fn wayland_detect() -> bool {
     let xdg_session_type = var_os("XDG_SESSION_TYPE")
         .unwrap_or_default()
@@ -39,11 +30,11 @@ fn wayland_detect() -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn rotate(screen: &RgbaImage, t: Transform) -> RgbaImage {
+fn rotate(screen: &RgbaImage, t: f32) -> RgbaImage {
     match t {
-        Transform::_90 => rotate90(screen),
-        Transform::_180 => rotate180(screen),
-        Transform::_270 => rotate270(screen),
+        90.0 => rotate90(screen),
+        180.0 => rotate180(screen),
+        270.0 => rotate270(screen),
         _ => screen.clone(),
     }
 }
@@ -67,110 +58,45 @@ fn make_all_screens(screens: &[ScreenImage]) -> RgbaImage {
 }
 
 pub struct ShotImpl {
-    xorg: Option<Vec<Screen>>,
-    #[cfg(target_os = "linux")]
-    wayland: Option<WayshotConnection>,
-    #[cfg(not(target_os = "linux"))]
-    wayland: Option<()>,
+    monitors: Vec<Monitor>,
 }
 
 impl ShotImpl {
     pub fn new() -> Result<Self, SSScreenshot> {
         Ok(Self {
-            xorg: (!wayland_detect())
-                .then_some(Screen::all().map_err(|e| SSScreenshot::Custom(e.to_string()))?),
-            #[cfg(target_os = "linux")]
-            wayland: wayland_detect().then_some(WayshotConnection::new()?),
-            #[cfg(not(target_os = "linux"))]
-            wayland: None,
+            monitors: Monitor::all().map_err(|e| SSScreenshot::Custom(e.to_string()))?,
         })
     }
 
-    pub fn all(&self, mouse: bool) -> Result<RgbaImage, ImagenGeneration> {
-        if let Some(screens) = self.xorg.as_ref() {
-            return Ok(make_all_screens(
-                &screens
-                    .iter()
-                    .map(|s| {
-                        let DisplayInfo {
-                            x,
-                            y,
-                            width,
-                            height,
-                            ..
-                        } = s.display_info;
-                        s.capture()
-                            .map(|c| {
+    pub fn all(&self) -> Result<RgbaImage, ImagenGeneration> {
+        return Ok(make_all_screens(
+            &self
+                .monitors
+                .iter()
+                .map(|s| {
+                    let x = s.x();
+                    let y = s.y();
+                    let width = s.width();
+                    let height = s.height();
+                    s.capture_image()
+                        .map(|c| {
+                            (
                                 (
-                                    #[cfg(target_os = "linux")]
-                                    (
-                                        Area {
-                                            x,
-                                            y,
-                                            width,
-                                            height,
-                                        },
-                                        Transform::Normal,
-                                    ),
-                                    #[cfg(not(target_os = "linux"))]
-                                    (
-                                        Area {
-                                            x,
-                                            y,
-                                            width,
-                                            height,
-                                        },
-                                        (),
-                                    ),
-                                    c,
-                                )
-                            })
-                            .map_err(|e| ImagenGeneration::Custom(e.to_string()))
-                    })
-                    .collect::<Result<Vec<(_, _)>, ImagenGeneration>>()?,
-            ));
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        return Err(ImagenGeneration::Custom("No Context loaded".to_string()));
-
-        #[cfg(target_os = "linux")]
-        self.wayland
-            .as_ref()
-            .ok_or(ImagenGeneration::Custom("No Context loaded".to_owned()))
-            .map(|wayshot| {
-                let outputs = wayshot.get_all_outputs();
-                Ok(make_all_screens(
-                    &outputs
-                        .iter()
-                        .map(|o| {
-                            let OutputPositioning {
-                                x,
-                                y,
-                                width,
-                                height,
-                            } = o.dimensions;
-                            wayshot
-                                .screenshot_single_output(o, mouse)
-                                .map_err(|e| ImagenGeneration::Custom(e.to_string()))
-                                .map(|c| {
-                                    (
-                                        (
-                                            Area {
-                                                x,
-                                                y,
-                                                width: width as u32,
-                                                height: height as u32,
-                                            },
-                                            o.transform,
-                                        ),
-                                        c,
-                                    )
-                                })
+                                    Area {
+                                        x,
+                                        y,
+                                        width,
+                                        height,
+                                    },
+                                    s.rotation(),
+                                ),
+                                c,
+                            )
                         })
-                        .collect::<Result<Vec<(_, _)>, ImagenGeneration>>()?,
-                ))
-            })?
+                        .map_err(|e| ImagenGeneration::Custom(e.to_string()))
+                })
+                .collect::<Result<Vec<(_, _)>, ImagenGeneration>>()?,
+        ));
     }
 
     pub fn capture_area(
@@ -181,57 +107,37 @@ impl ShotImpl {
             width: w,
             height: h,
         }: Area,
-        mouse: bool,
     ) -> Result<RgbaImage, ImagenGeneration> {
         if w <= 1 || h <= 1 {
             return Err(ImagenGeneration::Custom(
                 "The area size is invalid".to_owned(),
             ));
         }
-        if let Some(screens) = self.xorg.as_ref() {
-            let screen = screens
-                .iter()
-                .find(|s| {
-                    x >= s.display_info.x
-                        && (x as i32)
-                            < s.display_info.x + s.display_info.width as i32
-                        && y >= s.display_info.y
-                        && (y as i32)
-                            < s.display_info.y + s.display_info.height as i32
-                })
-                .ok_or(ImagenGeneration::Custom(format!(
-                    "Screen not found in area: {x},{y} {w}x{h}"
-                )))?;
-            return screen
-                .capture_area(
-                    x - screen.display_info.x,
-                    y - screen.display_info.y,
+        let screen = self
+            .monitors
+            .iter()
+            .find(|s| {
+                x >= s.x()
+                    && (x as i32) < s.x() + s.width() as i32
+                    && y >= s.y()
+                    && (y as i32) < s.y() + s.height() as i32
+            })
+            .ok_or(ImagenGeneration::Custom(format!(
+                "Screen not found in area: {x},{y} {w}x{h}"
+            )))?;
+        return screen
+            .capture_image()
+            .map(|i| {
+                xcap::image::imageops::crop_imm(
+                    &i,
+                    (x - screen.x()) as u32,
+                    (y - screen.y()) as u32,
                     w,
                     h,
                 )
-                .map_err(|e| ImagenGeneration::Custom(e.to_string()));
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        return Err(ImagenGeneration::Custom("No Context loaded".to_string()));
-
-        #[cfg(target_os = "linux")]
-        self.wayland
-            .as_ref()
-            .ok_or(ImagenGeneration::Custom("No Context loaded".to_string()))
-            .map(|wayshot| {
-                wayshot
-                    .screenshot(
-                        CaptureRegion {
-                            x_coordinate: x,
-                            y_coordinate: y,
-                            width: w as i32,
-                            height: h as i32,
-                        },
-                        mouse,
-                    )
-                    .map_err(|e| ImagenGeneration::Custom(e.to_string()))
-            })?
+                .to_image()
+            })
+            .map_err(|e| ImagenGeneration::Custom(e.to_string()));
     }
 
     pub fn screen(
@@ -239,63 +145,24 @@ impl ShotImpl {
         mouse_position: Option<(i32, i32)>,
         id: Option<i32>,
         name: Option<String>,
-        mouse: bool,
     ) -> Result<RgbaImage, ImagenGeneration> {
-        let pos = mouse_position.or(id.map(|i| (i, i))).unwrap_or_default();
+        let (x, y) = mouse_position.unwrap_or_default();
 
-        if let Some(screens) = self.xorg.as_ref() {
-            let (x, y) = pos;
-            let screen = screens
+        let screen = self.monitors
                 .iter()
                 .find(|s| {
-                    s.display_info.id == pos.0 as u32
-                        || x >= s.display_info.x
-                            && (x - s.display_info.width as i32)
-                                < s.display_info.x + s.display_info.width as i32
-                            && y >= s.display_info.y
-                            && (y - s.display_info.height as i32)
-                                < s.display_info.y + s.display_info.height as i32
+                    id.map(|i| i as u32).is_some_and(|id| id == s.id())
+                        || x >= s.x()
+                            && (x - s.width() as i32)
+                                < s.x() + s.width() as i32
+                            && y >= s.y()
+                            && (y - s.height() as i32)
+                                < s.y() + s.height() as i32
                 }).ok_or(ImagenGeneration::Custom(format!(
                     "Screen not found in mouse position {mouse_position:?} or with id: {id:?} or with name: {name:?}"
                 )))?;
-            return screen
-                .capture()
-                .map_err(|e| ImagenGeneration::Custom(e.to_string()));
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        return Err(ImagenGeneration::Custom("No Context loaded".to_string()));
-
-        let screen_name = name.unwrap_or_default();
-
-        #[cfg(target_os = "linux")]
-        self.wayland
-            .as_ref()
-            .ok_or(ImagenGeneration::Custom("No Context loaded".to_string()))
-            .map(|wayshot| {
-                let outputs = wayshot.get_all_outputs();
-                let screen = outputs
-                    .iter()
-                    .find(|o| {
-                        let OutputPositioning {
-                            x,
-                            y,
-                            width,
-                            height,
-                        } = o.dimensions;
-                        o.name == screen_name.trim()
-                            || pos.0 >= x
-                                && (pos.0 - width) < x + width
-                                && pos.1 >= y
-                                && (pos.1 - height) < y + height
-                    }).ok_or(ImagenGeneration::Custom(format!(
-                    "Screen not found in mouse position {mouse_position:?} or with id: {id:?} or with name: {screen_name:?}"
-                )))?;
-                let img = wayshot
-                    .screenshot_single_output(screen, mouse)
-                    .map_err(|e| ImagenGeneration::Custom(e.to_string()))?;
-                #[cfg(target_os = "linux")]
-                Ok(rotate(&img, screen.transform))
-            })?
+        return screen
+            .capture_image()
+            .map_err(|e| ImagenGeneration::Custom(e.to_string()));
     }
 }

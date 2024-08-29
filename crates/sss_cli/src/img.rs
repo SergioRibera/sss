@@ -23,18 +23,18 @@ impl DynImageContent for Screenshot {
                 ImagenGenerationError::Custom(format!("Cannot get mouse position: {e:?}"))
             })?;
 
-            shot.screen(Some((x, y)), None, None, self.config.show_cursor)
+            shot.screen(Some((x, y)), None, None)
         } else if let Some(area) = self.config.area {
             tracing::trace!("Capture area");
-            shot.capture_area(area, self.config.show_cursor)
+            shot.capture_area(area)
         } else if let Some(id) = self.config.screen_id.as_ref() {
             let name = Some(id.clone());
             let id = id.parse::<i32>().ok();
             tracing::trace!("Capture specific screen: {{ name: {name:?}, id: {id:?} }}");
-            shot.screen(None, id, name, self.config.show_cursor)
+            shot.screen(None, id, name)
         } else {
             tracing::trace!("Capture all screens");
-            shot.all(self.config.show_cursor)
+            shot.all()
         }
     }
 }
