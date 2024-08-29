@@ -58,12 +58,7 @@ pub struct CodeConfig {
     #[merge(strategy = overwrite_false)]
     #[serde(skip)]
     pub list_file_types: bool,
-    #[clap(
-        long,
-        short = 'L', 
-        conflicts_with = "output",
-        help = "Lists themes"
-    )]
+    #[clap(long, short = 'L', conflicts_with = "output", help = "Lists themes")]
     #[merge(strategy = overwrite_false)]
     #[serde(skip)]
     pub list_themes: bool,

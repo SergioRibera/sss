@@ -69,7 +69,7 @@ impl ShotImpl {
     }
 
     pub fn all(&self) -> Result<RgbaImage, ImagenGeneration> {
-        return Ok(make_all_screens(
+        Ok(make_all_screens(
             &self
                 .monitors
                 .iter()
@@ -96,7 +96,7 @@ impl ShotImpl {
                         .map_err(|e| ImagenGeneration::Custom(e.to_string()))
                 })
                 .collect::<Result<Vec<(_, _)>, ImagenGeneration>>()?,
-        ));
+        ))
     }
 
     pub fn capture_area(
@@ -118,9 +118,9 @@ impl ShotImpl {
             .iter()
             .find(|s| {
                 x >= s.x()
-                    && (x as i32) < s.x() + s.width() as i32
+                    && x < s.x() + s.width() as i32
                     && y >= s.y()
-                    && (y as i32) < s.y() + s.height() as i32
+                    && y < s.y() + s.height() as i32
             })
             .ok_or(ImagenGeneration::Custom(format!(
                 "Screen not found in area: {x},{y} {w}x{h}"
@@ -161,8 +161,8 @@ impl ShotImpl {
                 }).ok_or(ImagenGeneration::Custom(format!(
                     "Screen not found in mouse position {mouse_position:?} or with id: {id:?} or with name: {name:?}"
                 )))?;
-        return screen
+        screen
             .capture_image()
-            .map_err(|e| ImagenGeneration::Custom(e.to_string()));
+            .map_err(|e| ImagenGeneration::Custom(e.to_string()))
     }
 }
