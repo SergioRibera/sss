@@ -18,7 +18,7 @@ pub fn make_output(
         "raw" => {
             let mut stdout = std::io::stdout();
             let encoder = PngEncoder::new(&mut stdout);
-            encoder.write_image(img, img.width(), img.height(), image::ColorType::Rgba8)?;
+            encoder.write_image(img, img.width(), img.height(), image::ColorType::Rgba8.into())?;
         }
         _ => {
             let format_img = str_to_format(fmt.unwrap_or("png"))?;

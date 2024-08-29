@@ -1,7 +1,6 @@
 //! A basic font manager with fallback support
 //!
 //! code modified from https://github.com/Aloxaf/silicon/blob/447c456385136abf5605e42e7c6e71acd3fdcd0d/src/font.rs
-use conv::ValueInto;
 use font_kit::canvas::{Canvas, Format, RasterizationOptions};
 use font_kit::font::Font;
 use font_kit::hinting::HintingOptions;
@@ -276,7 +275,7 @@ impl FontCollection {
     ) -> Result<u32, ImagenGeneration>
     where
         I: GenericImage,
-        <I::Pixel as Pixel>::Subpixel: ValueInto<f32> + Clamp<f32>,
+        <I::Pixel as Pixel>::Subpixel: Into<f32> + Clamp<f32>,
     {
         let metrics = self.0[0].get_regular()?.metrics();
         let offset =

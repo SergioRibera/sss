@@ -10,8 +10,6 @@ use sss_code::{list_themes, load_theme, theme_from_vim};
 use sss_lib::generate_image;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 const DEFAULT_SYNTAXSET: &[u8] = include_bytes!("../../../assets/syntaxes.bin");

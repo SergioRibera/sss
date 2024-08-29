@@ -14,16 +14,15 @@ serde.workspace = true
 merge2.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
-conv = "0.3.3"
-font-kit = "0.14.2"
-pathfinder_geometry = "0.5.1"
-imageproc = "0.25.0"
-arboard = { version = "3.4.0", features = ["wayland-data-control"] }
-image = { version = "0.24.7", default-features = false, features = [
+font-kit = "0.14"
+pathfinder_geometry = "0.5"
+imageproc = "0.25"
+arboard = { version = "3.4", features = ["wayland-data-control"] }
+image = { version = "0.25", default-features = false, features = [
     "png",
     "jpeg",
-    "jpeg_rayon",
+    "rayon",
     "webp",
 ] }
-rayon = "1.8.0"
-notify-rust = { version = "4.11.1", features = ["images"] }
+rayon = "1.8"
+notify-rust = { version = "4.11", features = ["images"] }
