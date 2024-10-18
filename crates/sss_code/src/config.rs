@@ -131,7 +131,7 @@ pub fn get_config() -> Result<(CodeConfig, sss_lib::GenerationSettings), Configu
             .config_dir()
             .join("sss");
 
-        let _ = std::fs::create_dir_all(config_path.clone());
+        _ = std::fs::create_dir_all(config_path.clone());
 
         tracing::trace!("Loading global config");
         config_path.join("config.toml")

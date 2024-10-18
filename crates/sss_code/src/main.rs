@@ -96,13 +96,12 @@ fn main() -> Result<(), Report> {
     let content = config
         .content
         .clone()
-        .wrap_err("Cannot get content from args")?
-        .contents()
-        .expect("Cannot get content to render");
+        .wrap_err("Cannot get content from args")?;
     let syntax = if let Some(ext) = &config.extension {
-        ss.find_syntax_by_extension(ext).unwrap()
+        ss.find_syntax_by_extension(ext)
+            .wrap_err("Extension not found from extension argument")?
     } else {
-        ss.find_syntax_for_file(&content)?
+        ss.find_syntax_for_file(&content.filename())?
             .wrap_err("Extension not found from stdin or file")?
     };
 
@@ -118,7 +117,7 @@ fn main() -> Result<(), Report> {
             .themes
             .get(&theme)
             .map(Cow::Borrowed)
-            .unwrap_or(Cow::Owned(load_theme(&theme, false)?))
+            .unwrap_or_else(|| Cow::Owned(load_theme(&theme, false).unwrap()))
     };
 
     if theme.settings.background.is_some()
@@ -140,7 +139,7 @@ fn main() -> Result<(), Report> {
             theme,
             lib_config: g_config.clone(),
             syntax_set: &ss,
-            content: &content,
+            content: &content.contents().expect("Cannot get content to render"),
             font: g_config.fonts,
         },
     )?)
