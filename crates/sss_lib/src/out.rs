@@ -2,7 +2,7 @@ use image::codecs::png::PngEncoder;
 use image::{ImageBuffer, ImageEncoder, Rgba};
 use notify_rust::Notification;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, not(target_os = "macos")))]
 use notify_rust::Image;
 
 use crate::{error, str_to_format};
@@ -32,7 +32,7 @@ pub fn make_output(
 
             if show_notify {
                 tracing::trace!("Show notification");
-                #[cfg(all(unix, not(target_os = "macos"), not(target_os = "windows")))]
+                #[cfg(all(unix, not(target_os = "macos")))]
                 Notification::new()
                     .summary("Image generated")
                     .body(&format!("Image stored in {output}"))
@@ -42,7 +42,7 @@ pub fn make_output(
                         img.to_vec(),
                     )?)
                     .show()?;
-                #[cfg(all(target_os = "macos", target_os = "windows"))]
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
                 Notification::new()
                     .summary("Image generated")
                     .body(&format!("Image stored in {output}"))

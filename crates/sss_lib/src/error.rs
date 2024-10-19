@@ -1,7 +1,10 @@
 use font_kit::error::{FontLoadingError, GlyphLoadingError, SelectionError};
 use image::ImageError;
-use notify_rust::{error::Error as NotificationError, ImageError as NotificationImageError};
+use notify_rust::error::Error as NotificationError;
 use std::num::ParseIntError;
+
+#[cfg(all(unix, not(target_os = "macos")))]
+use notify_rust::ImageError as NotificationImageError;
 
 use thiserror::Error;
 
@@ -14,6 +17,7 @@ pub enum ImagenGeneration {
     Font(#[from] FontError),
     Image(#[from] ImageError),
     Notification(#[from] NotificationError),
+    #[cfg(all(unix, not(target_os = "macos")))]
     NotificationImage(#[from] NotificationImageError),
     #[error("{0}")]
     Custom(String),

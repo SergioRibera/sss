@@ -101,7 +101,7 @@ fn main() -> Result<(), Report> {
         ss.find_syntax_by_extension(ext)
             .wrap_err("Extension not found from extension argument")?
     } else {
-        ss.find_syntax_for_file(&content.filename())?
+        ss.find_syntax_for_file(content.filename())?
             .wrap_err("Extension not found from stdin or file")?
     };
 
