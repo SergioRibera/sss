@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use clap_stdin::FileOrStdin;
-use merge2::{bool::overwrite_false, option::recursive, Merge};
+use merge2::{bool::overwrite_false, option::recursive, vec::append, Merge};
 use serde::{Deserialize, Serialize};
 use sss_lib::{default_bool, swap_option};
 
@@ -91,6 +91,9 @@ pub struct CodeConfig {
     #[clap(long, help = "Tab width")]
     #[merge(strategy = swap_option)]
     pub tab_width: Option<u8>,
+    #[clap(long, short = 'i', help = "Indent characters (separated by comma)", num_args = 0.., value_delimiter = ',')]
+    #[merge(strategy = append)]
+    pub indent_chars: Vec<char>,
 }
 
 impl Default for CodeConfig {
@@ -115,6 +118,7 @@ impl Default for CodeConfig {
             }),
             line_numbers: true,
             tab_width: Some(4),
+            indent_chars: Vec::new(),
         }
     }
 }

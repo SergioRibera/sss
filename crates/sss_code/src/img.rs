@@ -19,7 +19,7 @@ use crate::utils::{color_to_rgba, fontstyle_from_syntect};
 
 type Drawable = (u32, u32, Option<Color>, FontStyle, String);
 
-const LINE_SPACE: u32 = 5;
+const LINE_SPACE: u32 = 0;
 const LINE_NUMBER_RIGHT: u32 = 7;
 
 const CODE_PADDING: u32 = 25;
@@ -65,6 +65,8 @@ impl<'a> ImageCode<'a> {
         (n, hi, max_lineno): (usize, bool, u32),
         mut fg: Color,
         tab: &str,
+        tab_size: usize,
+        indents: &[char],
         tokens: &[(Style, &str)],
         max_width: &mut u32,
         max_h: u32,
@@ -72,11 +74,32 @@ impl<'a> ImageCode<'a> {
         let height = self.get_line_y(n as u32, max_h)?;
         let mut width = self.get_left_pad(max_lineno)?;
         let mut drawables = Vec::new();
+        let get_tab = |level: usize| {
+            if indents.is_empty() || level == 0 {
+                tab.to_owned()
+            } else {
+                (0..level)
+                    .map(|level| {
+                        let indent_char = indents[level % indents.len()];
+                        format!("{}{:width$}", indent_char, " ", width = tab_size - 1)
+                    })
+                    .collect::<String>()
+            }
+        };
 
         fg.a /= 2;
 
+        let indent_level = tokens
+            .get(0)
+            .map(|(_, text)| text.split('\t').count() + text.split(tab).count())
+            .unwrap_or_default()
+            .saturating_sub(2);
+        let indent = get_tab(indent_level);
+        tracing::debug!("Indent Level for line {n}: {indent_level} - {indent}");
+        drawables.push((width, height, Some(fg), FontStyle::Regular, indent));
+
         for (style, text) in tokens {
-            let text = text.trim_end_matches('\n').replace('\t', tab);
+            let text = text.trim_end_matches('\n');
             if text.is_empty() {
                 continue;
             }
@@ -167,7 +190,9 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 ConfigurationError::ParamNotFound("theme.code_background".to_owned()).to_string(),
             ))?;
         tracing::debug!("Default Background {background:?}");
-        let tab = " ".repeat(self.config.tab_width.unwrap_or(4) as usize);
+        tracing::debug!("Indent Chars: {:?}", &self.config.indent_chars);
+        let tab_width = (self.config.tab_width.unwrap_or(4)) as usize;
+        let tab = " ".repeat(tab_width);
         let lines = self.content.split('\n').collect::<Vec<&str>>();
         let line_range = self
             .config
@@ -208,6 +233,8 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 (n, hi, max_lineno),
                 foreground,
                 &tab,
+                tab_width,
+                &self.config.indent_chars,
                 &line,
                 &mut max_width,
                 max_h_controls,
