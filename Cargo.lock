@@ -132,7 +132,7 @@ checksum = "df099ccb16cd014ff054ac1bf392c67feeef57164b05c42f037cd40f5d4357f4"
 dependencies = [
  "clipboard-win",
  "core-graphics 0.23.2",
- "image 0.25.3",
+ "image 0.25.4",
  "log",
  "objc2",
  "objc2-app-kit",
@@ -1265,9 +1265,9 @@ dependencies = [
 
 [[package]]
 name = "image"
-version = "0.25.3"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d97eb9a8e0cd5b76afea91d7eecd5cf8338cd44ced04256cf1f800474b227c52"
+checksum = "bc144d44a31d753b02ce64093d532f55ff8dc4ebf2ffb8a63c0dda691385acae"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
@@ -1305,7 +1305,7 @@ dependencies = [
  "ab_glyph",
  "approx",
  "getrandom",
- "image 0.25.3",
+ "image 0.25.4",
  "itertools",
  "nalgebra",
  "num",
@@ -1743,7 +1743,7 @@ version = "4.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5134a72dc570b178bff81b01e81ab14a6fcc015391ed4b3b14853090658cd3a3"
 dependencies = [
- "image 0.25.3",
+ "image 0.25.4",
  "lazy_static",
  "log",
  "mac-notification-sys",
@@ -2775,7 +2775,7 @@ dependencies = [
  "arboard",
  "clap",
  "font-kit",
- "image 0.25.3",
+ "image 0.25.4",
  "imageproc",
  "merge2",
  "notify-rust",
@@ -3778,7 +3778,7 @@ dependencies = [
  "core-foundation 0.10.0",
  "core-graphics 0.24.0",
  "dbus",
- "image 0.25.3",
+ "image 0.25.4",
  "log",
  "percent-encoding",
  "sysinfo",
