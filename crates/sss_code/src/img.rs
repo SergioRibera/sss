@@ -13,13 +13,13 @@ use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, Style, Theme};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 
-use crate::config::CodeConfig;
+use crate::config::{CodeConfig, HiddenCharType};
 use crate::error::Configuration as ConfigurationError;
-use crate::utils::{color_to_rgba, fontstyle_from_syntect};
+use crate::utils::{color_to_rgba, fontstyle_from_syntect, process_token_text};
 
 type Drawable = (u32, u32, Option<Color>, FontStyle, String);
 
-const LINE_SPACE: u32 = 5;
+const LINE_SPACE: u32 = 0;
 const LINE_NUMBER_RIGHT: u32 = 7;
 
 const CODE_PADDING: u32 = 25;
@@ -64,7 +64,9 @@ impl<'a> ImageCode<'a> {
         &self,
         (n, hi, max_lineno): (usize, bool, u32),
         mut fg: Color,
-        tab: &str,
+        tab_size: usize,
+        indents: &[char],
+        hidden_chars: &[(HiddenCharType, char)],
         tokens: &[(Style, &str)],
         max_width: &mut u32,
         max_h: u32,
@@ -73,24 +75,78 @@ impl<'a> ImageCode<'a> {
         let mut width = self.get_left_pad(max_lineno)?;
         let mut drawables = Vec::new();
 
+        let get_hidden_char = |char_type: HiddenCharType, default: char| {
+            hidden_chars
+                .iter()
+                .rev()
+                .find(|&(ty, _)| *ty == char_type)
+                .map(|&(_, c)| c)
+                .unwrap_or(default)
+        };
+
+        let space = get_hidden_char(HiddenCharType::Space, ' ');
+        let tab_char = get_hidden_char(HiddenCharType::Tab, ' ');
+        let eol = get_hidden_char(HiddenCharType::EOL, '\0');
+        let get_indent_char = |level: usize| {
+            if indents.is_empty() {
+                tab_char
+            } else {
+                indents[level % indents.len()]
+            }
+        };
+
+        tracing::info!("Tokens for line {n}: {}", tokens.len());
+
+        let mut indent_level = 0;
+        let mut in_indent = true;
+        if tokens.is_empty() {
+            drawables.push((
+                width,
+                height,
+                Some(fg),
+                fontstyle_from_syntect(syntect::highlighting::FontStyle::all()),
+                indents.first().unwrap_or(&' ').to_string(),
+            ));
+        }
+
         fg.a /= 2;
 
         for (style, text) in tokens {
-            let text = text.trim_end_matches('\n').replace('\t', tab);
-            if text.is_empty() {
-                continue;
-            }
+            let (text, new_indent_level) = process_token_text(
+                text,
+                space,
+                tab_char,
+                tab_size,
+                &mut in_indent,
+                indent_level,
+                get_indent_char,
+            );
+            indent_level = new_indent_level;
+
             drawables.push((
                 width,
                 height,
                 Some(if hi { style.foreground } else { fg }),
                 fontstyle_from_syntect(style.font_style),
-                text.to_owned(),
+                text.clone(),
             ));
 
             width += self.font.get_text_len(&text)?;
-
             *max_width = (*max_width).max(width);
+        }
+
+        if let Ok(eol_width) = self.font.get_text_len(&eol.to_string()) {
+            if eol_width > 0 {
+                tracing::debug!("eol_width: {eol_width}");
+                *max_width = (*max_width).max(width + (eol_width * 2));
+                drawables.push((
+                    width + eol_width,
+                    height,
+                    Some(fg),
+                    FontStyle::Regular,
+                    eol.to_string(),
+                ));
+            }
         }
 
         Ok(drawables)
@@ -167,7 +223,8 @@ impl<'a> DynImageContent for ImageCode<'a> {
                 ConfigurationError::ParamNotFound("theme.code_background".to_owned()).to_string(),
             ))?;
         tracing::debug!("Default Background {background:?}");
-        let tab = " ".repeat(self.config.tab_width.unwrap_or(4) as usize);
+        tracing::debug!("Indent Chars: {:?}", &self.config.indent_chars);
+        let tab_width = (self.config.tab_width.unwrap_or(4)) as usize;
         let lines = self.content.split('\n').collect::<Vec<&str>>();
         let line_range = self
             .config
@@ -207,7 +264,9 @@ impl<'a> DynImageContent for ImageCode<'a> {
             drawables.extend(self.create_line(
                 (n, hi, max_lineno),
                 foreground,
-                &tab,
+                tab_width,
+                &self.config.indent_chars,
+                &self.config.hidden_chars,
                 &line,
                 &mut max_width,
                 max_h_controls,
