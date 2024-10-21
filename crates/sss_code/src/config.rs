@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use clap::Parser;
 use clap_stdin::FileOrStdin;
@@ -23,6 +24,29 @@ struct ClapConfig {
     #[clap(flatten)]
     #[serde(rename = "general")]
     pub lib_config: sss_lib::GenerationSettingsArgs,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum HiddenCharType {
+    Space,
+    Tab,
+    EOL,
+}
+
+impl FromStr for HiddenCharType {
+    type Err = CodeScreenshotError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "space" => Ok(HiddenCharType::Space),
+            "tab" => Ok(HiddenCharType::Tab),
+            "eol" => Ok(HiddenCharType::EOL),
+            _ => Err(CodeScreenshotError::InvalidFormat(
+                "Hidden Character",
+                "space:·,tab:»,eol:¶",
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Merge, Parser, Serialize)]
@@ -94,6 +118,9 @@ pub struct CodeConfig {
     #[clap(long, short = 'i', help = "Indent characters (separated by comma)", num_args = 0.., value_delimiter = ',')]
     #[merge(strategy = append)]
     pub indent_chars: Vec<char>,
+    #[clap(long, help = "Show Hidden Characters", num_args = 0.., value_delimiter = ',', value_parser = parse_hidden_character_type)]
+    #[merge(strategy = append)]
+    pub hidden_chars: Vec<(HiddenCharType, char)>,
 }
 
 impl Default for CodeConfig {
@@ -119,6 +146,7 @@ impl Default for CodeConfig {
             line_numbers: true,
             tab_width: Some(4),
             indent_chars: Vec::new(),
+            hidden_chars: Vec::new(),
         }
     }
 }
@@ -149,6 +177,15 @@ pub fn get_config() -> Result<(CodeConfig, sss_lib::GenerationSettings), Configu
         return Ok((config.code.unwrap_or_default(), config.lib_config.into()));
     }
     Ok((args.code.unwrap_or_default(), args.lib_config.into()))
+}
+
+fn parse_hidden_character_type(s: &str) -> Result<(HiddenCharType, char), CodeScreenshotError> {
+    let (ty, val) = s.split_once(':').ok_or(CodeScreenshotError::InvalidFormat(
+        "Hidden Character",
+        "TYPE:char,",
+    ))?;
+
+    Ok((HiddenCharType::from_str(ty)?, val.chars().next().unwrap()))
 }
 
 fn parse_range(s: &str) -> Result<Range<usize>, CodeScreenshotError> {
