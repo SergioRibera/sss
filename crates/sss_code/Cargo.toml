@@ -1,6 +1,6 @@
 [package]
 name = "sss_code"
-description = "Take pretty screenshot to your code"
+description = "Take pretty screenshots to your code"
 version = "0.1.9"
 publish = false
 authors.workspace = true
