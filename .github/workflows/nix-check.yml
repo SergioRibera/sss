@@ -1,0 +1,38 @@
+name: Check Nix
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "nix/"
+      - "flake.nix"
+      - "flake.lock"
+    tags-ignore:
+      - "**"
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - "nix/"
+      - "flake.nix"
+      - "flake.lock"
+
+jobs:
+  check-flake:
+    name: "Check flake validity"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          logger: pretty
+
+      - name: Check Flake
+        run: nix flake check --accept-flake-config
