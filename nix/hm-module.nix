@@ -73,7 +73,7 @@ in
                 description = "[Not recommended for manual use] Set theme from vim highlights, format: group,bg,fg,style;group,bg,fg,style;";
               };
               extra-syntaxes = mkOption {
-                type = types.str;
+                type = types.path;
                 default = "";
                 example = "~/.config/extra-syntaxes";
                 description = "Additional folder to search for .sublime-syntax files in";
@@ -84,11 +84,23 @@ in
                 example = "4";
                 description = "Tab width";
               };
+              indent-chars = mkOption {
+                type = types.listOf types.str;
+                default = [];
+                example = "['│' '┊']";
+                description = "List of characters to display in the indent levels";
+              };
+              hidden-chars = mkOption {
+                type = types.listOf types.str;
+                default = [];
+                example = "['space:·' 'eol:¶' 'tab:»']";
+                description = "List of hidden characters to display";
+              };
             };
           };
         };
         general = mkOption {
-          description = "";
+          description = "Shared configuration";
           default = { };
           type = types.submodule {
             config = { };
@@ -98,10 +110,10 @@ in
       };
   };
 
-  config = mkIf cfgSSS.enable {
+  config = mkIf (cfgSSS.enable || cfgSSS.code.enable) {
     home.packages = sssPackage ++ codePackage;
 
-    home.file."${configDir}/sss/config.toml" = mkIf cfgSSS.enable {
+    home.file."${configDir}/sss/config.toml" = mkIf (cfgSSS.enable || cfgSSS.code.enable) {
       source =
         tomlFormat.generate "config.toml" (filterConfig cfgSSS);
     };
