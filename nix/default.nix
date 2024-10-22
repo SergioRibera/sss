@@ -19,7 +19,6 @@ in
     pkgs ? import (getFlake "nixpkgs") {localSystem = {inherit system;};},
     lib ? pkgs.lib,
     crane,
-    cranix,
     fenix,
     stdenv ? pkgs.stdenv,
     ...
@@ -30,9 +29,7 @@ in
       sha256 = "sha256-yMuSb5eQPO/bHv+Bcf/US8LVMbf/G/0MSfiPwBhiPpk=";
     };
     # crane: cargo and artifacts manager
-    craneLib = crane.${system}.overrideToolchain toolchain;
-    # cranix: extends crane building system with workspace bin building and Mold + Cranelift integrations
-    cranixLib = craneLib.overrideScope (cranix.${system}.craneOverride);
+    craneLib = crane.overrideToolchain toolchain;
 
     # buildInputs for SSS
     buildInputs = with pkgs; [
@@ -46,7 +43,7 @@ in
       src = ./..;
       doCheck = false;
       nativeBuildInputs =
-        [pkgs.pkg-config]
+        [ pkgs.pkg-config ]
         ++ lib.optionals stdenv.buildPlatform.isDarwin [
           pkgs.libiconv
         ];
@@ -54,22 +51,26 @@ in
     };
 
     # sss artifacts
-    sssDeps = cranixLib.buildCranixDepsOnly commonArgs;
+    sssDeps = craneLib.buildDepsOnly commonArgs;
 
     # Lambda for build packages with cached artifacts
     packageArgs = targetName:
       commonArgs
       // {
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "${stdenv.cc.targetPrefix}cc";
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER = "qemu-aarch64";
-        HOST_CC = "${stdenv.cc.nativePrefix}cc";
         cargoArtifacts = sssDeps;
         workspaceTargetName = targetName;
       };
 
+    genBuild = name:  rec {
+      pkg = craneLib.buildPackage (packageArgs name);
+      app = {
+        type = "app";
+        program = "${pkg}${pkg.passthru.exePath or "/bin/${pkg.pname or pkg.name}"}";
+      };
+    };
     # Build packages and `nix run` apps
-    sss = cranixLib.buildCranixBundle (packageArgs "sss");
-    sssCode = cranixLib.buildCranixBundle (packageArgs "sss_code");
+    sss = genBuild "sss";
+    sssCode = genBuild "sss_code";
   in {
     # `nix run`
     apps = rec {
@@ -84,16 +85,14 @@ in
       default = cli;
     };
     # `nix develop`
-    devShells.default = cranixLib.devShell {
-      packages = with pkgs;
-        [
+    devShells.default = craneLib.devShell {
+      packages = with pkgs; [
           toolchain
           pkg-config
           oranda
           cargo-dist
           cargo-release
-        ]
-        ++ buildInputs;
+        ] ++ buildInputs;
       PKG_CONFIG_PATH = "${pkgs.fontconfig.dev}/lib/pkgconfig";
     };
   }
