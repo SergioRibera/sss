@@ -2,14 +2,12 @@
   description = "Standar cross compile flake for Rust Lang Projects";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    cranix.url = "github:Lemin-n/cranix/2af6b2e71577bb8836b10e28f3267f2c5342a8fd";
     crane.url = "github:ipetkov/crane";
     fenix.url = "github:nix-community/fenix";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs = {
-    self,
     nixpkgs,
     flake-utils,
     ...
@@ -17,36 +15,28 @@
   # Iterate over Arm, x86 for MacOs 🍎 and Linux 🐧
     flake-utils.lib.eachSystem (flake-utils.lib.defaultSystems) (
       system: let
+        pkgs = nixpkgs.legacyPackages.${system};
+        crane = inputs.crane.mkLib pkgs;
+        fenix = inputs.fenix.packages;
         sssBundle = import ./nix {
-          inherit system;
-          pkgs = nixpkgs.legacyPackages.${system};
-          crane = inputs.crane.lib;
-          cranix = inputs.cranix.lib;
-          fenix = inputs.fenix.packages;
+          inherit system pkgs crane fenix;
         };
       in {
         inherit (sssBundle) apps packages devShells;
+
+        # Overlays
+        overlays = import ./nix/overlay.nix {
+          inherit crane fenix;
+        };
+        # nixosModules
+        nixosModules = {
+          default = import ./nix/nixos-module.nix {
+            inherit crane fenix;
+          };
+          home-manager = import ./nix/hm-module.nix {
+            inherit crane fenix;
+          };
+        };
       }
-    )
-    // {
-      # Overlays
-      overlays.default = import ./nix/overlay.nix {
-        crane = inputs.crane.lib;
-        cranix = inputs.cranix.lib;
-        fenix = inputs.fenix.packages;
-      };
-      # nixosModules
-      nixosModules = {
-        default = import ./nix/nixos-module.nix {
-          crane = inputs.crane.lib;
-          cranix = inputs.cranix.lib;
-          fenix = inputs.fenix.packages;
-        };
-        home-manager = import ./nix/hm-module.nix {
-          crane = inputs.crane.lib;
-          cranix = inputs.cranix.lib;
-          fenix = inputs.fenix.packages;
-        };
-      };
-    };
+    );
 }

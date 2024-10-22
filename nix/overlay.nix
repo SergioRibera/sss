@@ -1,9 +1,8 @@
 {
   crane,
-  cranix,
   fenix,
 }: final: prev: let
-  sss = prev.callPackage ./. {inherit crane cranix fenix;};
+  sss = prev.callPackage ./. {inherit crane fenix;};
 in {
   sss = sss.packages.default;
   sssCode = sss.packages.code;
