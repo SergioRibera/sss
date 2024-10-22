@@ -85,7 +85,7 @@ with lib; {
     type = types.submodule {
       config = { };
       options = {
-        enable = mkEnableOption "cli to take screenshots";
+        enable = mkEnableOption "Enable Window Controls";
         width = mkOption {
           type = types.int;
           default = 120;
