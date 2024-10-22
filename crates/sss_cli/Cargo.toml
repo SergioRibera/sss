@@ -1,6 +1,6 @@
 [package]
 name = "sss_cli"
-description = "Take pretty screenshots to your screen"
+description = "Take pretty screenshots of your screen"
 version = "0.1.5"
 publish = false
 default-run = "sss"
