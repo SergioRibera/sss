@@ -1,5 +1,4 @@
 { crane
-, cranix
 , fenix
 ,
 }: { config
@@ -10,7 +9,7 @@
 with lib; let
   inherit (attrsets) filterAttrs;
   sss = import ./. {
-    inherit crane cranix fenix pkgs lib;
+    inherit crane fenix pkgs lib;
     system = pkgs.system;
   };
   cfgSSS = config.programs.sss;

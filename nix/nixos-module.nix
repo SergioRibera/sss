@@ -1,6 +1,5 @@
 {
   crane,
-  cranix,
   fenix,
 }: {
   config,
@@ -10,7 +9,7 @@
 }:
 with lib; let
   sss = import ./. {
-    inherit crane cranix fenix pkgs lib;
+    inherit crane fenix pkgs lib;
     system = pkgs.system;
   };
   cfg = config.programs.sss;
