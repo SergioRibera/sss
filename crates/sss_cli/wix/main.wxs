@@ -69,7 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='Take pretty screenshot to your screen'
+            Description='Take pretty screenshots of your screen'
             Manufacturer='SergioRibera'
             InstallerVersion='450'
             Languages='1033'
