@@ -12,6 +12,7 @@ use crate::error::{CodeScreenshot as CodeScreenshotError, Configuration as Confi
 
 #[derive(Clone, Debug, Deserialize, Merge, Parser, Serialize)]
 #[clap(author, version, about)]
+#[serde(rename_all = "kebab-case")]
 struct ClapConfig {
     #[clap(long, help = "Set custom config file path")]
     #[serde(skip)]
@@ -50,6 +51,7 @@ impl FromStr for HiddenCharType {
 }
 
 #[derive(Clone, Debug, Deserialize, Merge, Parser, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct CodeConfig {
     #[clap(help = "Content to take screenshot. It accepts stdin or File")]
     #[serde(skip)]

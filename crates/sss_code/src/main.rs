@@ -60,11 +60,13 @@ fn main() -> Result<(), Report> {
         };
 
     if let Some(dir) = &config.extra_syntaxes {
-        let mut builder = ss.into_builder();
-        builder.add_from_folder(dir, true)?;
-        ss = builder.build();
-        tracing::debug!("Trying to load extra syntaxes");
-        syntect::dumps::dump_to_file(&ss, cache_path.join("syntaxes.bin"))?;
+        if !dir.is_empty() {
+            let mut builder = ss.into_builder();
+            builder.add_from_folder(dir, true)?;
+            ss = builder.build();
+            tracing::debug!("Trying to load extra syntaxes");
+            syntect::dumps::dump_to_file(&ss, cache_path.join("syntaxes.bin"))?;
+        }
     }
 
     if config.list_themes {

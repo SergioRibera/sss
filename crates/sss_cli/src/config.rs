@@ -10,6 +10,7 @@ use crate::{str_to_area, Area};
 
 #[derive(Clone, Debug, Deserialize, Merge, Parser, Serialize)]
 #[clap(version, author)]
+#[serde(rename_all = "kebab-case")]
 struct ClapConfig {
     #[clap(long, help = "Set custom config file path")]
     #[serde(skip)]
@@ -25,6 +26,7 @@ struct ClapConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Merge, Parser, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct CliConfig {
     #[clap(
         long,
