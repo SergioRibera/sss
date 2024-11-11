@@ -132,7 +132,7 @@ checksum = "df099ccb16cd014ff054ac1bf392c67feeef57164b05c42f037cd40f5d4357f4"
 dependencies = [
  "clipboard-win",
  "core-graphics 0.23.2",
- "image 0.25.3",
+ "image 0.25.5",
  "log",
  "objc2",
  "objc2-app-kit",
@@ -1265,9 +1265,9 @@ dependencies = [
 
 [[package]]
 name = "image"
-version = "0.25.3"
+version = "0.25.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d97eb9a8e0cd5b76afea91d7eecd5cf8338cd44ced04256cf1f800474b227c52"
+checksum = "cd6f44aed642f18953a158afeb30206f4d50da59fbc66ecb53c66488de73563b"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
@@ -1305,7 +1305,7 @@ dependencies = [
  "ab_glyph",
  "approx",
  "getrandom",
- "image 0.25.3",
+ "image 0.25.5",
  "itertools",
  "nalgebra",
  "num",
@@ -1581,6 +1581,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ea1f30cedd69f0a2954655f7188c6a834246d2bcf1e315e2ac40c4b24dc9519"
 dependencies = [
  "cfg-if",
+ "rayon",
 ]
 
 [[package]]
@@ -1743,7 +1744,7 @@ version = "4.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5134a72dc570b178bff81b01e81ab14a6fcc015391ed4b3b14853090658cd3a3"
 dependencies = [
- "image 0.25.3",
+ "image 0.25.5",
  "lazy_static",
  "log",
  "mac-notification-sys",
@@ -2414,15 +2415,16 @@ dependencies = [
 
 [[package]]
 name = "ravif"
-version = "0.11.10"
+version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8f0bfd976333248de2078d350bfdf182ff96e168a24d23d2436cef320dd4bdd"
+checksum = "2413fd96bd0ea5cdeeb37eaf446a22e6ed7b981d792828721e74ded1980a45c6"
 dependencies = [
  "avif-serialize",
  "imgref",
  "loop9",
  "quick-error",
  "rav1e",
+ "rayon",
  "rgb",
 ]
 
@@ -2775,7 +2777,7 @@ dependencies = [
  "arboard",
  "clap",
  "font-kit",
- "image 0.25.3",
+ "image 0.25.5",
  "imageproc",
  "merge2",
  "notify-rust",
@@ -3778,7 +3780,7 @@ dependencies = [
  "core-foundation 0.10.0",
  "core-graphics 0.24.0",
  "dbus",
- "image 0.25.3",
+ "image 0.25.5",
  "log",
  "percent-encoding",
  "sysinfo",
