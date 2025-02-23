@@ -1,10 +1,10 @@
-<img src="https://i.ibb.co/p3ysZLp/SSS.png">
+<img src="https://i.ibb.co/kPB2FQf/Sprite-0002.png">
 
 # Super ScreenShot
 
 Super ScreenShot is a set of libraries and tools for building screenshots in a standardized, high-performance image format made in rust.
 
-<img src="https://i.ibb.co/y8Lvcgx/Outputs.png">
+<img src="https://i.ibb.co/gbTvJ8WG/showcase.png">
 
 ## 🧩 Libraries
 It provides different options depending on your needs.
@@ -17,7 +17,7 @@ It provides different options depending on your needs.
 > [!IMPORTANT]
 > At the moment the tool is not available in any store. Please redirect to [releases](https://github.com/SergioRibera/sss/releases) section in order to download.
 
-###  Nix
+### ❄️ Nix
 
 sss packages are built and cached automatically. To avoid unnecessary recompilations, you may use the binary cache.
 
@@ -65,7 +65,7 @@ On nix you can use the provided flake:
 }
 ```
 
-###  Nix Home-Manager
+### ❄️ Nix Home-Manager
 
 > [!INFO]
 > You can find more details about the available options at [here](./nix/hm-module.nix)
