@@ -4,7 +4,7 @@
 
 Super ScreenShot is a set of libraries and tools for building screenshots in a standardized, high-performance image format made in rust.
 
-<img src="https://i.ibb.co/7t3wzptR/showcase.png">
+<img src="https://i.ibb.co/gbTvJ8WG/showcase.png">
 
 ## 🧩 Libraries
 It provides different options depending on your needs.
