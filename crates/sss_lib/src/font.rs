@@ -288,7 +288,7 @@ impl FontCollection {
                 if v <= f32::EPSILON {
                     return;
                 }
-                let (x, y) = ((px + x as i32) as u32, (py + y as i32) as u32);
+                let (x, y) = ((px + x as i32) as u32, ((py) + (y) as i32).max(0) as u32);
                 let pixel = image.get_pixel(x, y);
                 let weighted_color = weighted_sum(pixel, color, 1.0 - v, v);
                 image.put_pixel(x, y, weighted_color);
