@@ -1,6 +1,6 @@
 .env
-***/dist/
-***/target/
+dist/
+target/
 ***/*.png
 
 assets/themes/*
