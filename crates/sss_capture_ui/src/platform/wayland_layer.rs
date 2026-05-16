@@ -8,6 +8,7 @@ use std::os::unix::io::FromRawFd;
 use std::time::{Duration, Instant};
 
 use memmap2::MmapMut;
+use rustix::fs::Timespec;
 use sss_capture::Image as CapImage;
 use sss_capture::{Monitor, Rect as MonitorRect};
 use wayland_client::globals::{registry_queue_init, GlobalListContents};
@@ -344,7 +345,7 @@ fn dispatch_until(
     };
     let fd = guard.connection_fd();
     let mut fds = [PollFd::new(&fd, PollFlags::IN)];
-    match poll(&mut fds, timeout.as_millis() as i32) {
+    match poll(&mut fds, Timespec::try_from(timeout).ok().as_ref()) {
         Ok(0) => return Ok(false),
         Ok(_) => {
             guard

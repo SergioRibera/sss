@@ -21,7 +21,6 @@ thiserror.workspace = true
 tracing.workspace = true
 image = "0.25"
 
-# ---------------------------- Linux: X11 ------------------------------------
 [target.'cfg(target_os = "linux")'.dependencies]
 # Pure-Rust X11 client. No libxcb runtime dependency.
 x11rb = { version = "0.13", default-features = false, features = [
@@ -31,24 +30,22 @@ x11rb = { version = "0.13", default-features = false, features = [
     "shm",
     "composite",
 ] }
-
-# ---------------------------- Linux: Wayland --------------------------------
 wayland-client = "0.31"
-wayland-protocols = { version = "0.31", features = ["unstable", "staging", "client"] }
-wayland-protocols-wlr = { version = "0.2", features = ["client"] }
+wayland-protocols = { version = "0.32", features = [
+    "unstable",
+    "staging",
+    "client",
+] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 memmap2 = "0.9"
-rustix = { version = "0.38", features = ["fs", "mm", "shm", "event"] }
-nix = { version = "0.29", default-features = false, features = ["fs", "mman"] }
-
-# ---------------------------- Linux: portal fallback ------------------------
-# The `dbus` crate is a thin libdbus binding — no async runtime needed.
+rustix = { version = "1", features = ["fs", "mm", "shm", "event"] }
+nix = { version = "0.31", default-features = false, features = ["fs", "mman"] }
 dbus = { version = "0.9", features = ["vendored"] }
 url = "2"
 percent-encoding = "2"
 
-# ---------------------------- Windows ---------------------------------------
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
@@ -66,16 +63,12 @@ windows = { version = "0.58", features = [
     "Win32_System_Memory",
 ] }
 
-# ---------------------------- macOS -----------------------------------------
 [target.'cfg(target_os = "macos")'.dependencies]
-core-graphics = "0.24"
+core-graphics = "0.25"
 core-foundation = "0.10"
-objc2 = "0.5"
-objc2-foundation = "0.2"
-objc2-app-kit = { version = "0.2", features = [
-    "NSScreen",
-    "NSEvent",
-] }
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = { version = "0.3", features = ["NSScreen", "NSEvent"] }
 
 [[example]]
 name = "list_monitors"

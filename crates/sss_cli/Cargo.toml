@@ -33,7 +33,7 @@ directories.workspace = true
 tracing.workspace = true
 color-eyre.workspace = true
 tracing-subscriber.workspace = true
-mouse_position = "0.1.3"
+mouse_position = { git = "https://github.com/SergioRibera/mouse_position", branch = "compositors_protocols" }
 sss_lib = { path = "../sss_lib" }
 sss_capture = { path = "../sss_capture" }
 sss_capture_ui = { path = "../sss_capture_ui" }

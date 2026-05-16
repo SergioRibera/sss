@@ -26,7 +26,7 @@ in
     # fenix: rustup replacement for reproducible builds
     toolchain = fenix.${system}.fromToolchainFile {
       file = ./../rust-toolchain.toml;
-      sha256 = "sha256-Qxt8XAuaUR2OMdKbN4u8dBJOhSHxS+uS06Wl9+flVEk=";
+      sha256 = "sha256-gh/xTkxKHL4eiRXzWv8KP7vfjSk61Iq48x47BEDFgfk=";
     };
 
     # crane: cargo and artifacts manager
@@ -47,7 +47,7 @@ in
     #     rpath. We declare them explicitly in `runtimeDependencies`
     #     below so the rpath gets baked into the produced binaries.
     # * libxkbcommon: used by winit / arboard fallbacks on Wayland.
-    # * xorg.libxcb / xorg.libX11: x11rb (sss_capture's X11 backend)
+    # * libxcb / libX11: x11rb (sss_capture's X11 backend)
     #     loads libxcb; arboard's X11 path needs libX11 + libXi.
     # * libxkbcommon-x11: linked alongside libxkbcommon when xkb's
     #     X11 helpers are pulled in indirectly by winit.
@@ -63,6 +63,7 @@ in
     #     from having libdbus headers visible.
     buildInputs = with pkgs; [
       fontconfig.dev
+      freetype
       libxkbcommon.dev
       libxkbcommon
       libxcb
@@ -86,6 +87,7 @@ in
       wayland
       libxkbcommon
       fontconfig.lib
+      freetype
       libxcb
       libx11
       libxi
@@ -160,27 +162,17 @@ in
           toolchain
           pkg-config
           oranda
+          cargo-edit
           cargo-dist
           cargo-release
         ] ++ buildInputs;
-      LD_LIBRARY_PATH = lib.makeLibraryPath (with pkgs; [
-        wayland
-        libxkbcommon
-        xorg.libxcb
-        xorg.libX11
-        xorg.libXi
-        xorg.libXcursor
-        xorg.libXrandr
-        fontconfig
-        dbus
-        stdenv.cc.cc.lib
-      ]);
+      LD_LIBRARY_PATH = lib.makeLibraryPath runtimeDeps;
       PKG_CONFIG_PATH = lib.concatStringsSep ":" [
         "${pkgs.fontconfig.dev}/lib/pkgconfig"
         "${pkgs.libxkbcommon.dev}/lib/pkgconfig"
         "${pkgs.wayland.dev}/lib/pkgconfig"
         "${pkgs.dbus.dev}/lib/pkgconfig"
-        "${pkgs.xorg.libxcb.dev}/lib/pkgconfig"
+        "${pkgs.libxcb.dev}/lib/pkgconfig"
       ];
     };
   }

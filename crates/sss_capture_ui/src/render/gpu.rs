@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
+use egui_wgpu::RendererOptions;
+use wgpu::ExperimentalFeatures;
 use winit::window::Window;
-
 /// Shared GPU state, one instance per app.
 pub(crate) struct Gpu {
     pub instance: wgpu::Instance,
@@ -14,10 +15,7 @@ pub(crate) struct Gpu {
 
 impl Gpu {
     pub fn new_instance() -> wgpu::Instance {
-        wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        })
+        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env())
     }
 
     /// `compatible_surface` must outlive the returned `Gpu`; wgpu 22 keeps an
@@ -31,18 +29,17 @@ impl Gpu {
             compatible_surface: Some(compatible_surface),
             force_fallback_adapter: false,
         }))
-        .ok_or_else(|| "wgpu: no adapter".to_string())?;
+        .map_err(|e| e.to_string())?;
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("sss_capture_ui device"),
-                required_features: wgpu::Features::empty(),
-                required_limits:
-                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::default(),
-            },
-            None,
-        ))
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("sss_capture_ui device"),
+            required_features: wgpu::Features::empty(),
+            required_limits:
+                wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+            memory_hints: wgpu::MemoryHints::default(),
+            experimental_features: ExperimentalFeatures::default(),
+            trace: wgpu::Trace::Off,
+        }))
         .map_err(|e| format!("wgpu device: {e}"))?;
 
         Ok(Self {
@@ -133,7 +130,8 @@ impl WindowGpu {
             None,
             None,
         );
-        let renderer = egui_wgpu::Renderer::new(&gpu.device, surface_format, None, 1, false);
+        let renderer =
+            egui_wgpu::Renderer::new(&gpu.device, surface_format, RendererOptions::PREDICTABLE);
 
         Ok(Self {
             surface,

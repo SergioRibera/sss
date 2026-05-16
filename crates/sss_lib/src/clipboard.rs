@@ -152,8 +152,6 @@ fn dispatch_until(
             return Ok(());
         }
 
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let ms = remaining.as_millis().min(i32::MAX as u128) as i32;
         let guard = match conn.prepare_read() {
             Some(g) => g,
             None => {
@@ -165,7 +163,7 @@ fn dispatch_until(
         };
         let fd = guard.connection_fd();
         let mut fds = [PollFd::new(&fd, PollFlags::IN)];
-        match poll(&mut fds, ms) {
+        match poll(&mut fds, None) {
             Ok(0) => continue,
             Ok(_) => {
                 guard

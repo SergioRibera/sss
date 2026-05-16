@@ -21,11 +21,7 @@ pub struct Area {
 }
 
 fn main() -> Result<(), Report> {
-    // install tracing — defaults to `warn` so backend init failures /
-    // capture errors are visible. `-v / --verbose` bumps to `info`, and
-    // `RUST_LOG=...` always wins.
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_log_level()));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(env_filter)
         .with_writer(std::io::stderr)
@@ -103,10 +99,6 @@ fn main() -> Result<(), Report> {
         g_config,
         Screenshot::from_target(direct.unwrap(), config.show_cursor),
     )?)
-}
-
-fn default_log_level() -> &'static str {
-    "warn,sss_capture=info,sss_capture_ui=info"
 }
 
 /// Decide which mode the selector should open in based on which targeting

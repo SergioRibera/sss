@@ -28,16 +28,16 @@ serde = { workspace = true, optional = true }
 # winit/wgpu driver (gated behind the `editor` feature).
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
-wayland-protocols = { version = "0.31", features = ["client", "unstable", "staging"] }
-wayland-protocols-wlr = { version = "0.2", features = ["client"] }
+wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-cursor = "0.31"
 memmap2 = "0.9"
-rustix = { version = "0.38", features = ["fs", "mm", "shm", "event"] }
+rustix = { version = "1", features = ["fs", "mm", "shm", "event"] }
 # SVG icon loader for the layer-shell toolbar. resvg + tiny-skia raster the
 # user-supplied SVGs on the CPU; the result is cached in a `RgbaImage`.
-resvg = { version = "0.43", default-features = false }
-usvg = { version = "0.43", default-features = false }
-tiny-skia = "0.11"
+resvg = { version = "0.47", default-features = false }
+usvg = { version = "0.47", default-features = false }
+tiny-skia = "0.12"
 # Real text rendering for hints + tooltips. ab_glyph is a tiny pure-Rust
 # TTF rasteriser that lets us replace the embedded 5x7 bitmap font.
 ab_glyph = "0.2"
@@ -56,10 +56,10 @@ winit = { version = "0.30", default-features = false, features = [
 ] }
 
 # Optional editor stack.
-egui       = { version = "0.29", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
-egui-winit = { version = "0.29", optional = true, default-features = false, features = ["clipboard"] }
-egui-wgpu  = { version = "0.29", optional = true, default-features = false }
-wgpu       = { version = "22",   optional = true }
+egui       = { version = "0.34", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
+egui-winit = { version = "0.34", optional = true, default-features = false, features = ["clipboard"] }
+egui-wgpu  = { version = "0.34", optional = true, default-features = false }
+wgpu       = { version = "29",   optional = true }
 pollster   = { version = "0.4",  optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]

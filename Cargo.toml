@@ -34,12 +34,12 @@ inherits = "release"
 lto = "thin"
 
 [workspace.dependencies]
-thiserror = "1"
-serde = { version = "1.0.210", features = ["serde_derive"] }
-toml = "0.8.8"
-merge2 = "0.3.0"
-directories = "5.0.1"
-clap = { version = "4.5.17", features = [
+thiserror = "2"
+serde = { version = "1", features = ["serde_derive"] }
+toml = "1"
+merge2 = "0.3.2"
+directories = "6"
+clap = { version = "4.6", features = [
     "derive",
     "color",
     "env",
@@ -47,12 +47,9 @@ clap = { version = "4.5.17", features = [
     "wrap_help",
 ] }
 
-tracing = "0.1.40"
-color-eyre = { version = "0.6.3", features = ["issue-url"] }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-
-[patch.crates-io]
-mouse_position = { git = "https://github.com/SergioRibera/mouse_position", branch = "compositors_protocols" }
+tracing = "0.1.44"
+color-eyre = { version = "0.6.5", features = ["issue-url"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 # Config for 'cargo dist'
 [workspace.metadata.dist]

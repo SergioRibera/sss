@@ -35,16 +35,16 @@ impl Default for ToolbarConfig {
 
 /// Paints the toolbar at the top of the active output.
 pub fn draw_toolbar(
-    ctx: &egui::Context,
+    ctx: &mut egui::Ui,
     canvas: &mut Canvas,
     palette: &ToolPalette,
     mode: &mut SelectorMode,
     cfg: ToolbarConfig,
 ) -> ToolbarOutput {
     let mut out = ToolbarOutput::default();
-    egui::TopBottomPanel::top("sss_capture_ui::toolbar")
+    egui::Panel::top("sss_capture_ui::toolbar")
         .resizable(false)
-        .show(ctx, |ui| {
+        .show_inside(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Mode");
                 for m in [
@@ -136,7 +136,12 @@ pub fn draw_canvas(painter: &egui::Painter, canvas: &Canvas, screen_offset: Pos2
             ),
             Vec2::new(rect.width() as f32, rect.height() as f32),
         );
-        painter.rect_stroke(r, 0.0, Stroke::new(2.0, Color32::from_rgb(90, 170, 255)));
+        painter.rect_stroke(
+            r,
+            0.0,
+            Stroke::new(2.0, Color32::from_rgb(90, 170, 255)),
+            egui::StrokeKind::Middle,
+        );
     }
     for shape in canvas.shapes() {
         draw_shape(painter, shape, screen_offset);
@@ -198,7 +203,7 @@ fn draw_shape(painter: &egui::Painter, shape: &Shape, off: Pos2) {
             if let Some(f) = fill {
                 painter.rect_filled(r, 0.0, f);
             }
-            painter.rect_stroke(r, 0.0, stroke);
+            painter.rect_stroke(r, 0.0, stroke, egui::StrokeKind::Middle);
         }
         ShapeKind::Ellipse { rect } => {
             let r = EguiRect::from_min_size(

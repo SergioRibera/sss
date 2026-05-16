@@ -73,8 +73,6 @@ fn dispatch_until<S: 'static>(
     if now >= deadline {
         return Ok(false);
     }
-    let remaining_ms = (deadline - now).as_millis().min(i32::MAX as u128) as i32;
-
     let guard = match conn.prepare_read() {
         Some(g) => g,
         None => {
@@ -86,7 +84,7 @@ fn dispatch_until<S: 'static>(
     };
     let fd = guard.connection_fd();
     let mut fds = [PollFd::new(&fd, PollFlags::IN)];
-    match poll(&mut fds, remaining_ms) {
+    match poll(&mut fds, None) {
         Ok(0) => {
             return Ok(false);
         }

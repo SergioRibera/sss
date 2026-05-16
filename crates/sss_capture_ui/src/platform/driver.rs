@@ -508,7 +508,7 @@ impl App {
 
         let mut confirm = false;
         let mut cancel = false;
-        let full_output = window_gpu.egui_ctx.clone().run(raw_input, |ctx| {
+        let full_output = window_gpu.egui_ctx.clone().run_ui(raw_input, |ctx| {
             if self.config.toolbar {
                 let out = draw_toolbar(
                     ctx,
@@ -534,8 +534,8 @@ impl App {
                 }
             }
             egui::CentralPanel::default()
-                .frame(egui::Frame::none())
-                .show(ctx, |ui| {
+                .frame(egui::Frame::new())
+                .show_inside(ctx, |ui| {
                     let painter = ui.painter();
                     draw_canvas(
                         painter,
@@ -564,15 +564,17 @@ impl App {
         }
 
         let output = match window_gpu.surface.get_current_texture() {
-            Ok(t) => t,
-            Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
+            wgpu::CurrentSurfaceTexture::Success(surface_texture)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => surface_texture,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                 window_gpu
                     .surface
                     .configure(&gpu.device, &window_gpu.config);
                 self.windows[pos].gpu = Some(window_gpu);
                 return;
             }
-            Err(e) => {
+            e => {
+                let e = format!("{e:?}");
                 tracing::warn!(error = %e, "wgpu: get_current_texture failed");
                 self.windows[pos].gpu = Some(window_gpu);
                 return;
@@ -598,6 +600,7 @@ impl App {
                 label: Some("sss_capture_ui pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         // Opaque (alpha=1.0): per-pixel compositor blending
@@ -616,6 +619,7 @@ impl App {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             let pass = &mut pass.forget_lifetime();
             window_gpu.renderer.render(pass, &primitives, &screen_desc);

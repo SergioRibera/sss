@@ -16,16 +16,16 @@ tracing.workspace = true
 thiserror.workspace = true
 font-kit = "0.14"
 pathfinder_geometry = "0.5"
-imageproc = "0.25"
-arboard = { version = "3.4", features = ["wayland-data-control"] }
+imageproc = "0.26"
+arboard = { version = "3.6", features = ["wayland-data-control"] }
 image = { version = "0.25", default-features = false, features = [
     "png",
     "jpeg",
     "rayon",
     "webp",
 ] }
-rayon = "1.8"
-notify-rust = { version = "4.11", features = ["images"] }
+rayon = "1.12"
+notify-rust = { version = "4.17", features = ["images"] }
 
 # Native Wayland clipboard path so we don't leave arboard's fork-daemon
 # behind whenever the user passes `--copy`. The wlroots
@@ -35,5 +35,5 @@ notify-rust = { version = "4.11", features = ["images"] }
 # cleanly. When no manager is present we fall back to arboard.
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
-wayland-protocols-wlr = { version = "0.2", features = ["client"] }
-rustix = { version = "0.38", features = ["event"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+rustix = { version = "1", features = ["event"] }
