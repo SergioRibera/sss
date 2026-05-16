@@ -44,7 +44,7 @@ fn main() -> Result<(), Report> {
         })
         .install()?;
 
-    let (config, mut g_config) = get_config()?;
+    let (config, mut g_config, ui_config) = get_config()?;
     if config.verbose {
         // Re-init at info level by overriding the existing filter. We do
         // that lazily here so the verbose flag is read after parsing.
@@ -74,7 +74,7 @@ fn main() -> Result<(), Report> {
         // "user changed their mind". We exit 1 directly so scripts can
         // detect the cancel, but without color_eyre's big error chrome
         // which would otherwise present cancellation as a crash.
-        let pre = match interactive::run(&config, &g_config, mode)? {
+        let pre = match interactive::run(&config, &g_config, &ui_config, mode)? {
             Some(pre) => pre,
             None => std::process::exit(1),
         };

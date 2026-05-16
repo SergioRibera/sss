@@ -11,19 +11,17 @@ license.workspace = true
 keywords = ["screenshot", "selection", "annotation", "overlay", "slurp"]
 
 [features]
-default = ["editor"]
-# The "editor" feature pulls in the toolbar (egui + wgpu). Disabling it cuts
-# down to slurp-class region/monitor/window picking only.
+default = ["editor", "serde"]
 editor = ["dep:egui", "dep:egui-winit", "dep:egui-wgpu", "dep:wgpu", "dep:pollster"]
-# Optional layer-shell support for wlroots compositors. When disabled we
-# fall back to xdg-shell fullscreen-per-output, which still works everywhere.
 wayland-layer-shell = []
+serde = ["dep:serde"]
 
 [dependencies]
 sss_capture = { path = "../sss_capture" }
 image = "0.25"
 thiserror.workspace = true
 tracing.workspace = true
+serde = { workspace = true, optional = true }
 
 # CPU pixel buffer for the layer-shell overlay path. The crate is tiny and
 # only kicks in on Linux Wayland; everything else still goes through the

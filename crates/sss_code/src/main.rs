@@ -59,14 +59,12 @@ fn main() -> Result<(), Report> {
             syntect::dumps::from_binary(DEFAULT_THEMESET)
         };
 
-    if let Some(dir) = &config.extra_syntaxes {
-        if !dir.is_empty() {
-            let mut builder = ss.into_builder();
-            builder.add_from_folder(dir, true)?;
-            ss = builder.build();
-            tracing::debug!("Trying to load extra syntaxes");
-            syntect::dumps::dump_to_file(&ss, cache_path.join("syntaxes.bin"))?;
-        }
+    if let Some(dir) = config.extra_syntaxes.as_deref().filter(|s| !s.is_empty()) {
+        let mut builder = ss.into_builder();
+        builder.add_from_folder(dir, true)?;
+        ss = builder.build();
+        tracing::debug!("Trying to load extra syntaxes");
+        syntect::dumps::dump_to_file(&ss, cache_path.join("syntaxes.bin"))?;
     }
 
     if config.list_themes {
@@ -107,13 +105,14 @@ fn main() -> Result<(), Report> {
             .wrap_err("Extension not found from stdin or file")?
     };
 
-    let theme = if let Some(vim_theme) = &config.vim_theme {
+    let theme = if let Some(vim_theme) = config.vim_theme.as_deref().filter(|s| !s.is_empty()) {
         Cow::Owned(theme_from_vim(vim_theme)?)
     } else {
         let theme = config
             .theme
             .clone()
-            .unwrap_or("base16-ocean.dark".to_string());
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "base16-ocean.dark".to_string());
         tracing::trace!("Trying load {theme:?}");
         themes
             .themes

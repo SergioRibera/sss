@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use merge2::{bool::overwrite_false, option::recursive, Merge};
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+use sss_capture_ui::UiConfig;
 use sss_lib::{default_bool, swap_option};
 
 use crate::error::Configuration as ConfigurationError;
@@ -126,10 +127,17 @@ struct ClapConfig {
     #[clap(flatten)]
     #[merge(strategy = recursive)]
     pub cli: Option<CliConfig>,
-    // lib configs
     #[clap(flatten)]
     #[serde(rename = "general")]
     pub lib_config: sss_lib::GenerationSettingsArgs,
+    /// Configuration block for the interactive selector / annotation UI.
+    /// Loaded from `[capture-ui]` in `config.toml`; not exposed as
+    /// individual CLI flags (the surface is too wide to be ergonomic on
+    /// the command line — use the config file).
+    #[clap(skip)]
+    #[serde(default, rename = "capture-ui")]
+    #[merge(strategy = swap_option)]
+    pub capture_ui: Option<UiConfig>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Merge, Parser, Serialize)]
@@ -327,7 +335,8 @@ pub enum DirectTarget {
     Window(String),
 }
 
-pub fn get_config() -> Result<(CliConfig, sss_lib::GenerationSettings), ConfigurationError> {
+pub fn get_config() -> Result<(CliConfig, sss_lib::GenerationSettings, UiConfig), ConfigurationError>
+{
     let mut args = ClapConfig::parse();
 
     let config_path = if let Some(path) = args.config.as_ref() {
@@ -350,7 +359,15 @@ pub fn get_config() -> Result<(CliConfig, sss_lib::GenerationSettings), Configur
         tracing::debug!("Merging from config file");
         let mut config: ClapConfig = toml::from_str(&cfg_content)?;
         config.merge(&mut args);
-        return Ok((config.cli.unwrap_or_default(), config.lib_config.into()));
+        return Ok((
+            config.cli.unwrap_or_default(),
+            config.lib_config.into(),
+            config.capture_ui.unwrap_or_default(),
+        ));
     }
-    Ok((args.cli.unwrap_or_default(), args.lib_config.into()))
+    Ok((
+        args.cli.unwrap_or_default(),
+        args.lib_config.into(),
+        args.capture_ui.unwrap_or_default(),
+    ))
 }

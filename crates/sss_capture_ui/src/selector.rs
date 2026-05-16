@@ -1,5 +1,4 @@
-//! Public entry point — build an interactive overlay, run it, get an
-//! [`Outcome`] back.
+//! Public entry point for the interactive overlay.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,6 +7,7 @@ use sss_capture::{CaptureError, CaptureOptions, Capturer, Image, MonitorId, Rect
 use thiserror::Error;
 
 use crate::canvas::Canvas;
+use crate::config::UiConfig;
 use crate::mode::SelectorMode;
 use crate::tool::ToolPalette;
 use crate::trigger::{CaptureTrigger, KeyBind};
@@ -15,28 +15,24 @@ use crate::trigger::{CaptureTrigger, KeyBind};
 /// What the overlay produced.
 #[derive(Clone, Debug)]
 pub enum Outcome {
-    /// User picked a free-form rectangle. `image` is `Some` when the
-    /// selector ran in Eager mode or after a Lazy confirm; it carries the
-    /// captured region with every annotation already baked in.
-    Region { rect: Rect, image: Option<Image> },
-    /// User picked one entire monitor.
+    Region {
+        rect: Rect,
+        image: Option<Image>,
+    },
     Monitor {
         monitor: MonitorId,
         rect: Rect,
         image: Option<Image>,
     },
-    /// User picked one window.
     Window {
         window: WindowId,
         rect: Rect,
         image: Option<Image>,
     },
-    /// User pressed Escape / closed the overlay.
     Cancelled,
 }
 
 impl Outcome {
-    /// Borrow the captured image (if any) without taking it.
     pub fn image(&self) -> Option<&Image> {
         match self {
             Outcome::Region { image, .. }
@@ -97,34 +93,18 @@ pub struct Selection {
 }
 
 /// Builder for [`Selector`].
-///
-/// ```no_run
-/// use sss_capture_ui::{Selector, SelectorMode, CaptureTrigger};
-///
-/// # fn main() -> Result<(), sss_capture_ui::SelectorError> {
-/// let sel = Selector::builder()
-///     .mode(SelectorMode::Area)
-///     .with_toolbar(true)
-///     .capture_trigger(CaptureTrigger::Eager)
-///     .build()?;
-/// let result = sel.run()?;
-/// println!("{:?}", result.outcome);
-/// # Ok(()) }
-/// ```
 #[derive(Debug)]
 pub struct SelectorBuilder {
     mode: SelectorMode,
     toolbar: bool,
-    palette: ToolPalette,
+    ui: UiConfig,
+    palette_override: Option<ToolPalette>,
     trigger: CaptureTrigger,
     capturer: Option<Arc<Capturer>>,
     capture_opts: CaptureOptions,
     confirm_with_enter: bool,
-    /// Whether the toolbar shows a Copy button.
     show_copy: bool,
-    /// Whether the toolbar shows a Save button.
     show_save: bool,
-    /// Default path emitted in `PostAction::save_path_hint`.
     save_path_hint: Option<PathBuf>,
 }
 
@@ -133,7 +113,8 @@ impl Default for SelectorBuilder {
         Self {
             mode: SelectorMode::default(),
             toolbar: false,
-            palette: ToolPalette::default(),
+            ui: UiConfig::default(),
+            palette_override: None,
             trigger: CaptureTrigger::default(),
             capturer: None,
             capture_opts: CaptureOptions::default(),
@@ -160,8 +141,20 @@ impl SelectorBuilder {
         self
     }
 
+    pub fn ui(mut self, ui: UiConfig) -> Self {
+        self.ui = ui;
+        self
+    }
+
+    pub fn with_ui<F: FnOnce(&mut UiConfig)>(mut self, f: F) -> Self {
+        f(&mut self.ui);
+        self
+    }
+
+    /// Override the derived tool palette with a hand-built one.
     pub fn palette(mut self, palette: ToolPalette) -> Self {
-        self.palette = palette;
+        self.ui.palette = palette.color_palette.clone();
+        self.palette_override = Some(palette);
         self
     }
 
@@ -217,11 +210,16 @@ impl SelectorBuilder {
             Some(c) => c,
             None => Arc::new(Capturer::new().map_err(SelectorError::Capture)?),
         };
+        let palette = self
+            .palette_override
+            .clone()
+            .unwrap_or_else(|| self.ui.build_tool_palette());
         Ok(Selector {
             config: Config {
                 mode: self.mode,
                 toolbar: self.toolbar,
-                palette: self.palette,
+                palette,
+                ui: self.ui,
                 trigger: self.trigger,
                 capture_opts: self.capture_opts,
                 confirm_with_enter: self.confirm_with_enter,
@@ -234,8 +232,7 @@ impl SelectorBuilder {
     }
 }
 
-/// Configured selector. Drop it after `run()` to release the overlay
-/// resources.
+/// Configured selector.
 #[derive(Debug)]
 pub struct Selector {
     pub(crate) config: Config,
@@ -247,6 +244,7 @@ pub(crate) struct Config {
     pub mode: SelectorMode,
     pub toolbar: bool,
     pub palette: ToolPalette,
+    pub ui: UiConfig,
     pub trigger: CaptureTrigger,
     pub capture_opts: CaptureOptions,
     pub confirm_with_enter: bool,

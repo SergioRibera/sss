@@ -213,6 +213,7 @@ impl<'a> DynImageContent for ImageCode<'a> {
             .config
             .code_background
             .clone()
+            .filter(|s| !s.is_empty())
             .and_then(|b| Background::try_from(b).ok())
             .or(self
                 .theme

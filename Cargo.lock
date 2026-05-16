@@ -3999,6 +3999,7 @@ dependencies = [
  "pollster",
  "resvg",
  "rustix 0.38.44",
+ "serde",
  "sss_capture",
  "thiserror 1.0.69",
  "tiny-skia",

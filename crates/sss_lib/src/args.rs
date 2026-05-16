@@ -158,15 +158,20 @@ impl From<GenerationSettingsArgs> for GenerationSettings {
     fn from(val: GenerationSettingsArgs) -> Self {
         let shadow_color = val
             .colors
-            .clone()
             .shadow_color
+            .clone()
+            .filter(|s| !s.is_empty())
             .map(|b| Background::try_from(b).unwrap_or_default())
             .unwrap_or_default();
 
         GenerationSettings {
             copy: val.copy,
             show_notify: val.show_notify,
-            output: val.output.clone().unwrap_or(String::from("out.png")),
+            output: val
+                .output
+                .clone()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| String::from("out.png")),
             save_format: val.save_format.clone(),
             colors: val.colors.into(),
             padding: (val.padding_x.unwrap_or(80), val.padding_y.unwrap_or(100)),
@@ -177,8 +182,12 @@ impl From<GenerationSettingsArgs> for GenerationSettings {
                 blur_radius: val.shadow_blur.unwrap_or(50.),
             }),
             fonts: val.fonts.unwrap_or_default(),
-            author: val.author.clone(),
-            author_font: val.author_font.clone().unwrap_or("Hack".to_string()),
+            author: val.author.clone().filter(|s| !s.is_empty()),
+            author_font: val
+                .author_font
+                .clone()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "Hack".to_string()),
             window_controls: val.window_controls.into(),
         }
     }
@@ -188,15 +197,17 @@ impl From<ColorsArgs> for Colors {
     fn from(val: ColorsArgs) -> Self {
         let background = val
             .background
-            .map(|b| {
-                Background::try_from(b)
-                    .unwrap_or(Background::Solid(image::Rgba([0x32, 0x32, 0x32, 255])))
-            })
-            .unwrap_or(Background::Solid(image::Rgba([0x32, 0x32, 0x32, 255])));
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|s| Background::try_from(s.to_string()).unwrap_or_default())
+            .unwrap_or_default();
         let windows_background = val
             .window_background
-            .map(|b| {
-                Background::try_from(b).unwrap_or(Background::Solid(Rgba([0x42, 0x87, 0xf5, 255])))
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                Background::try_from(s.to_string())
+                    .unwrap_or(Background::Solid(Rgba([0x42, 0x87, 0xf5, 255])))
             })
             .unwrap_or(Background::Solid(Rgba([0x42, 0x87, 0xf5, 255])));
         Colors {
@@ -204,14 +215,16 @@ impl From<ColorsArgs> for Colors {
             windows_background,
             author_color: val
                 .author_color
-                .unwrap_or("#FFFFFF".to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "#FFFFFF".to_string())
                 .to_rgba()
-                .expect("Cannot convert 'author_color' into Rgba"),
+                .expect("invalid author color hex"),
             windows_title: val
                 .window_title_color
-                .unwrap_or("#FFFFFF".to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "#FFFFFF".to_string())
                 .to_rgba()
-                .expect("Cannot convert 'window_title_color' into Rgba"),
+                .expect("invalid window-title color hex"),
         }
     }
 }
@@ -220,7 +233,7 @@ impl From<WindowControlsArgs> for WindowControls {
     fn from(val: WindowControlsArgs) -> Self {
         WindowControls {
             enable: val.enable,
-            title: val.window_title.clone(),
+            title: val.window_title.clone().filter(|s| !s.is_empty()),
             width: val.window_controls_width.unwrap_or(120),
             height: val.window_controls_height.unwrap_or(40),
             title_padding: val.titlebar_padding.unwrap_or(10),

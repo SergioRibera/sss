@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use color_eyre::eyre::{eyre, Report};
 use sss_capture_ui::{
     sss_capture::{BackendKind, CaptureOptions, Capturer},
-    CaptureTrigger, Outcome, PostAction, SelectorBuilder, SelectorMode, ToolPalette,
+    CaptureTrigger, Outcome, PostAction, SelectorBuilder, SelectorMode, ToolKind, UiConfig,
 };
 use sss_lib::image::RgbaImage;
 use sss_lib::GenerationSettings;
@@ -38,10 +38,9 @@ pub struct PreRendered {
 pub fn run(
     config: &CliConfig,
     g: &GenerationSettings,
+    ui: &UiConfig,
     mode: SelectorMode,
 ) -> Result<Option<PreRendered>, Report> {
-    // Build a default save path even if the user didn't supply --output: the
-    // GUI's Save button still needs *something* to save under when triggered.
     let default_output = if g.output.trim().is_empty() || g.output == "out.png" {
         Some(default_screenshot_path())
     } else {
@@ -65,23 +64,22 @@ pub fn run(
         capturer.backend_name()
     );
 
+    let mut ui_config = ui.clone();
+    if !toolbar {
+        ui_config.tools = ToolKind::default_list();
+        ui_config.initial_tool = ToolKind::Brush;
+    }
+
     let mut builder = SelectorBuilder::new()
         .mode(mode)
         .with_toolbar(toolbar)
-        .palette(if toolbar {
-            ToolPalette::default()
-        } else {
-            ToolPalette::minimal()
-        })
+        .ui(ui_config)
         .capture_trigger(CaptureTrigger::Eager)
         .capturer(capturer)
         .capture_options(CaptureOptions {
             show_cursor: config.show_cursor,
             ..Default::default()
         })
-        // Only surface the buttons that map to *unset* CLI flags — the
-        // user explicitly said in the spec: "if it wasn't set in the CLI,
-        // provide a button".
         .show_copy(!g.copy)
         .show_save(g.output.trim().is_empty() || g.output == "out.png");
     if let Some(path) = default_output.clone() {
