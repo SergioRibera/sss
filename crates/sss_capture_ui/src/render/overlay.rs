@@ -1,13 +1,4 @@
-//! egui-based interactive overlay.
-//!
-//! This module hosts the *toolbar UI* — the platform driver under
-//! [`crate::platform::driver`] feeds the egui context every frame and the
-//! function below paints the toolbar widgets. Canvas drawing (shapes,
-//! region rubber-band) is rendered with egui's `Painter` so callers don't
-//! need to wire a second renderer.
-//!
-//! The actual GPU plumbing (wgpu device, swapchain, egui-wgpu render pass)
-//! lives next to the platform driver — this file is the *view* layer.
+//! egui-based interactive overlay (toolbar and canvas painter).
 
 use egui::{Color32, Pos2, Rect as EguiRect, Stroke, Vec2};
 
@@ -17,10 +8,7 @@ use crate::mode::SelectorMode;
 use crate::shape::{Shape, ShapeKind};
 use crate::tool::{BrushSettings, StepSettings, Tool, ToolPalette};
 
-/// Side-effect signal emitted by the toolbar each frame.
-///
-/// All flags are reset to false at the start of every frame; the caller
-/// (the platform driver) reads them and decides what to do.
+/// Toolbar request flags; reset to false each frame.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ToolbarOutput {
     pub confirm: bool,
@@ -29,7 +17,7 @@ pub struct ToolbarOutput {
     pub cancel: bool,
 }
 
-/// Configuration for the toolbar — which action buttons to show.
+/// Which action buttons the toolbar should show.
 #[derive(Clone, Copy, Debug)]
 pub struct ToolbarConfig {
     pub show_copy: bool,
@@ -58,7 +46,6 @@ pub fn draw_toolbar(
         .resizable(false)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                // Mode tabs --------------------------------------------------
                 ui.label("Mode");
                 for m in [
                     SelectorMode::Area,
@@ -71,7 +58,6 @@ pub fn draw_toolbar(
                 }
                 ui.separator();
 
-                // Tools ------------------------------------------------------
                 for tool in &palette.tools {
                     let selected =
                         std::mem::discriminant(&canvas.active_tool) == std::mem::discriminant(tool);
@@ -84,7 +70,6 @@ pub fn draw_toolbar(
                 }
                 ui.separator();
 
-                // Color palette ---------------------------------------------
                 for color in &palette.color_palette {
                     let c32 = to_color32(*color);
                     let (rect, resp) =
@@ -96,7 +81,6 @@ pub fn draw_toolbar(
                 }
                 ui.separator();
 
-                // Undo / redo ----------------------------------------------
                 if ui.button("Undo").clicked() {
                     canvas.handle(crate::canvas::CanvasEvent::Undo);
                 }
@@ -105,7 +89,6 @@ pub fn draw_toolbar(
                 }
                 ui.separator();
 
-                // Cancel / confirm / copy / save ---------------------------
                 if ui
                     .button("✕  Cancel")
                     .on_hover_text("Discard the selection (Esc)")
@@ -143,10 +126,7 @@ pub fn draw_toolbar(
     out
 }
 
-/// Paint the canvas's region rubber-band + every shape onto an egui
-/// painter. `screen_to_canvas` translates screen-local egui coordinates to
-/// virtual desktop coordinates so the drawing stays consistent across
-/// outputs.
+/// Paint the region rubber-band and every shape onto an egui painter.
 pub fn draw_canvas(painter: &egui::Painter, canvas: &Canvas, screen_offset: Pos2) {
     if let Some(rect) = canvas.region() {
         let r = EguiRect::from_min_size(
@@ -304,6 +284,5 @@ fn apply_color(tool: &mut Tool, color: Color) {
     }
 }
 
-// Silence unused-import lint when only a subset of tools is referenced.
 #[allow(dead_code)]
 fn _silence_settings(_: BrushSettings, _: StepSettings) {}

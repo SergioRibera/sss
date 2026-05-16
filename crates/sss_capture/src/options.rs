@@ -2,13 +2,9 @@
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CaptureOptions {
-    /// Whether the mouse cursor should be composited into the captured frame.
-    /// Honoured by backends that support it (`wlr-screencopy`, the desktop
-    /// portal, Win32 DXGI), silently ignored elsewhere.
+    /// Composite the mouse cursor into the captured frame when supported.
     pub show_cursor: bool,
-    /// Whether the backend should retry once on a transient failure. The
-    /// most common case is a Wayland compositor returning `Failed` due to
-    /// frame damage racing the request.
+    /// Retry once on a transient failure.
     pub retry_on_failure: bool,
 }
 
@@ -31,23 +27,14 @@ impl CaptureOptions {
 }
 
 /// Which backend implementation [`crate::Capturer`] should use.
-///
-/// `Auto` picks the best one available for the current platform at runtime.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum BackendKind {
-    /// Pick the best backend available at runtime.
     #[default]
     Auto,
-    /// Linux native Wayland via `wlr-screencopy-unstable-v1`.
     Wayland,
-    /// Linux Wayland via `org.freedesktop.portal.Screenshot` / `Screencast`.
     WaylandPortal,
-    /// Linux X11 via x11rb (XGetImage / XShmGetImage + RANDR).
     X11,
-    /// Windows Desktop GDI (`BitBlt`).
     WindowsGdi,
-    /// Windows DXGI Desktop Duplication.
     WindowsDxgi,
-    /// macOS CoreGraphics.
     MacOS,
 }

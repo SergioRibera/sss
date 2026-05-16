@@ -36,6 +36,7 @@ impl ShotImpl {
         Ok(Self { capturer })
     }
 
+    #[allow(dead_code)]
     pub fn all(&self) -> Result<RgbaImage, ImagenGeneration> {
         self.capturer
             .capture_all()

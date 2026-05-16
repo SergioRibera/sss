@@ -1,16 +1,4 @@
-//! `sss-select` — minimal slurp-equivalent.
-//!
-//! Opens a fullscreen overlay across every monitor, lets the user drag a
-//! rectangle, prints `x,y WxH` to stdout. No toolbar, no editor.
-//!
-//! Usage:
-//!
-//! ```text
-//! sss-select                       # area mode
-//! sss-select --monitor             # pick a monitor
-//! sss-select --window              # pick a window
-//! sss-select --save out.png        # also save the captured frame
-//! ```
+//! `sss-select` — minimal slurp-equivalent that prints `x,y WxH` to stdout.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -65,7 +53,6 @@ fn main() -> ExitCode {
         | Outcome::Monitor { rect, .. }
         | Outcome::Window { rect, .. } => *rect,
         Outcome::Cancelled => {
-            // slurp exits non-zero on cancel.
             return ExitCode::from(1);
         }
     };

@@ -1,13 +1,9 @@
 //! Pointer hit-testing against shapes.
-//!
-//! Implements the click → which shape did I hit? lookup the Pointer tool
-//! uses for selection / move / restyle.
 
 use crate::geometry::FPoint;
 use crate::shape::{Shape, ShapeKind};
 
-/// Tolerance (in pixels) added to thin shapes so users can grab them with
-/// the cursor without millimetre precision.
+/// Click-tolerance in pixels around thin shapes.
 const STROKE_PAD: f32 = 5.0;
 
 pub fn shape_hit(shape: &Shape, p: FPoint) -> bool {
@@ -19,7 +15,6 @@ pub fn shape_hit(shape: &Shape, p: FPoint) -> bool {
             .any(|s| dist_point_to_segment(p, s[0], s[1]) <= pad),
         Line { from, to } | Arrow { from, to } => dist_point_to_segment(p, *from, *to) <= pad,
         Rectangle { rect } | BlurRect { rect, .. } => {
-            // Outline (or interior if filled) hit area.
             if shape.style.fill.is_some() {
                 rect_contains(rect, p)
             } else {
@@ -47,7 +42,6 @@ pub fn shape_hit(shape: &Shape, p: FPoint) -> bool {
             if shape.style.fill.is_some() && *closed && point_in_polygon(points, p) {
                 return true;
             }
-            // Otherwise treat as a polyline: hit if the cursor is near any edge.
             let mut last = None;
             for v in points {
                 if let Some(prev) = last {
@@ -70,7 +64,6 @@ pub fn shape_hit(shape: &Shape, p: FPoint) -> bool {
 }
 
 fn point_in_polygon(points: &[FPoint], p: FPoint) -> bool {
-    // Ray-cast even-odd rule.
     let mut inside = false;
     let n = points.len();
     if n < 3 {
@@ -101,9 +94,7 @@ fn rect_contains(r: &sss_capture::Rect, p: FPoint) -> bool {
 }
 
 fn rect_outline_hit(r: &sss_capture::Rect, p: FPoint, pad: f32) -> bool {
-    // Inside the rect but not deep inside it.
     if !rect_contains(r, p) {
-        // Outside but close to an edge?
         let x0 = r.x() as f32;
         let y0 = r.y() as f32;
         let x1 = x0 + r.width() as f32;
@@ -134,7 +125,6 @@ fn ellipse_contains(r: &sss_capture::Rect, p: FPoint) -> bool {
 }
 
 fn ellipse_outline_hit(r: &sss_capture::Rect, p: FPoint, pad: f32) -> bool {
-    // Difference of two ellipses: inside the outer, outside the inner.
     let cx = r.x() as f32 + r.width() as f32 / 2.0;
     let cy = r.y() as f32 + r.height() as f32 / 2.0;
     let rx = r.width() as f32 / 2.0;

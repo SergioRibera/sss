@@ -1,53 +1,26 @@
-//! Annotation tools the overlay exposes through the toolbar.
-//!
-//! Every variant is plain data; the rendering logic that interprets them
-//! lives under [`crate::render`]. Keeping it that way means the editor's
-//! state can be serialised, replayed, fuzzed, or driven by a script.
+//! Annotation tools exposed by the overlay toolbar.
 
 use crate::color::Color;
 
-/// What the user is currently doing with the pointer.
-///
-/// The order in this enum matches the visual order in the default toolbar.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum Tool {
-    /// Selection / re-edit tool. Clicking on an existing shape grabs it for
-    /// move / resize / restyle. Dragging in empty space adjusts the active
-    /// region rectangle when the user is in [`crate::SelectorMode::Area`].
+    #[default]
     Pointer,
-
-    /// Freehand brush. Each drag emits a [`ShapeKind::FreehandStroke`].
     Brush(BrushSettings),
-
-    /// Straight line.
     Line(BrushSettings),
-
-    /// Arrow with a triangular head at the *to* end.
     Arrow(BrushSettings),
-
-    /// Hollow rectangle outline.
     Rectangle(BrushSettings),
-
-    /// Hollow ellipse / circle outline.
     Ellipse(BrushSettings),
-
-    /// Rectangle whose interior is blurred (Gaussian) when the final image
-    /// is composited.
-    BlurRect { radius: f32 },
-
+    /// Rectangle whose interior is blurred during composition.
+    BlurRect {
+        radius: f32,
+    },
     /// Removes any shape that intersects the eraser radius.
-    Eraser { radius: f32 },
-
-    /// Numbered circle. Each click places the next number in sequence.
+    Eraser {
+        radius: f32,
+    },
     Step(StepSettings),
-
-    /// Text label.
     Text(crate::shape::TextStyle),
-
-    /// Multi-vertex polygon. Click adds a vertex; right-click (or pressing
-    /// Enter) closes the polygon and commits it as a shape. Closed
-    /// polygons honour the FILL toggle the same way Rectangle / Ellipse
-    /// do.
     Polygon(BrushSettings),
 }
 
@@ -69,8 +42,6 @@ impl Tool {
     }
 
     pub fn icon(&self) -> &'static str {
-        // Single-glyph icons used by the egui toolbar. ASCII-only so the
-        // default font renders them without needing a font pack.
         match self {
             Tool::Pointer => "↖",
             Tool::Brush(_) => "✎",
@@ -87,19 +58,11 @@ impl Tool {
     }
 }
 
-impl Default for Tool {
-    fn default() -> Self {
-        Tool::Pointer
-    }
-}
-
-/// Shared settings used by every stroke / shape that draws a colored line.
+/// Settings shared by stroke-drawing tools.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BrushSettings {
     pub color: Color,
-    /// Stroke width in logical pixels.
     pub width: f32,
-    /// Whether to fill the interior (for closed shapes only).
     pub fill: Option<Color>,
 }
 
@@ -143,10 +106,7 @@ impl Default for StepSettings {
     }
 }
 
-/// Subset of [`Tool`] variants that should appear in the toolbar.
-///
-/// Hosts can hide tools or pre-fill them with custom defaults. The order of
-/// the slice is the visual order in the toolbar.
+/// Toolbar configuration; `tools` is the visual order in the toolbar.
 #[derive(Clone, Debug)]
 pub struct ToolPalette {
     pub tools: Vec<Tool>,
@@ -176,8 +136,7 @@ impl Default for ToolPalette {
 }
 
 impl ToolPalette {
-    /// A slimmed-down palette without annotation tools — only Pointer.
-    /// Useful when wiring up the `sss-select` slurp-equivalent binary.
+    /// Pointer-only palette without annotation tools.
     pub fn minimal() -> Self {
         Self {
             tools: vec![Tool::Pointer],

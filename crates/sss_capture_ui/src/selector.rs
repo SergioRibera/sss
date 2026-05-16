@@ -42,7 +42,6 @@ impl Outcome {
         }
     }
 
-    /// Take the captured image out of the outcome.
     pub fn take_image(self) -> Option<Image> {
         match self {
             Outcome::Region { image, .. }
@@ -52,7 +51,6 @@ impl Outcome {
         }
     }
 
-    /// Rectangle of the selection in virtual-desktop coordinates.
     pub fn rect(&self) -> Option<Rect> {
         match self {
             Outcome::Region { rect, .. }
@@ -64,23 +62,10 @@ impl Outcome {
 }
 
 /// Action the user signalled before closing the overlay.
-///
-/// The host (sss CLI, an editor app, …) decides what to do with this — the
-/// selector itself never writes files or touches the clipboard. The intent
-/// is to let the GUI override / supply defaults that the caller may have
-/// left blank in its own CLI flags.
 #[derive(Clone, Debug, Default)]
 pub struct PostAction {
-    /// User asked to copy the result. Triggered by the toolbar's Copy
-    /// button or by `copy_keybind` (default `Ctrl+C`).
     pub copy: bool,
-    /// User asked to save. Triggered by the toolbar's Save button or by
-    /// `save_keybind` (default `Ctrl+S`). The path is the one the host
-    /// supplied through [`SelectorBuilder::save_path_hint`]; the selector
-    /// only flips the `save` flag — picking a file path is the host's job.
     pub save: bool,
-    /// Suggested save path inherited from the builder. The host may use it
-    /// as a default for a file-chooser dialog or write directly to it.
     pub save_path_hint: Option<PathBuf>,
 }
 
@@ -163,8 +148,6 @@ impl SelectorBuilder {
         self
     }
 
-    /// Use an existing capturer instance. When `None` the selector builds one
-    /// at run-time with [`Capturer::new`].
     pub fn capturer(mut self, c: Arc<Capturer>) -> Self {
         self.capturer = Some(c);
         self
@@ -175,31 +158,21 @@ impl SelectorBuilder {
         self
     }
 
-    /// When `true` (default) Enter confirms; when `false` the selector only
-    /// closes through the toolbar's `Capture` button.
     pub fn enter_to_confirm(mut self, on: bool) -> Self {
         self.confirm_with_enter = on;
         self
     }
 
-    /// Show a Copy button in the toolbar. The button (or its keybind,
-    /// default `Ctrl+C`) flips [`PostAction::copy`] before the overlay
-    /// closes. Default: `true`.
     pub fn show_copy(mut self, on: bool) -> Self {
         self.show_copy = on;
         self
     }
 
-    /// Show a Save button in the toolbar. The button (or its keybind,
-    /// default `Ctrl+S`) flips [`PostAction::save`] before the overlay
-    /// closes. Default: `true`.
     pub fn show_save(mut self, on: bool) -> Self {
         self.show_save = on;
         self
     }
 
-    /// Default save path emitted on `PostAction::save_path_hint`. Hosts
-    /// (sss CLI) read it when no `--output` flag was supplied.
     pub fn save_path_hint(mut self, path: impl Into<PathBuf>) -> Self {
         self.save_path_hint = Some(path.into());
         self
@@ -258,14 +231,12 @@ impl Selector {
         SelectorBuilder::new()
     }
 
-    /// Run the overlay. Blocks the current thread until the user confirms,
-    /// cancels (`Escape`), or closes the overlay window.
+    /// Run the overlay, blocking until the user confirms or cancels.
     pub fn run(self) -> Result<Selection, SelectorError> {
         crate::platform::run(self)
     }
 }
 
-/// Error returned by the selector pipeline.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum SelectorError {

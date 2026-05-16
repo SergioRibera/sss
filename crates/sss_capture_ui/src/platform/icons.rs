@@ -1,17 +1,9 @@
-//! SVG icon loader + cache for the wayland layer-shell toolbar.
-//!
-//! Each [`ToolbarIcon`](super::super::ToolbarIcon) variant has a matching
-//! SVG file under `crates/sss_capture_ui/assets/icons/`. They are embedded
-//! at compile time, parsed + rasterised once via [`resvg`], and cached as
-//! BGRA pixel buffers ready to blit onto the SHM surface.
-//!
-//! Empty placeholder SVGs ship with the crate; until you replace them
-//! with real artwork, the toolbar falls back to the built-in CPU-drawn
-//! icon. Each parsed icon's `currentColor` is resolved against the
-//! foreground colour the caller supplies so the same SVG renders nicely
-//! against both light and dark backgrounds.
+//! SVG icon loader and rasterisation cache for the layer-shell toolbar.
 
 use std::sync::OnceLock;
+
+use egui::ahash::HashMap;
+use egui::mutex::Mutex;
 
 use super::wayland_layer::ToolbarIcon;
 
@@ -58,30 +50,23 @@ fn raw_svg(icon: ToolbarIcon) -> &'static [u8] {
     }
 }
 
-/// A rasterised icon, ready to blit into the SHM buffer.
 pub(crate) struct RasterIcon {
     pub width: u32,
     pub height: u32,
-    /// Premultiplied RGBA bytes, row-major.
+    /// Premultiplied RGBA, row-major.
     pub rgba: Vec<u8>,
 }
 
-static CACHE: OnceLock<
-    std::sync::Mutex<std::collections::HashMap<(ToolbarIcon, [u8; 3]), Option<RasterIcon>>>,
-> = OnceLock::new();
+type ToolbarIconCache = HashMap<(ToolbarIcon, [u8; 3]), Option<RasterIcon>>;
+static CACHE: OnceLock<Mutex<ToolbarIconCache>> = OnceLock::new();
 
-/// Returns the rasterised icon for the given `kind` painted in `rgb`, or
-/// `None` when the SVG is empty / unparseable (caller should fall back to
-/// the built-in CPU drawer).
+/// Returns the rasterised icon, or `None` when the SVG is empty/unparseable.
 pub(crate) fn rasterise(kind: ToolbarIcon, rgb: [u8; 3]) -> Option<&'static RasterIcon> {
-    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(Default::default()));
-    let mut guard = cache.lock().unwrap();
-    // We unsafely promote the &RasterIcon to 'static via leaking the box —
-    // entries are never removed and the cache lives for the lifetime of the
-    // program. That gives us a stable address callers can reuse.
+    let cache = CACHE.get_or_init(|| Mutex::new(Default::default()));
+    let mut guard = cache.lock();
     if let Some(entry) = guard.get(&(kind, rgb)) {
         return entry.as_ref().map(|r| {
-            // SAFETY: nothing in the map is ever removed.
+            // SAFETY: cache entries are never removed; addresses are stable.
             unsafe { &*(r as *const RasterIcon) }
         });
     }
@@ -97,9 +82,8 @@ fn rasterise_uncached(kind: ToolbarIcon, rgb: [u8; 3]) -> Option<RasterIcon> {
     if !looks_useful(bytes) {
         return None;
     }
-    // Resolve `currentColor` to the foreground RGB by rewriting the SVG
-    // bytes before parsing — `usvg::Options` doesn't expose a hook for
-    // the `currentColor` value in v0.43.
+    // usvg 0.43 has no hook for the `currentColor` value, so rewrite it in
+    // the source bytes before parsing.
     let recoloured;
     let bytes = if let Ok(s) = std::str::from_utf8(bytes) {
         if s.contains("currentColor") {
@@ -131,9 +115,6 @@ fn rasterise_uncached(kind: ToolbarIcon, rgb: [u8; 3]) -> Option<RasterIcon> {
     })
 }
 
-/// Returns true when the SVG looks like it has at least one drawable
-/// element. Empty placeholders (just an `<svg></svg>` wrapper) come back
-/// as `false`, which signals the caller to use the built-in glyph.
 fn looks_useful(bytes: &[u8]) -> bool {
     let s = std::str::from_utf8(bytes).unwrap_or("");
     const SHAPE_TAGS: &[&str] = &[

@@ -16,8 +16,6 @@
 //! short timeout and return anyway. The caller is expected to fall back
 //! to `arboard` if this returns `ClipboardUnavailable`.
 
-#![cfg(target_os = "linux")]
-
 use std::fs::File;
 use std::io::Write;
 use std::os::fd::{FromRawFd, OwnedFd};
@@ -92,7 +90,6 @@ pub fn copy_png(png_bytes: Vec<u8>) -> Result<(), WlClipboardError> {
     device.set_selection(Some(&source));
 
     let mut state = State {
-        bytes,
         served: 0,
         cancelled: false,
     };
@@ -122,7 +119,6 @@ pub fn copy_png(png_bytes: Vec<u8>) -> Result<(), WlClipboardError> {
 // -----------------------------------------------------------------------
 
 struct State {
-    bytes: Arc<Vec<u8>>,
     served: u32,
     cancelled: bool,
 }

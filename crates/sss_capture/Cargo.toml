@@ -20,7 +20,6 @@ unsupported-stubs = []
 thiserror.workspace = true
 tracing.workspace = true
 image = "0.25"
-bytemuck = "1.18"
 
 # ---------------------------- Linux: X11 ------------------------------------
 [target.'cfg(target_os = "linux")'.dependencies]

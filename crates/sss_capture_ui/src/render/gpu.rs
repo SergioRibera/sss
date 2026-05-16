@@ -1,14 +1,10 @@
 //! GPU rendering glue for the interactive overlay.
-//!
-//! Per-window wgpu surface + egui-wgpu renderer + egui-winit state. Only
-//! built when the `editor` feature is on; the no-editor build path stays
-//! fully CPU and renders nothing through this module.
 
 use std::sync::Arc;
 
 use winit::window::Window;
 
-/// Shared GPU state — one instance per app, not per window.
+/// Shared GPU state, one instance per app.
 pub(crate) struct Gpu {
     pub instance: wgpu::Instance,
     pub adapter: wgpu::Adapter,
@@ -17,7 +13,6 @@ pub(crate) struct Gpu {
 }
 
 impl Gpu {
-    /// Build a wgpu instance.
     pub fn new_instance() -> wgpu::Instance {
         wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -25,14 +20,8 @@ impl Gpu {
         })
     }
 
-    /// Request an adapter + device using `compatible_surface` for adapter
-    /// selection.
-    ///
-    /// Important: wgpu 22 keeps an internal reference to the surface used
-    /// here until the adapter is dropped. **Do not drop the surface
-    /// passed in here before the returned `Gpu` is finished with the
-    /// adapter.** The caller normally moves the surface into a
-    /// [`WindowGpu`] right after so it stays alive.
+    /// `compatible_surface` must outlive the returned `Gpu`; wgpu 22 keeps an
+    /// internal reference to it until the adapter is dropped.
     pub fn new_with_surface(
         instance: wgpu::Instance,
         compatible_surface: &wgpu::Surface<'_>,
@@ -77,9 +66,7 @@ pub(crate) struct WindowGpu {
 }
 
 impl WindowGpu {
-    /// Build a [`WindowGpu`] for an *already-created* surface. Use this when
-    /// the surface had to exist before the adapter (i.e. the first window
-    /// whose surface fed `Gpu::new_with_surface`).
+    /// Build for the surface that was used to create the adapter.
     pub fn from_surface(
         window: Arc<Window>,
         surface: wgpu::Surface<'static>,
@@ -88,8 +75,7 @@ impl WindowGpu {
         Self::finish(window, surface, gpu)
     }
 
-    /// Build a [`WindowGpu`] for a window that doesn't have a surface yet.
-    /// The adapter must already exist (this is the path for windows 2..N).
+    /// Build for a window that doesn't have a surface yet.
     pub fn new(window: Arc<Window>, gpu: &Gpu) -> Result<Self, String> {
         let surface = gpu
             .instance
@@ -116,12 +102,9 @@ impl WindowGpu {
             .copied()
             .unwrap_or(caps.formats[0]);
 
-        // Always Fifo: an annotation overlay is an editor, not a game. We
-        // redraw on input events only, so unbounded mailbox-style framerates
-        // are pure waste and — on multi-monitor setups (4 surfaces simul-
-        // taneously) — were enough to hard-lock the kernel via the GPU
-        // driver. Pin `desired_maximum_frame_latency` to 1 for the same
-        // reason: minimum queue depth, no head-of-line build-up.
+        // Fifo + frame-latency 1: redraw is event-driven, and on multi-monitor
+        // setups deeper queues have hard-locked the kernel via the GPU driver.
+        // Opaque alpha lets Wayland compositors skip per-pixel blending.
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -129,10 +112,6 @@ impl WindowGpu {
             height: size.1,
             present_mode: wgpu::PresentMode::Fifo,
             desired_maximum_frame_latency: 1,
-            // Opaque alpha mode forces wgpu to declare the surface opaque
-            // to the compositor (when supported). Wayland compositors then
-            // skip per-pixel blending for the overlay, which avoids a
-            // second source of multi-surface compositing pressure.
             alpha_mode: caps
                 .alpha_modes
                 .iter()

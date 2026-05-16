@@ -1,19 +1,10 @@
-//! Real font rasteriser for the wayland-layer-shell overlay.
-//!
-//! The early prototype embedded a 5×7 ASCII bitmap font for hint text and
-//! step numbers. That was readable but obviously toy-grade. This module
-//! replaces it with the workspace's bundled Hack-Regular.ttf, rasterised
-//! on demand via [`ab_glyph`]. Each glyph is cached at its requested size
-//! so repeated frames don't re-rasterise.
+//! Cached font rasteriser for the wayland-layer-shell overlay.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 
-/// Embedded TTF. Shares the file with `assets/fonts/Hack-Regular.ttf`
-/// already used elsewhere in the workspace; the lib reads it via
-/// `include_bytes!` so we don't need to ship a copy.
 const FONT_BYTES: &[u8] = include_bytes!("../../../../assets/fonts/Hack-Regular.ttf");
 
 fn font() -> &'static FontRef<'static> {
@@ -21,8 +12,7 @@ fn font() -> &'static FontRef<'static> {
     FONT.get_or_init(|| FontRef::try_from_slice(FONT_BYTES).expect("Hack-Regular.ttf is malformed"))
 }
 
-/// Rasterised glyph bitmap. `pixels` is row-major `width × height`
-/// coverage (0 = transparent, 255 = fully covered).
+/// Row-major coverage bitmap (0 = transparent, 255 = fully covered).
 pub(crate) struct GlyphBitmap {
     pub width: u32,
     pub height: u32,
@@ -32,12 +22,10 @@ pub(crate) struct GlyphBitmap {
     pub pixels: Vec<u8>,
 }
 
-/// Look up the glyph for `ch` at `px` pixels tall. Cached.
 pub(crate) fn glyph_for(ch: char, px: f32) -> Option<&'static GlyphBitmap> {
     let key = (ch, (px * 16.0) as u32);
     let guard = cache().lock().unwrap();
-    // SAFETY: entries are never removed from the cache, so the address is
-    // stable for the lifetime of the program.
+    // SAFETY: cache entries are never removed; addresses are stable forever.
     if let Some(g) = guard.get(&key) {
         return g.as_ref().map(|g| unsafe { &*(g as *const _) });
     }
@@ -48,8 +36,10 @@ pub(crate) fn glyph_for(ch: char, px: f32) -> Option<&'static GlyphBitmap> {
     inserted.as_ref().map(|g| unsafe { &*(g as *const _) })
 }
 
-fn cache() -> &'static Mutex<HashMap<(char, u32), Option<GlyphBitmap>>> {
-    static CACHE: OnceLock<Mutex<HashMap<(char, u32), Option<GlyphBitmap>>>> = OnceLock::new();
+type CharGlyphCache = HashMap<(char, u32), Option<GlyphBitmap>>;
+
+fn cache() -> &'static Mutex<CharGlyphCache> {
+    static CACHE: OnceLock<Mutex<CharGlyphCache>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -79,7 +69,6 @@ fn rasterise(ch: char, px: f32) -> Option<GlyphBitmap> {
     })
 }
 
-/// Total advance width (px) for a UTF-8 string at the given size.
 pub(crate) fn measure(text: &str, px: f32) -> f32 {
     let font = font();
     let scaled = font.as_scaled(PxScale::from(px));
@@ -88,8 +77,6 @@ pub(crate) fn measure(text: &str, px: f32) -> f32 {
         .sum()
 }
 
-/// Reference ascent — used so callers can position text baselines instead
-/// of bounding-box tops.
 pub(crate) fn ascent(px: f32) -> f32 {
     let font = font();
     let scaled = font.as_scaled(PxScale::from(px));

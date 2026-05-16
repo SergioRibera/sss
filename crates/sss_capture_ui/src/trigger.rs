@@ -1,25 +1,15 @@
-//! When does the actual capture happen?
+//! Capture timing.
 
-/// Capture timing.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum CaptureTrigger {
-    /// Take the screenshot *before* showing the overlay; the user draws on
-    /// top of the static image. Robust on every platform and the default.
+    /// Capture the screenshot before showing the overlay.
+    #[default]
     Eager,
-    /// Show the overlay over the live desktop and only call into
-    /// [`sss_capture::Capturer`] once the user confirms with `confirm`.
+    /// Show the overlay over the live desktop and capture on confirm.
     Lazy {
-        /// Keybind that confirms the selection (default: Enter).
         confirm: KeyChord,
-        /// Optional alternative confirm (e.g. a toolbar button click).
         confirm_button_label: Option<String>,
     },
-}
-
-impl Default for CaptureTrigger {
-    fn default() -> Self {
-        CaptureTrigger::Eager
-    }
 }
 
 /// A key combination — modifier flags + a logical key.
@@ -61,8 +51,7 @@ impl KeyChord {
     }
 }
 
-/// Logical key the overlay cares about. Maps directly to the relevant
-/// `winit::keyboard::Key` variants — anything not listed here is ignored.
+/// Logical key the overlay cares about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum KeyBind {
     Enter,
@@ -71,7 +60,7 @@ pub enum KeyBind {
     Tab,
     Delete,
     Backspace,
-    /// A printable character. Stored lowercase.
+    /// A printable character, stored lowercase.
     Char(char),
     F(u8),
 }

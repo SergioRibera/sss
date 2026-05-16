@@ -9,14 +9,13 @@ use crate::options::{BackendKind, CaptureOptions};
 use crate::window::{Window, WindowId, WindowSearch};
 
 /// Cross-platform screen capture.
-///
-/// Construct one with [`Capturer::new`] for an auto-detected backend, or with
-/// [`Capturer::builder`] for fine control. The struct is `Send` so it can be
-/// moved to a worker thread.
 pub struct Capturer {
     backend: Box<dyn Backend>,
     default_options: CaptureOptions,
 }
+
+unsafe impl Send for Capturer {}
+unsafe impl Sync for Capturer {}
 
 impl std::fmt::Debug for Capturer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -48,8 +47,6 @@ impl Capturer {
     pub fn set_default_options(&mut self, opts: CaptureOptions) {
         self.default_options = opts;
     }
-
-    // ------------------------------------------------------------------ Enum
 
     pub fn monitors(&self) -> Result<Vec<Monitor>> {
         self.backend.monitors()
@@ -121,8 +118,6 @@ impl Capturer {
             .ok_or_else(|| CaptureError::backend("capturer", "no window matched the search"))
     }
 
-    // --------------------------------------------------------------- Capture
-
     pub fn capture_all(&self) -> Result<Image> {
         self.capture_all_with(self.default_options)
     }
@@ -174,10 +169,6 @@ impl Capturer {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Builder
-// -----------------------------------------------------------------------------
-
 #[derive(Clone, Debug, Default)]
 pub struct CapturerBuilder {
     backend: BackendKind,
@@ -214,10 +205,6 @@ impl CapturerBuilder {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Backend selection
-// -----------------------------------------------------------------------------
-
 fn select_backend(kind: BackendKind) -> Result<Box<dyn Backend>> {
     let mut errors: Vec<String> = Vec::new();
     match kind {
@@ -239,17 +226,14 @@ fn auto_select(errors: &mut Vec<String>) -> Option<Box<dyn Backend>> {
         if let Some(b) = try_wayland(errors) {
             return Some(b);
         }
-        // Fall through to XWayland first — on wlroots compositors that
-        // don't advertise zwlr_screencopy_v1, an XWayland fallback is much
-        // more likely to work than the desktop portal (which routinely
-        // hangs on niri / sway when no `org.freedesktop.portal.Screenshot`
-        // backend is configured).
+        // On wlroots compositors without zwlr_screencopy_v1, XWayland is more
+        // likely to work than the portal which hangs without a configured
+        // `org.freedesktop.portal.Screenshot` backend.
         if is_x11_session() {
             if let Some(b) = try_x11(errors) {
                 return Some(b);
             }
         }
-        // Last resort: the portal.
         if let Some(b) = try_portal(errors) {
             return Some(b);
         }
@@ -278,8 +262,6 @@ fn auto_select(errors: &mut Vec<String>) -> Option<Box<dyn Backend>> {
     errors.push("no capture backend implemented for this platform".to_string());
     None
 }
-
-// ---- per-backend factories ----
 
 #[cfg(target_os = "linux")]
 fn try_wayland(errors: &mut Vec<String>) -> Option<Box<dyn Backend>> {

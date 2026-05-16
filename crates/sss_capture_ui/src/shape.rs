@@ -1,25 +1,11 @@
-//! Persistent shape model.
-//!
-//! Each completed action ("draw an arrow", "place a step", "type a label",
-//! "blur this rectangle") becomes a [`Shape`] stored in the [`Canvas`].
-//! Shapes are *editable* through the Pointer tool — they expose handles, can
-//! be moved, resized, restyled, deleted or pulled up/down in z-order.
-//!
-//! Anything you can express here is also what gets baked into the final
-//! composite image when the user confirms the selection.
+//! Persistent shape model for the annotation canvas.
 
 use crate::color::Color;
 use crate::geometry::FPoint;
 use crate::tool::{BrushSettings, StepSettings};
 use sss_capture::Rect;
 
-mod inline {
-    // Make sure `geometry::FPoint` is reachable from this file regardless of
-    // the module layout (used as a re-export indirection).
-}
-
-/// Strongly typed shape identifier. Monotonic per canvas; never reused even
-/// after a shape is deleted, so undo/redo can refer to gone shapes safely.
+/// Strongly typed shape identifier; monotonic per canvas and never reused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ShapeId(pub(crate) u64);
 
@@ -35,18 +21,16 @@ pub struct Shape {
     pub id: ShapeId,
     pub kind: ShapeKind,
     pub style: Style,
-    /// Optional rotation in radians, around the shape's bounding-box center.
+    /// Rotation in radians, around the bounding-box center.
     pub rotation: f32,
 }
 
 impl Shape {
-    /// Axis-aligned bounding rectangle, in canvas (logical desktop) pixels.
+    /// Axis-aligned bounding rectangle in canvas pixels.
     pub fn bounds(&self) -> Rect {
         self.kind.bounds()
     }
 
-    /// True if `p` falls within the *hit area* of this shape — accounting for
-    /// stroke width for outlines.
     pub fn contains(&self, p: FPoint) -> bool {
         crate::hit::shape_hit(self, p)
     }
@@ -54,34 +38,43 @@ impl Shape {
 
 #[derive(Clone, Debug)]
 pub enum ShapeKind {
-    /// Freehand brush stroke; the polyline of mouse samples.
-    FreehandStroke { points: Vec<FPoint> },
-    /// Straight line.
-    Line { from: FPoint, to: FPoint },
-    /// Arrow with a head at `to`.
-    Arrow { from: FPoint, to: FPoint },
-    /// Rectangle outline (and optional fill).
-    Rectangle { rect: Rect },
-    /// Ellipse outline (and optional fill).
-    Ellipse { rect: Rect },
+    FreehandStroke {
+        points: Vec<FPoint>,
+    },
+    Line {
+        from: FPoint,
+        to: FPoint,
+    },
+    Arrow {
+        from: FPoint,
+        to: FPoint,
+    },
+    Rectangle {
+        rect: Rect,
+    },
+    Ellipse {
+        rect: Rect,
+    },
     /// Rectangle whose interior is blurred during composition.
-    BlurRect { rect: Rect, radius: f32 },
-    /// Numbered circle.
+    BlurRect {
+        rect: Rect,
+        radius: f32,
+    },
     Step {
         center: FPoint,
         number: u32,
         radius: f32,
     },
-    /// Text label.
     Text {
         origin: FPoint,
         content: String,
         style: TextStyle,
     },
-    /// Polygon defined by an ordered list of vertices. When `closed` is
-    /// true the outline wraps from the last point back to the first and
-    /// the interior is filled with `Style::fill`.
-    Polygon { points: Vec<FPoint>, closed: bool },
+    /// Polygon; when `closed`, the interior is filled with `Style::fill`.
+    Polygon {
+        points: Vec<FPoint>,
+        closed: bool,
+    },
 }
 
 impl ShapeKind {
@@ -136,8 +129,7 @@ fn bounding_of_points(pts: &[FPoint]) -> Rect {
     )
 }
 
-/// Visual style shared by every non-text shape. Text shapes carry their own
-/// [`TextStyle`].
+/// Visual style for non-text shapes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style {
     pub stroke: Color,

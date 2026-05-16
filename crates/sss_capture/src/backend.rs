@@ -1,7 +1,4 @@
 //! Internal capture-backend trait.
-//!
-//! Every platform implements `Backend`. The public surface is reached
-//! exclusively through [`crate::Capturer`].
 
 use image::RgbaImage;
 

@@ -13,7 +13,7 @@ use crate::error::CodeScreenshot;
 
 pub fn list_themes(ts: &ThemeSet) {
     for t in ts.themes.keys() {
-        println!("- {}", t);
+        println!("- {t}");
     }
 }
 

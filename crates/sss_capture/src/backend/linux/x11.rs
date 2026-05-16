@@ -1,15 +1,4 @@
-//! X11 backend implemented on top of `x11rb` (pure-Rust XCB).
-//!
-//! Capabilities:
-//!   * Monitor enumeration via the **RANDR 1.5** `GetMonitors` request, with
-//!     a fallback to RANDR 1.2 `GetScreenResources` for ancient servers.
-//!   * Frame capture via `GetImage` against the screen's root window. We use
-//!     the regular `ZPixmap` format and decode whatever pixmap layout the
-//!     server announces (8/16/24/32 bpp, MSB / LSB byte order).
-//!   * Window enumeration via the EWMH `_NET_CLIENT_LIST` property; window
-//!     captures grab the window directly from its X drawable, which works
-//!     for unmapped, occluded and off-screen windows.
-//!   * Cursor position via `QueryPointer`.
+//! X11 backend implemented on top of `x11rb`.
 
 use std::sync::Mutex;
 
@@ -32,8 +21,7 @@ use crate::window::{Window, WindowId};
 
 const BACKEND: &str = "x11";
 
-/// Atoms we care about. Filled in lazily by `interned_atoms`.
-#[allow(dead_code)] // some atoms are referenced only conditionally
+#[allow(dead_code)]
 struct Atoms {
     net_client_list: xproto::Atom,
     net_client_list_stacking: xproto::Atom,
@@ -65,10 +53,6 @@ impl X11Backend {
             .get(screen_num)
             .ok_or_else(|| CaptureError::backend(BACKEND, "X server has no screens"))?
             .root;
-
-        // RANDR is required for monitor enumeration. We don't probe up
-        // front — every modern X server (>= 2000s) ships it — and instead let
-        // the first `monitors()` call surface a clear error if missing.
 
         let atoms = Atoms {
             net_client_list: intern_atom(&conn, b"_NET_CLIENT_LIST")?,
@@ -111,8 +95,6 @@ impl X11Backend {
         let depth = reply.depth;
         let bytes = reply.data;
 
-        // Locate the pixmap format the server uses for this depth so we know
-        // bits-per-pixel.
         let pixmap_fmt = setup
             .pixmap_formats
             .iter()
@@ -132,9 +114,8 @@ impl Backend for X11Backend {
 
     fn monitors(&self) -> Result<Vec<Monitor>> {
         let conn = self.conn.lock().unwrap();
-        // Try RANDR 1.5 first.
         let monitors_reply = conn
-            .randr_get_monitors(self.root, true /* active only */)
+            .randr_get_monitors(self.root, true)
             .map_err(|e| CaptureError::backend(BACKEND, e.to_string()))?
             .reply();
 
@@ -144,8 +125,6 @@ impl Backend for X11Backend {
                 for m in reply.monitors {
                     let name =
                         atom_name(&conn, m.name).unwrap_or_else(|| format!("output-{}", m.name));
-                    // RANDR 1.5 doesn't give rotation/scale per-monitor;
-                    // derive from the first associated output's CRTC.
                     let (rotation, refresh) = rotation_and_refresh(&conn, &m.outputs);
                     let scale = guess_scale_factor(&name, m.width, m.width_in_millimeters);
                     out.push(Monitor {
@@ -197,7 +176,7 @@ impl Backend for X11Backend {
             .find(|m| m.id == id)
             .ok_or(CaptureError::MonitorNotFound(id))?;
         let bounds = monitor.bounds;
-        let _ = opts; // X11 ignores cursor flag (cursor isn't a separate layer here).
+        let _ = opts;
         self.capture_drawable(
             self.root,
             bounds.x() as i16,
@@ -216,8 +195,6 @@ impl Backend for X11Backend {
     }
 
     fn capture_all(&self, opts: &CaptureOptions) -> Result<RgbaImage> {
-        // X11 has a virtual root that covers every monitor; capture it
-        // directly to skip per-monitor stitching when possible.
         let monitors = self.monitors()?;
         let bounds = Rect::bounding(&monitors.iter().map(|m| m.bounds).collect::<Vec<_>>())
             .ok_or(CaptureError::NoMonitors)?;
@@ -235,8 +212,6 @@ impl Backend for X11Backend {
         if region.size.is_empty() {
             return Err(CaptureError::EmptyRegion(region));
         }
-        // The X server can give us any rectangle of the virtual root in one
-        // round-trip; no need to stitch.
         let _ = opts;
         self.capture_drawable(
             self.root,
@@ -259,10 +234,6 @@ impl Backend for X11Backend {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
 fn intern_atom(conn: &RustConnection, name: &[u8]) -> Result<xproto::Atom> {
     Ok(conn
         .intern_atom(false, name)
@@ -284,8 +255,6 @@ fn window_geometry(conn: &RustConnection, w: XWindow) -> Result<GetGeometryReply
         .map_err(|e| CaptureError::backend(BACKEND, e.to_string()))
 }
 
-/// Returns the rotation reported by the CRTC backing the first output of the
-/// list, plus its refresh rate if available.
 fn rotation_and_refresh(
     conn: &RustConnection,
     outputs: &[randr::Output],
@@ -297,9 +266,6 @@ fn rotation_and_refresh(
                     if let Ok(crtc_cookie) = conn.randr_get_crtc_info(info.crtc, 0) {
                         if let Ok(crtc) = crtc_cookie.reply() {
                             let rotation = rotation_from_randr(crtc.rotation);
-                            // Refresh rate calculation needs mode info too;
-                            // we leave it as `None` to keep this hot path
-                            // small. The RANDR 1.2 fallback below fills it.
                             return (rotation, None);
                         }
                     }
@@ -325,15 +291,10 @@ fn rotation_from_randr(r: randr::Rotation) -> Rotation {
     }
 }
 
-/// Heuristic scale factor: X11 doesn't really track HiDPI per-output. Some
-/// desktop environments expose it in `_GTK_FRAME_EXTENTS` / `Xft.dpi`, but
-/// that's process-wide. We return 1.0 by default and let the caller override.
 fn guess_scale_factor(_name: &str, _width_px: u16, _width_mm: u32) -> f32 {
     1.0
 }
 
-/// Fallback when RANDR 1.5 isn't there: enumerate every output through
-/// `GetScreenResources`.
 fn monitors_via_screen_resources(conn: &RustConnection, root: XWindow) -> Result<Vec<Monitor>> {
     let res = conn
         .randr_get_screen_resources(root)
@@ -342,7 +303,6 @@ fn monitors_via_screen_resources(conn: &RustConnection, root: XWindow) -> Result
         .map_err(|e| CaptureError::backend(BACKEND, e.to_string()))?;
     let mut out = Vec::new();
 
-    // Build a map from mode id → refresh rate.
     let modes: std::collections::HashMap<u32, f32> = res
         .modes
         .iter()
@@ -391,7 +351,6 @@ fn monitors_via_screen_resources(conn: &RustConnection, root: XWindow) -> Result
         });
     }
 
-    // Mark the primary output.
     if let Ok(cookie) = conn.randr_get_output_primary(root) {
         if let Ok(p) = cookie.reply() {
             if let Some(m) = out.iter_mut().find(|m| m.id.raw() == p.output as u64) {
@@ -403,10 +362,7 @@ fn monitors_via_screen_resources(conn: &RustConnection, root: XWindow) -> Result
     Ok(out)
 }
 
-// ---- EWMH window enumeration ----------------------------------------------
-
 fn client_list(conn: &RustConnection, root: XWindow, atoms: &Atoms) -> Result<Vec<XWindow>> {
-    // Prefer the stacking list (front-to-back) when available.
     let reply = conn
         .get_property(
             false,
@@ -421,7 +377,6 @@ fn client_list(conn: &RustConnection, root: XWindow, atoms: &Atoms) -> Result<Ve
         .map_err(|e| CaptureError::backend(BACKEND, e.to_string()))?;
     let mut windows: Vec<XWindow> = reply.value32().map(|v| v.collect()).unwrap_or_default();
     if windows.is_empty() {
-        // Fallback to creation-order list.
         let reply = conn
             .get_property(
                 false,
@@ -455,7 +410,6 @@ fn describe_window(
     active: Option<XWindow>,
 ) -> Result<Window> {
     let geom = window_geometry(conn, xid)?;
-    // Translate window-local coords to root coords.
     let coords = conn
         .translate_coordinates(xid, geom.root, 0, 0)
         .map_err(|e| CaptureError::backend(BACKEND, e.to_string()))?
@@ -528,16 +482,13 @@ fn get_wm_class(conn: &RustConnection, w: XWindow, wm_class: xproto::Atom) -> Op
         .ok()?
         .reply()
         .ok()?;
-    // WM_CLASS is two NUL-terminated strings: instance + class. We return the
-    // class (second one) which is the more readable identifier.
+    // WM_CLASS is two NUL-terminated strings: instance + class; we return class.
     let mut parts = reply.value.split(|b| *b == 0).filter(|p| !p.is_empty());
     let _instance = parts.next();
     parts
         .next()
         .map(|c| String::from_utf8_lossy(c).into_owned())
 }
-
-// ---- Pixel decoding --------------------------------------------------------
 
 fn decode_image(
     bytes: &[u8],
@@ -558,7 +509,6 @@ fn decode_image(
             let out = ((y * width + x) * 4) as usize;
             let (r, g, b, a) = match (depth, bpp) {
                 (1..=8, _) => {
-                    // Indexed; fall through with grayscale conversion.
                     let p = row[idx];
                     (p, p, p, 255)
                 }
@@ -577,7 +527,7 @@ fn decode_image(
                     (r, g, b, 255)
                 }
                 (_, bpp) if bpp >= 24 => {
-                    // BGRA in memory on LSB servers, RGBA on MSB.
+                    // LSB servers store BGRA in memory; MSB stores RGBA.
                     if lsb {
                         (row[idx + 2], row[idx + 1], row[idx], 255)
                     } else {
@@ -603,7 +553,5 @@ fn decode_image(
     })
 }
 
-// `PropMode` is only used by writes; silence the unused-import lint when no
-// other site brings it in for `cargo check` runs.
 #[allow(dead_code)]
 fn _silence_propmode(_: PropMode) {}

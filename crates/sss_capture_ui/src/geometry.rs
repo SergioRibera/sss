@@ -1,9 +1,4 @@
-//! Floating-point geometry helpers used during interactive editing.
-//!
-//! `sss_capture::Rect` / `Point` are integer-only — fine for the final
-//! committed selection but inconvenient during a drag (sub-pixel cursor
-//! deltas, smooth brush strokes). `FPoint` and `FRect` cover the editing
-//! path; they convert to/from the integer flavours at the boundaries.
+//! Floating-point geometry helpers for interactive editing.
 
 use sss_capture::{Point, Rect};
 
@@ -55,8 +50,7 @@ impl FRect {
     pub const fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
         Self { x, y, w, h }
     }
-    /// Build from two opposite corners (drag start + drag current). The
-    /// corners may be in any order.
+    /// Build from two opposite corners in any order.
     pub fn from_corners(a: FPoint, b: FPoint) -> Self {
         let x0 = a.x.min(b.x);
         let y0 = a.y.min(b.y);

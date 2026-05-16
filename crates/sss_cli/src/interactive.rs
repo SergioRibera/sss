@@ -124,6 +124,6 @@ fn default_screenshot_path() -> PathBuf {
         .unwrap_or(0);
     let base = directories::UserDirs::new()
         .and_then(|d| d.picture_dir().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| std::env::temp_dir());
+        .unwrap_or_else(std::env::temp_dir);
     base.join(format!("sss-{stamp}.png"))
 }

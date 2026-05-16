@@ -1,14 +1,6 @@
-//! CPU rasteriser used to bake the final image.
-//!
-//! Every shape from [`Canvas::shapes`] gets drawn over the source RGBA
-//! buffer. After all stroked shapes are drawn, we apply the BlurRect regions
-//! by Gaussian-blurring the captured pixels under each rectangle.
-//!
-//! Drawing is done with simple software primitives (Bresenham lines,
-//! filled / outlined rects, midpoint ellipses, dot fonts for steps/text).
-//! It's not a vector graphics library — accuracy is "good enough for a
-//! screenshot annotation overlay" — but the output is fully deterministic
-//! and matches what the interactive preview shows.
+//! CPU rasteriser that bakes the canvas into the captured image.
+
+use std::f32;
 
 use image::imageops;
 use image::{Rgba, RgbaImage};
@@ -19,26 +11,15 @@ use crate::geometry::FPoint;
 use crate::shape::{Shape, ShapeKind, TextStyle};
 use sss_capture::Rect;
 
-/// Render every shape in `canvas` onto `image`. `origin` is the canvas
-/// coordinate the image's top-left corresponds to.
-///
-/// Shapes are processed in z-order (the order they were committed), so a
-/// stroke drawn *after* a blur rectangle paints on top of the blur, and a
-/// blur drawn *after* a stroke obscures it. This matches the user's
-/// expectation of "what I drew last wins".
+/// Render every shape in `canvas` onto `image`; `origin` is the canvas
+/// coordinate that the image's top-left corresponds to.
 pub fn flatten(image: &mut RgbaImage, canvas: &Canvas, origin: (i32, i32)) {
     for shape in canvas.shapes() {
         paint_one(image, shape, origin);
     }
 }
 
-/// Same as [`flatten`] but also paints the in-flight drag preview and any
-/// pending text the user is typing. Used by the *interactive* renderers
-/// so the drawn shape appears live as the user drags / types, in addition
-/// to the committed shapes already on the canvas.
-///
-/// The preview is appended *after* every committed shape so it always sits
-/// on top while it's still being drawn.
+/// Like [`flatten`] but also paints in-flight previews on top.
 pub fn flatten_with_preview(image: &mut RgbaImage, canvas: &Canvas, origin: (i32, i32)) {
     for shape in canvas.shapes() {
         paint_one(image, shape, origin);
@@ -49,10 +30,6 @@ pub fn flatten_with_preview(image: &mut RgbaImage, canvas: &Canvas, origin: (i32
     if let Some(text) = canvas.pending_text() {
         paint_one(image, &text, origin);
     }
-    // In-flight polygon: draw the committed vertices as an open polyline
-    // so the user can see what they're building. The renderer keeps the
-    // polygon "open" (the closing segment from last → first is only
-    // drawn when the user commits).
     if let Some(verts) = canvas.polygon_vertices() {
         if verts.len() >= 2 {
             let style = canvas.current_polygon_style();
@@ -72,8 +49,6 @@ pub fn flatten_with_preview(image: &mut RgbaImage, canvas: &Canvas, origin: (i32
                 );
             }
         }
-        // Mark each committed vertex with a small filled square so the
-        // user can see them clearly while the polygon is being built.
         for v in verts {
             let cx = (v.x - origin.0 as f32).round() as i32;
             let cy = (v.y - origin.1 as f32).round() as i32;
@@ -145,9 +120,7 @@ fn draw_shape(img: &mut RgbaImage, shape: &Shape, origin: (i32, i32)) {
                 shape.style.fill,
             );
         }
-        BlurRect { .. } => {
-            // Handled in second pass.
-        }
+        BlurRect { .. } => {}
         Step {
             center,
             number,
@@ -173,8 +146,6 @@ fn draw_shape(img: &mut RgbaImage, shape: &Shape, origin: (i32, i32)) {
                 return;
             }
             let w = shape.style.stroke_width.max(1.0) as i32;
-            // Fill first so the outline sits on top (matches every
-            // other vector tool in the editor).
             if *closed {
                 if let Some(fill) = shape.style.fill {
                     fill_polygon(img, points, origin, fill);
@@ -204,13 +175,10 @@ fn draw_shape(img: &mut RgbaImage, shape: &Shape, origin: (i32, i32)) {
     }
 }
 
-/// Scanline-fill a (possibly non-convex) polygon. Slow but correct for any
-/// vertex order; we only use it for tens of vertices at most.
 fn fill_polygon(img: &mut RgbaImage, points: &[FPoint], origin: (i32, i32), color: Color) {
     if points.len() < 3 {
         return;
     }
-    // Convert all vertices to image-local coords up-front.
     let pts: Vec<(f32, f32)> = points
         .iter()
         .map(|p| (p.x - origin.0 as f32, p.y - origin.1 as f32))
@@ -257,10 +225,6 @@ fn local_rect(r: Rect, origin: (i32, i32)) -> Rect {
     Rect::from_xywh(r.x() - origin.0, r.y() - origin.1, r.width(), r.height())
 }
 
-// ---------------------------------------------------------------------------
-// Primitive helpers
-// ---------------------------------------------------------------------------
-
 fn px(img: &mut RgbaImage, x: i32, y: i32, c: Color) {
     if x < 0 || y < 0 {
         return;
@@ -274,7 +238,6 @@ fn px(img: &mut RgbaImage, x: i32, y: i32, c: Color) {
     img.put_pixel(x as u32, y as u32, Rgba(blended));
 }
 
-/// Source-over alpha blending.
 fn blend(dst: [u8; 4], src: [u8; 4]) -> [u8; 4] {
     let sa = src[3] as f32 / 255.0;
     let da = dst[3] as f32 / 255.0;
@@ -295,14 +258,7 @@ fn blend(dst: [u8; 4], src: [u8; 4]) -> [u8; 4] {
     ]
 }
 
-/// Anti-aliased thick line.
-///
-/// Distance-based coverage: each pixel within the line's half-width gets
-/// full coverage, pixels in the 1-px feather band get a linear ramp, and
-/// everything outside is untouched. Works equally well for thin lines
-/// (the brush at 1 px is effectively Wu-style AA) and thick brush strokes,
-/// and round-caps + joins are implicit (every point on the polyline shares
-/// pixels with its neighbours).
+/// Anti-aliased thick line via distance-based coverage.
 fn stroke_line_aa(img: &mut RgbaImage, a: (i32, i32), b: (i32, i32), c: Color, width: i32) {
     let af = (a.0 as f32, a.1 as f32);
     let bf = (b.0 as f32, b.1 as f32);
@@ -346,8 +302,6 @@ fn stroke_line_aa(img: &mut RgbaImage, a: (i32, i32), b: (i32, i32), c: Color, w
 }
 
 fn stroke_line(img: &mut RgbaImage, a: (i32, i32), b: (i32, i32), c: Color, width: i32) {
-    // Bresenham with thickness; for thick strokes we expand into a disk at
-    // each visited point. Slow but trivial — fine for an annotation overlay.
     let (mut x0, mut y0) = a;
     let (x1, y1) = b;
     let dx = (x1 - x0).abs();
@@ -411,8 +365,6 @@ fn stroke_rect(img: &mut RgbaImage, r: Rect, c: Color, w: i32) {
 }
 
 fn stroke_ellipse(img: &mut RgbaImage, r: Rect, c: Color, _w: i32, fill: Option<Color>) {
-    // Parametric ellipse — good enough for screenshot annotations and
-    // doesn't depend on the rasteriser quality of any external library.
     let cx = r.x() as f32 + r.width() as f32 / 2.0;
     let cy = r.y() as f32 + r.height() as f32 / 2.0;
     let rx = r.width() as f32 / 2.0;
@@ -420,7 +372,7 @@ fn stroke_ellipse(img: &mut RgbaImage, r: Rect, c: Color, _w: i32, fill: Option<
     if rx == 0.0 || ry == 0.0 {
         return;
     }
-    let circumference = (rx + ry) * 6.28;
+    let circumference = (rx + ry) * f32::consts::TAU;
     let steps = circumference.ceil().max(64.0) as usize;
     let mut prev = ((cx + rx).round() as i32, (cy).round() as i32);
     for i in 1..=steps {
@@ -431,7 +383,6 @@ fn stroke_ellipse(img: &mut RgbaImage, r: Rect, c: Color, _w: i32, fill: Option<
         prev = (x, y);
     }
     if let Some(fill) = fill {
-        // Naive fill: iterate the bounding box, test ellipse equation.
         for y in r.y()..(r.y() + r.height() as i32) {
             for x in r.x()..(r.x() + r.width() as i32) {
                 let nx = (x as f32 - cx) / rx;
@@ -445,7 +396,7 @@ fn stroke_ellipse(img: &mut RgbaImage, r: Rect, c: Color, _w: i32, fill: Option<
 }
 
 fn draw_circle_outline(img: &mut RgbaImage, c: (i32, i32), r: i32, color: Color, w: i32) {
-    let steps = (r as f32 * 6.28).max(32.0) as usize;
+    let steps = (r as f32 * f32::consts::TAU).max(32.0) as usize;
     let mut prev = (c.0 + r, c.1);
     for i in 1..=steps {
         let t = (i as f32 / steps as f32) * std::f32::consts::TAU;
@@ -476,26 +427,16 @@ fn draw_arrowhead(img: &mut RgbaImage, from: (i32, i32), to: (i32, i32), color: 
     stroke_line(img, to, p2, color, w);
 }
 
-// ---------------------------------------------------------------------------
-// Blur
-// ---------------------------------------------------------------------------
-
 fn apply_blur(img: &mut RgbaImage, rect: Rect, radius: f32, origin: (i32, i32)) {
     let r = local_rect(rect, origin);
     let (iw, ih) = img.dimensions();
-    // Proper rectangle-with-image intersection. The old version clamped
-    // `x`/`y` to 0 *without* tracking how much of the rectangle was
-    // chopped off the left / top — so a blur whose bounds sat entirely
-    // *outside* this image (e.g. on a different monitor) ended up
-    // blurring the wrong pixels because `width` was still the original
-    // and `x` had snapped to 0. The user saw blur leak onto the next
-    // monitor, and the leak followed the rect as they dragged it.
+    // Intersect with the image so a blur outside this monitor is a no-op
+    // rather than leaking onto the wrong pixels.
     let x0 = r.x().max(0);
     let y0 = r.y().max(0);
     let x1 = (r.x() + r.width() as i32).min(iw as i32);
     let y1 = (r.y() + r.height() as i32).min(ih as i32);
     if x1 <= x0 || y1 <= y0 {
-        // No intersection with this image — nothing to blur on this monitor.
         return;
     }
     let x = x0 as u32;
@@ -507,14 +448,7 @@ fn apply_blur(img: &mut RgbaImage, rect: Rect, radius: f32, origin: (i32, i32)) 
     imageops::replace(img, &blurred, x as i64, y as i64);
 }
 
-// ---------------------------------------------------------------------------
-// Tiny "font" for step numbers & text
-// ---------------------------------------------------------------------------
-//
-// We embed a 5×7 bitmap for digits and a basic ASCII subset. This is plenty
-// for numeric step markers and short text labels; users who need rich text
-// can flatten the canvas client-side and use any font they like.
-
+// 5x7 bitmap font for digits and basic ASCII.
 const GLYPH_W: usize = 5;
 const GLYPH_H: usize = 7;
 
@@ -539,9 +473,9 @@ fn draw_text(img: &mut RgbaImage, origin: (i32, i32), text: &str, style: &TextSt
 
 fn draw_glyph(img: &mut RgbaImage, x: i32, y: i32, ch: char, color: Color, scale: i32) {
     let bits = glyph_bits(ch);
-    for row in 0..GLYPH_H {
+    for (row, b) in bits.iter().enumerate() {
         for col in 0..GLYPH_W {
-            if bits[row] & (1 << (GLYPH_W - 1 - col)) != 0 {
+            if b & (1 << (GLYPH_W - 1 - col)) != 0 {
                 for dy in 0..scale {
                     for dx in 0..scale {
                         px(

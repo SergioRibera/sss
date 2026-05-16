@@ -13,9 +13,7 @@ pub(crate) fn is_wayland_session() -> bool {
     xdg.eq_ignore_ascii_case("wayland") || !display.is_empty()
 }
 
-/// Returns true when an X server is reachable through `$DISPLAY`. On Wayland
-/// sessions this is XWayland, which is still useful (cursor queries, window
-/// captures) when the compositor lacks the needed protocols.
+/// Returns true when an X server is reachable through `$DISPLAY`.
 pub(crate) fn is_x11_session() -> bool {
     !env::var("DISPLAY").unwrap_or_default().is_empty()
 }

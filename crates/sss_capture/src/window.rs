@@ -27,10 +27,6 @@ impl fmt::Display for WindowId {
 }
 
 /// A top-level window known to the platform.
-///
-/// Window descriptors are **snapshots**: the underlying window may have moved
-/// or closed by the time you capture it. The `Capturer` re-resolves windows
-/// internally before each capture to keep state fresh.
 #[derive(Clone, Debug)]
 pub struct Window {
     pub(crate) id: WindowId,
@@ -89,9 +85,6 @@ impl fmt::Display for Window {
 }
 
 /// Search predicate accepted by [`crate::Capturer::find_window`].
-///
-/// Implements `From<u32>`, `From<&str>`, `From<String>` and `From<WindowId>`
-/// so call-sites stay short.
 #[derive(Clone, Debug, Default)]
 pub struct WindowSearch {
     pub id: Option<WindowId>,
@@ -121,7 +114,6 @@ impl WindowSearch {
         }
     }
 
-    /// True when the given window matches this search.
     pub fn matches(&self, w: &Window) -> bool {
         if let Some(id) = self.id {
             return w.id == id;

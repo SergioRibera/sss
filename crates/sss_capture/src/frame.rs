@@ -7,10 +7,6 @@ use image::RgbaImage;
 use crate::error::{CaptureError, Result};
 
 /// A captured frame.
-///
-/// `Image` is a thin newtype around [`image::RgbaImage`] so the public surface
-/// never leaks a transitive crate type. The full `image` crate is re-exported
-/// at the crate root for callers who need it.
 #[derive(Clone, Debug)]
 pub struct Image {
     inner: RgbaImage,
@@ -53,8 +49,7 @@ impl Image {
         self.inner
     }
 
-    /// Encode and write the image to disk. The format is inferred from the
-    /// file extension.
+    /// Encode and write the image to disk; format inferred from extension.
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         self.inner
             .save(path.as_ref())

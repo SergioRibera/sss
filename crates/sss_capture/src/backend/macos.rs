@@ -1,15 +1,4 @@
-//! macOS backend, written directly on top of CoreGraphics through the
-//! [`core-graphics`] and [`core-foundation`] bindings. No third-party capture
-//! library is involved.
-//!
-//! Capabilities:
-//! * Display enumeration via `CGGetActiveDisplayList`, with bounds /
-//!   refresh-rate / rotation pulled out of `CGDisplayBounds`,
-//!   `CGDisplayCopyDisplayMode` and `CGDisplayRotation`.
-//! * Frame capture via `CGDisplayCreateImage` / `CGDisplayCreateImageForRect`.
-//! * Window enumeration via `CGWindowListCopyWindowInfo`; window capture via
-//!   `CGWindowListCreateImage`.
-//! * Cursor position via `NSEvent.mouseLocation` (Cocoa).
+//! macOS capture backend on top of CoreGraphics.
 
 #![allow(non_snake_case)]
 
@@ -47,7 +36,6 @@ pub(crate) struct MacOsBackend {
 
 impl MacOsBackend {
     pub fn try_new() -> Result<Self> {
-        // Probe: at least one active display.
         let mut count: u32 = 0;
         let err = unsafe { CGGetActiveDisplayList(0, std::ptr::null_mut(), &mut count) };
         if err != 0 {
@@ -131,7 +119,7 @@ impl Backend for MacOsBackend {
         if img.is_null() {
             return Err(CaptureError::WindowNotFound(id));
         }
-        // SAFETY: CGWindowListCreateImage returned non-null; wrap into RAII type.
+        // SAFETY: CGWindowListCreateImage returned non-null.
         let cgimg = unsafe { CGImage::from_ptr(img) };
         cgimage_to_rgba(&cgimg)
     }
@@ -144,7 +132,6 @@ impl Backend for MacOsBackend {
         if region.size.is_empty() {
             return Err(CaptureError::EmptyRegion(region));
         }
-        // Try the single-display fast path first.
         let displays = active_displays()?;
         for id in &displays {
             let bounds_cg = unsafe { CGDisplayBounds(*id) };
@@ -156,10 +143,6 @@ impl Backend for MacOsBackend {
             );
             if let Some(inter) = bounds.intersection(&region) {
                 if inter == region {
-                    // CGDisplayCreateImageForRect wants coordinates relative
-                    // to the display, but expressed in screen (top-left)
-                    // coordinates — Core Graphics uses the same coordinate
-                    // system as `CGDisplayBounds` here.
                     let cg_rect = CGRect {
                         origin: CGPoint {
                             x: region.x() as f64,
@@ -180,9 +163,6 @@ impl Backend for MacOsBackend {
     }
 
     fn cursor_position(&self) -> Result<Point> {
-        // Use objc2-app-kit to call NSEvent.mouseLocation. We avoid pulling in
-        // a full objc runtime wrapper just for one call by going through the
-        // raw `msg_send!` macro.
         use objc2::msg_send_id;
         use objc2::runtime::AnyClass;
         use objc2_foundation::NSPoint;
@@ -191,20 +171,15 @@ impl Backend for MacOsBackend {
             .ok_or_else(|| CaptureError::CursorUnavailable("NSEvent class missing".into()))?;
         // SAFETY: NSEvent.mouseLocation is a class method returning NSPoint.
         let point: NSPoint = unsafe { objc2::msg_send![cls, mouseLocation] };
-        // Convert from Cocoa (origin at bottom-left of main display) to
-        // top-left coordinates used everywhere else in this crate.
+        // Cocoa origin is at bottom-left of main display; flip Y.
         let main_bounds = unsafe { CGDisplayBounds(CGMainDisplayID()) };
-        let _ = msg_send_id::<()>; // silence unused-import lint on some paths
+        let _ = msg_send_id::<()>;
         Ok(Point::new(
             point.x as i32,
             (main_bounds.size.height - point.y) as i32,
         ))
     }
 }
-
-// -----------------------------------------------------------------------------
-// CGImage → RgbaImage
-// -----------------------------------------------------------------------------
 
 fn cgimage_to_rgba(img: &CGImage) -> Result<RgbaImage> {
     let width = img.width() as u32;
@@ -213,17 +188,16 @@ fn cgimage_to_rgba(img: &CGImage) -> Result<RgbaImage> {
     let data = img.data();
     let bytes = data.bytes();
 
-    // CGImage may have padding at the end of each row.
+    // CGImage rows can have trailing padding; skip via bytes_per_row.
     let mut out = Vec::with_capacity((width * height * 4) as usize);
     for y in 0..height as usize {
         let start = y * bytes_per_row as usize;
         let row = &bytes[start..start + (width * 4) as usize];
-        // CG uses BGRA on little-endian.
         for px in row.chunks_exact(4) {
-            out.push(px[2]); // R
-            out.push(px[1]); // G
-            out.push(px[0]); // B
-            out.push(px[3]); // A
+            out.push(px[2]);
+            out.push(px[1]);
+            out.push(px[0]);
+            out.push(px[3]);
         }
     }
 
@@ -231,10 +205,6 @@ fn cgimage_to_rgba(img: &CGImage) -> Result<RgbaImage> {
         CaptureError::ImageConversion(format!("CGImage buffer mismatch {width}x{height}"))
     })
 }
-
-// -----------------------------------------------------------------------------
-// Display enumeration
-// -----------------------------------------------------------------------------
 
 fn active_displays() -> Result<Vec<CGDirectDisplayID>> {
     let mut count: u32 = 0;
@@ -276,14 +246,9 @@ fn display_refresh_rate(id: CGDirectDisplayID) -> Option<f32> {
     if hz > 0.0 {
         Some(hz as f32)
     } else {
-        // Built-in displays report 0; fall back to the system refresh value.
         None
     }
 }
-
-// -----------------------------------------------------------------------------
-// Window enumeration
-// -----------------------------------------------------------------------------
 
 fn enumerate_windows() -> Result<Vec<Window>> {
     let opts = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements;

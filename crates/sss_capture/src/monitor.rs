@@ -4,9 +4,7 @@ use std::fmt;
 
 use crate::geometry::{Rect, Rotation};
 
-/// Opaque, backend-supplied monitor identifier. The wrapped value is whatever
-/// the platform produces (RANDR output id, Wayland output `name`-FNV hash,
-/// `HMONITOR`, CGDirectDisplayID). Treat it as an opaque token.
+/// Opaque, backend-supplied monitor identifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MonitorId(pub(crate) u64);
 
@@ -27,12 +25,7 @@ impl fmt::Display for MonitorId {
     }
 }
 
-/// A physical display attached to the system.
-///
-/// All geometry is in **logical pixels** — the crate factors out
-/// `scale_factor` and `rotation` before reporting `bounds`. The original
-/// physical metrics are still available via [`Monitor::physical_size`] and
-/// [`Monitor::scale_factor`].
+/// A physical display attached to the system, with geometry in logical pixels.
 #[derive(Clone, Debug)]
 pub struct Monitor {
     pub(crate) id: MonitorId,
@@ -59,7 +52,7 @@ impl Monitor {
     pub fn bounds(&self) -> Rect {
         self.bounds
     }
-    /// Physical pixel size of the panel, before rotation is applied.
+    /// Physical pixel size before rotation.
     #[inline]
     pub fn physical_size(&self) -> (u32, u32) {
         self.physical_size

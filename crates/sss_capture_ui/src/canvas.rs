@@ -1,8 +1,4 @@
 //! Canvas state — the editable model behind the overlay.
-//!
-//! The canvas is a flat list of [`Shape`]s in z-order (back to front), plus
-//! a small history stack for undo / redo. Every input event from the
-//! platform layer turns into a [`CanvasEvent`] and feeds [`Canvas::handle`].
 
 use sss_capture::Rect;
 
@@ -10,26 +6,18 @@ use crate::geometry::{FPoint, FRect};
 use crate::shape::{Shape, ShapeId, ShapeKind, Style};
 use crate::tool::{StepSettings, Tool};
 
-/// Logical input event the canvas understands. Platform code translates
-/// raw pointer / keyboard events into these.
 #[derive(Clone, Debug)]
 pub enum CanvasEvent {
     PointerDown(FPoint),
     PointerMove(FPoint),
     PointerUp(FPoint),
-    /// Cancel any in-flight drag without committing.
     PointerCancel,
-    /// Type a character (Text tool).
     TextInput(char),
-    /// Backspace while editing text.
     TextBackspace,
-    /// Commit the in-flight text shape.
     TextCommit,
-    /// Discard the in-flight text shape (don't commit it).
     TextCancel,
     Undo,
     Redo,
-    /// Delete the currently selected shape.
     Delete,
 }
 
@@ -37,35 +25,17 @@ pub enum CanvasEvent {
 pub struct Canvas {
     next_id: u64,
     shapes: Vec<Shape>,
-    /// Region rectangle the user is selecting (the rubber-band rect).
     region: Option<FRect>,
-    /// Active tool — driven by the toolbar; the canvas uses it to know what
-    /// to commit on PointerUp.
     pub active_tool: Tool,
     drag: Option<Drag>,
     selected: Option<ShapeId>,
-    /// Next step number for the Step tool.
     next_step: u32,
-    /// Currently-being-typed text shape, if any.
     pending_text: Option<PendingText>,
     history: History,
-    /// When `true`, closed shapes committed by the user (rectangle / ellipse)
-    /// get their interior filled. The fill colour defaults to the stroke
-    /// colour but can be overridden by `fill_color` for a separate
-    /// stroke / fill workflow.
     fill_mode: bool,
-    /// Optional explicit fill colour for the next closed shape. When
-    /// `None`, the current stroke colour is used. Set via Shift+click on
-    /// a colour swatch (separate from the regular stroke colour).
     fill_color: Option<crate::color::Color>,
-    /// In-flight polygon vertices. Active while the user is in the
-    /// Polygon tool and has clicked at least once; consumed on
-    /// `commit_polygon`.
     pending_polygon: Option<Vec<FPoint>>,
-    /// "Constrain" modifier — Hold-Shift while dragging snaps lines to
-    /// 45° increments and forces rectangles / ellipses to be squares /
-    /// circles. The platform driver flips this from `wl_keyboard`
-    /// modifiers; the canvas just reads it inside `on_move`.
+    /// Hold-Shift constrain: snap lines to 45° and rect/ellipse to square.
     constrain: bool,
 }
 
@@ -86,41 +56,25 @@ impl Canvas {
             pending_polygon: None,
             constrain: false,
         };
-        // Push an empty snapshot so Undo can roll us all the way back to a
-        // clean slate. Without it, the *first* user action couldn't be
-        // undone (the undo stack would pop the only saved state and have
-        // nothing to restore from).
+        // Seed history so the first user action is undoable.
         s.history.snapshot(&s.shapes);
         s
     }
 
-    /// Whether the next closed shape (rect / ellipse) should be filled.
     pub fn fill_mode(&self) -> bool {
         self.fill_mode
     }
 
-    /// Toggle the fill mode. Affects shapes drawn *after* the toggle —
-    /// existing shapes are untouched.
     pub fn toggle_fill_mode(&mut self) {
         self.fill_mode = !self.fill_mode;
     }
 
-    /// Override the fill colour used while `fill_mode` is on. Pass
-    /// `None` to turn fill off entirely (clears both `fill_color`
-    /// *and* `fill_mode`).
-    ///
-    /// The "set None just clears the explicit colour, fill_mode stays
-    /// on" interpretation was confusing in practice: clicking the
-    /// outlined variant of a closed shape would clear the colour but
-    /// the next stroke would still come out filled because
-    /// `fill_mode == true`. Treating `None` as "fill off" matches the
-    /// callers' actual intent.
+    /// Set the fill colour; passing `None` also clears `fill_mode`.
     pub fn set_fill_color(&mut self, c: Option<crate::color::Color>) {
         self.fill_color = c;
         self.fill_mode = c.is_some();
     }
 
-    /// Read the active fill colour (or `None` when "auto-from-stroke").
     pub fn fill_color(&self) -> Option<crate::color::Color> {
         self.fill_color
     }
@@ -130,13 +84,10 @@ impl Canvas {
         &self.shapes
     }
 
-    /// Mutable iterator — used by the Pointer tool when moving / resizing.
     pub fn shapes_mut(&mut self) -> &mut Vec<Shape> {
         &mut self.shapes
     }
 
-    /// The region rectangle, integer-rounded. `None` until the user has
-    /// dragged at least once in `Area` mode.
     pub fn region(&self) -> Option<Rect> {
         self.region.map(FRect::to_int)
     }
@@ -145,18 +96,12 @@ impl Canvas {
         self.region = r.map(FRect::from);
     }
 
-    /// Whether the user is currently holding the mouse button and dragging.
-    /// Platform drivers use this to decide whether a `PointerMove` event
-    /// needs a repaint (a hover-only motion changes nothing visible).
     pub fn is_drag_active(&self) -> bool {
         self.drag.is_some()
     }
 
-    /// Anchor point for the currently active drag — the start of the
-    /// two-point gesture, the rubber-band origin or the moved shape's
-    /// drag-start cursor. Returns `None` when no drag is in progress or
-    /// the drag kind doesn't have a natural anchor (eraser/freehand).
-    /// Used by the platform driver to draw constrain reference guides.
+    /// Anchor point for the currently active drag; `None` for drags that
+    /// have no natural anchor (eraser / freehand) or when not dragging.
     pub fn drag_anchor(&self) -> Option<FPoint> {
         match self.drag.as_ref()? {
             Drag::TwoPoint { from, .. } => Some(*from),
@@ -168,23 +113,16 @@ impl Canvas {
         }
     }
 
-    /// Whether the user is in the middle of typing a text shape. Platform
-    /// drivers route Enter / Escape to `TextCommit` / `TextCancel` instead
-    /// of the global confirm / cancel while this is `true`.
     pub fn is_typing_text(&self) -> bool {
         self.pending_text.is_some()
     }
 
-    /// Replace the active tool (toolbar callback).
     pub fn set_tool(&mut self, t: Tool) {
         self.cancel_drag();
-        // When the user switches away from Text mid-edit, commit the pending
-        // string so it doesn't get lost.
+        // Commit pending Text / Polygon state when switching away.
         if !matches!(t, Tool::Text(_)) {
             self.commit_pending_text();
         }
-        // Same idea for Polygon: leaving the tool commits whatever vertices
-        // the user already clicked, so they aren't silently discarded.
         if !matches!(t, Tool::Polygon(_)) && self.is_drawing_polygon() {
             self.commit_polygon();
         }
@@ -199,11 +137,11 @@ impl Canvas {
         self.selected = id;
     }
 
-    /// Push the current in-flight drag preview as a fresh shape. Used by the
-    /// render path to peek at the work-in-progress.
+    /// Render-time view of the in-flight drag as a shape.
     pub fn preview_shape(&self) -> Option<Shape> {
         let drag = self.drag.as_ref()?;
-        let id = ShapeId(0); // preview-only; never inserted with this id
+        // Preview only; never inserted with this id.
+        let id = ShapeId(0);
         let style = current_style_for_canvas(self);
         let kind = match (&self.active_tool, drag) {
             (Tool::Brush(_), Drag::Stroke { points, .. }) => ShapeKind::FreehandStroke {
@@ -237,8 +175,7 @@ impl Canvas {
         })
     }
 
-    /// Render-time view of the pending text shape (so the user can see what
-    /// they're typing before committing).
+    /// Render-time view of the pending text shape.
     pub fn pending_text(&self) -> Option<Shape> {
         self.pending_text.as_ref().map(|p| Shape {
             id: ShapeId(0),
@@ -256,7 +193,6 @@ impl Canvas {
         })
     }
 
-    /// Apply an input event.
     pub fn handle(&mut self, ev: CanvasEvent) {
         match ev {
             CanvasEvent::PointerDown(p) => self.on_down(p),
@@ -275,12 +211,10 @@ impl Canvas {
         }
     }
 
-    // ----- event handlers --------------------------------------------------
-
     fn on_down(&mut self, p: FPoint) {
         match &self.active_tool {
             Tool::Pointer => {
-                // Test top-to-bottom (last shape wins — it's on top in z-order).
+                // Top-to-bottom: last shape wins (it's on top in z-order).
                 self.selected = self
                     .shapes
                     .iter()
@@ -305,12 +239,6 @@ impl Canvas {
                         original_shape: Box::new(original),
                     });
                 } else if let Some(region) = self.region.map(FRect::to_int) {
-                    // There's an existing region — figure out what the user
-                    // wants to do with it based on where they clicked:
-                    //   * On a corner / edge handle → resize that handle.
-                    //   * Inside the region → move the whole rectangle.
-                    //   * Outside the region → discard and start a fresh
-                    //     rubber-band drag.
                     let handle = pointer_handle(&region, p);
                     match handle {
                         Some(h) => {
@@ -331,7 +259,6 @@ impl Canvas {
                         }
                     }
                 } else {
-                    // First selection.
                     self.drag = Some(Drag::Region { from: p, to: p });
                 }
             }
@@ -363,28 +290,17 @@ impl Canvas {
                 });
             }
             Tool::Polygon(_) => {
-                // Each click appends a vertex; `on_up` is a no-op for this
-                // tool. Press Enter (or right-click — see the platform
-                // driver) to close + commit the polygon.
                 let pending = self.pending_polygon.get_or_insert_with(Vec::new);
                 pending.push(p);
             }
         }
     }
 
-    /// Add the current pointer position as a *preview* polygon vertex.
-    /// Used by the renderer to draw a hint segment from the last clicked
-    /// vertex to the live cursor while the user is still building the
-    /// polygon.
     pub fn polygon_preview_tip(&self) -> Option<FPoint> {
-        // The actual preview is computed in `preview_shape`; this getter
-        // is exposed so the live cursor + drag handling stay symmetrical
-        // with the other tools.
         None
     }
 
-    /// Commits the in-flight polygon as a closed shape. No-op if there are
-    /// fewer than 2 vertices.
+    /// Commit the in-flight polygon; no-op with fewer than 2 vertices.
     pub fn commit_polygon(&mut self) {
         let pts = match self.pending_polygon.take() {
             Some(p) if p.len() >= 2 => p,
@@ -403,31 +319,23 @@ impl Canvas {
         });
     }
 
-    /// Drops any in-flight polygon without committing.
     pub fn cancel_polygon(&mut self) {
         self.pending_polygon = None;
     }
 
-    /// Is the user mid-way through a polygon?
     pub fn is_drawing_polygon(&self) -> bool {
-        self.pending_polygon
-            .as_ref()
-            .map_or(false, |v| !v.is_empty())
+        self.pending_polygon.as_ref().is_some_and(|v| !v.is_empty())
     }
 
-    /// In-flight polygon vertices (used by the renderer for the live preview).
     pub fn polygon_vertices(&self) -> Option<&[FPoint]> {
         self.pending_polygon.as_deref()
     }
 
-    /// Style the renderer should use for the in-flight polygon preview.
     pub fn current_polygon_style(&self) -> Style {
         current_style_for_canvas(self)
     }
 
-    /// Wipe every committed shape and reset the in-flight state. The
-    /// region rectangle stays so the user doesn't lose their selection;
-    /// undo can roll the clear back like any other action.
+    /// Wipe every committed shape; the region rectangle is preserved.
     pub fn clear_shapes(&mut self) {
         self.shapes.clear();
         self.selected = None;
@@ -436,22 +344,16 @@ impl Canvas {
         self.history.snapshot(&self.shapes);
     }
 
-    /// Hold-Shift constraint flag. Toggled live by the platform driver
-    /// from the keyboard modifier state, then read inside [`on_move`] to
-    /// snap two-point drags to 45° / square / circle.
     pub fn set_constrain(&mut self, on: bool) {
         self.constrain = on;
     }
 
-    /// Move the currently-selected shape one layer up (towards the front).
     pub fn raise_selected(&mut self) {
-        let id = match self.selected {
-            Some(id) => id,
-            None => return,
+        let Some(id) = self.selected else {
+            return;
         };
-        let idx = match self.shapes.iter().position(|s| s.id == id) {
-            Some(i) => i,
-            None => return,
+        let Some(idx) = self.shapes.iter().position(|s| s.id == id) else {
+            return;
         };
         if idx + 1 < self.shapes.len() {
             self.shapes.swap(idx, idx + 1);
@@ -459,15 +361,12 @@ impl Canvas {
         }
     }
 
-    /// Move the currently-selected shape one layer down (towards the back).
     pub fn lower_selected(&mut self) {
-        let id = match self.selected {
-            Some(id) => id,
-            None => return,
+        let Some(id) = self.selected else {
+            return;
         };
-        let idx = match self.shapes.iter().position(|s| s.id == id) {
-            Some(i) => i,
-            None => return,
+        let Some(idx) = self.shapes.iter().position(|s| s.id == id) else {
+            return;
         };
         if idx > 0 {
             self.shapes.swap(idx, idx - 1);
@@ -475,11 +374,9 @@ impl Canvas {
         }
     }
 
-    /// Move the currently-selected shape all the way to the front (top of z-stack).
     pub fn raise_to_top(&mut self) {
-        let id = match self.selected {
-            Some(id) => id,
-            None => return,
+        let Some(id) = self.selected else {
+            return;
         };
         if let Some(idx) = self.shapes.iter().position(|s| s.id == id) {
             let shape = self.shapes.remove(idx);
@@ -488,11 +385,7 @@ impl Canvas {
         }
     }
 
-    /// Uniformly scale the selected shape about its bounds centre. A factor
-    /// of 1.0 is a no-op; values < 1 shrink, values > 1 grow. Strokes,
-    /// polygons, rectangles, ellipses, lines/arrows and text are all
-    /// supported; the Step tool already has its own radius and just gets
-    /// its centre scaled too.
+    /// Uniformly scale the selected shape about its bounds centre.
     pub fn scale_selected(&mut self, factor: f32) {
         if !factor.is_finite() || (factor - 1.0).abs() < f32::EPSILON {
             return;
@@ -513,17 +406,12 @@ impl Canvas {
     }
 
     /// Rotate the selected shape by `radians` about its bounds centre.
-    /// Only shapes that store explicit point lists (freehand, polygon,
-    /// line, arrow) can rotate freely — rectangles and ellipses get
-    /// converted to a tight axis-aligned bound after rotation, so a 90°
-    /// rotate keeps them intact while intermediate angles approximate.
     pub fn rotate_selected(&mut self, radians: f32) {
         if !radians.is_finite() || radians.abs() < 1e-4 {
             return;
         }
-        let id = match self.selected {
-            Some(id) => id,
-            None => return,
+        let Some(id) = self.selected else {
+            return;
         };
         let Some(idx) = self.shapes.iter().position(|s| s.id == id) else {
             return;
@@ -536,27 +424,20 @@ impl Canvas {
         self.history.snapshot(&self.shapes);
     }
 
-    /// Overwrite the shape with the given id with `new_shape`, keeping
-    /// its position in the z-stack. No-op when the id isn't found.
-    /// Does *not* snapshot history — callers are expected to commit a
-    /// snapshot at the end of an interactive drag.
+    /// Overwrite the shape with the given id. Does NOT snapshot history.
     pub fn replace_shape(&mut self, id: ShapeId, new_shape: Shape) {
         if let Some(s) = self.shapes.iter_mut().find(|s| s.id == id) {
             *s = new_shape;
         }
     }
 
-    /// Push a history snapshot of the current shape list. Used by
-    /// drag-completion handlers in the platform driver.
     pub fn snapshot_history(&mut self) {
         self.history.snapshot(&self.shapes);
     }
 
-    /// Move the currently-selected shape all the way to the back.
     pub fn lower_to_bottom(&mut self) {
-        let id = match self.selected {
-            Some(id) => id,
-            None => return,
+        let Some(id) = self.selected else {
+            return;
         };
         if let Some(idx) = self.shapes.iter().position(|s| s.id == id) {
             let shape = self.shapes.remove(idx);
@@ -577,9 +458,6 @@ impl Canvas {
             }
             Some(Drag::Region { from, to }) => {
                 *to = p;
-                // Update the visible region live so the rubber-band shows
-                // up while the user is still dragging it (instead of only
-                // appearing once they let go).
                 self.region = Some(FRect::from_corners(*from, *to));
             }
             Some(Drag::RegionMove { start, original }) => {
@@ -613,11 +491,8 @@ impl Canvas {
                 let id = *id;
                 let baseline: Shape = (**original_shape).clone();
                 if let Some(shape) = self.shapes.iter_mut().find(|s| s.id == id) {
-                    // Restore the shape to its drag-start state, *then*
-                    // translate by the delta. This makes each motion event
-                    // idempotent — without this, the previous code
-                    // accumulated `dx`/`dy` across events and shapes flew
-                    // away the moment the user nudged the mouse.
+                    // Reset to the drag-start baseline before translating so
+                    // each PointerMove is idempotent against accumulated drift.
                     *shape = baseline;
                     translate_shape(shape, dx, dy);
                 }
@@ -678,21 +553,16 @@ impl Canvas {
             Drag::Region { from, to } => {
                 self.region = Some(FRect::from_corners(from, to));
             }
-            Drag::RegionMove { .. } | Drag::RegionResize { .. } => {
-                // The region was already updated incrementally in `on_move`;
-                // there's no commit step to perform.
-            }
-            Drag::Move { .. } | Drag::Erase { .. } => {
-                // Already applied incrementally.
-            }
+            Drag::RegionMove { .. }
+            | Drag::RegionResize { .. }
+            | Drag::Move { .. }
+            | Drag::Erase { .. } => {}
         }
     }
 
     fn cancel_drag(&mut self) {
         self.drag = None;
     }
-
-    // ----- text editing ----------------------------------------------------
 
     fn on_text_char(&mut self, c: char) {
         if let Some(pt) = self.pending_text.as_mut() {
@@ -732,8 +602,6 @@ impl Canvas {
         }
     }
 
-    // ----- step tool -------------------------------------------------------
-
     fn place_step(&mut self, center: FPoint, settings: StepSettings) {
         let number = self.next_step;
         self.next_step += 1;
@@ -751,8 +619,6 @@ impl Canvas {
         });
     }
 
-    // ----- eraser ----------------------------------------------------------
-
     fn erase_at(&mut self, p: FPoint, radius: f32) {
         let before = self.shapes.len();
         let pad = radius;
@@ -761,15 +627,12 @@ impl Canvas {
             let cx = b.x() as f32 + b.width() as f32 / 2.0;
             let cy = b.y() as f32 + b.height() as f32 / 2.0;
             let dist = ((cx - p.x).powi(2) + (cy - p.y).powi(2)).sqrt();
-            // Keep if its bounding circle doesn't intersect the eraser.
             dist > pad + (b.width().max(b.height()) as f32) / 2.0 || !s.contains(p)
         });
         if self.shapes.len() != before {
             self.history.snapshot(&self.shapes);
         }
     }
-
-    // ----- history ---------------------------------------------------------
 
     fn push_shape(&mut self, shape: Shape) {
         self.shapes.push(shape);
@@ -808,12 +671,7 @@ impl Default for Canvas {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Drag state machine
-// ---------------------------------------------------------------------------
-
-/// Resize handle on the region rectangle. Conceptually one of the 8 anchors
-/// you'd see on a selection box: 4 corners + 4 edge midpoints.
+/// One of the 8 resize anchors on the region rectangle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RegionHandle {
     NW,
@@ -826,10 +684,8 @@ pub(crate) enum RegionHandle {
     W,
 }
 
-/// Pixel tolerance used to decide whether a click landed on a handle.
 const HANDLE_TOL: f32 = 12.0;
 
-/// Public wrapper used by the wayland layer driver to drive the cursor.
 pub(crate) fn pointer_handle_pub(r: &Rect, p: FPoint) -> Option<RegionHandle> {
     pointer_handle(r, p)
 }
@@ -841,9 +697,6 @@ fn region_contains(r: &Rect, p: FPoint) -> bool {
         && p.y <= (r.y() + r.height() as i32) as f32
 }
 
-/// Returns which handle (if any) the cursor `p` is grabbing on the region
-/// rectangle. Edge handles win over moving when the click falls *exactly*
-/// on the border.
 fn pointer_handle(r: &Rect, p: FPoint) -> Option<RegionHandle> {
     let x0 = r.x() as f32;
     let y0 = r.y() as f32;
@@ -872,8 +725,6 @@ fn pointer_handle(r: &Rect, p: FPoint) -> Option<RegionHandle> {
     })
 }
 
-/// X offset (relative to the rectangle's `x()`) of the point the handle is
-/// "anchored" to — used to compute the cursor delta during a resize drag.
 fn handle_pivot_x(h: RegionHandle, r: &Rect) -> f32 {
     use RegionHandle::*;
     match h {
@@ -892,8 +743,6 @@ fn handle_pivot_y(h: RegionHandle, r: &Rect) -> f32 {
     }
 }
 
-/// Apply a resize offset (`dx`, `dy`) to the original region using the given
-/// handle as the pivot.
 fn resize_region(handle: RegionHandle, original: Rect, dx: i32, dy: i32) -> Rect {
     let mut x0 = original.x();
     let mut y0 = original.y();
@@ -944,12 +793,10 @@ enum Drag {
         from: FPoint,
         to: FPoint,
     },
-    /// Translate the existing region rectangle by the cursor delta.
     RegionMove {
         start: FPoint,
         original: Rect,
     },
-    /// Resize the existing region from one of its 8 handles.
     RegionResize {
         handle: RegionHandle,
         original: Rect,
@@ -957,12 +804,8 @@ enum Drag {
     Move {
         id: ShapeId,
         start: FPoint,
-        /// Snapshot of the shape at drag-start. Every motion event
-        /// reconstructs the shape's coordinates from this baseline + the
-        /// (current - start) delta, so the move is *idempotent*: dragging
-        /// in a circle ends up back at the original position. The
-        /// previous implementation accumulated the delta on every motion,
-        /// which made shapes fly off the screen.
+        /// Drag-start snapshot; motion events translate from this baseline
+        /// so the move is idempotent against accumulated drift.
         original_shape: Box<Shape>,
     },
     Erase {
@@ -977,10 +820,6 @@ struct PendingText {
     style: crate::shape::TextStyle,
 }
 
-// ---------------------------------------------------------------------------
-// History
-// ---------------------------------------------------------------------------
-
 #[derive(Clone, Debug, Default)]
 struct History {
     undo: Vec<Vec<Shape>>,
@@ -989,7 +828,6 @@ struct History {
 
 impl History {
     fn snapshot(&mut self, shapes: &[Shape]) {
-        // Cap the stack so we don't grow forever during a long session.
         const MAX: usize = 100;
         self.undo.push(shapes.to_vec());
         if self.undo.len() > MAX {
@@ -1009,10 +847,6 @@ impl History {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 fn current_style(tool: &Tool) -> Style {
     match tool {
         Tool::Brush(b)
@@ -1031,9 +865,6 @@ fn current_style(tool: &Tool) -> Style {
     }
 }
 
-/// Style for the current tool with `fill_mode` honoured — closed shapes
-/// (rect / ellipse) get their interior filled with the stroke colour
-/// when the toolbar's FILL toggle is on.
 fn current_style_with_fill(tool: &Tool, fill_mode: bool) -> Style {
     let mut s = current_style(tool);
     if fill_mode
@@ -1047,11 +878,6 @@ fn current_style_with_fill(tool: &Tool, fill_mode: bool) -> Style {
     s
 }
 
-/// Apply the "constrain" modifier (Shift) to a two-point drag's endpoint
-/// based on the active tool:
-///   * Lines / arrows → snap the angle to the nearest 45°.
-///   * Rectangles / ellipses / blur rectangles → force a square (the
-///     larger of the two deltas wins, preserving the cursor's quadrant).
 fn apply_constraint(tool: &Tool, from: FPoint, to: FPoint) -> FPoint {
     let dx = to.x - from.x;
     let dy = to.y - from.y;
@@ -1062,7 +888,7 @@ fn apply_constraint(tool: &Tool, from: FPoint, to: FPoint) -> FPoint {
                 return from;
             }
             let angle = dy.atan2(dx);
-            let step = std::f32::consts::FRAC_PI_4; // 45°
+            let step = std::f32::consts::FRAC_PI_4;
             let snapped = (angle / step).round() * step;
             FPoint::new(from.x + len * snapped.cos(), from.y + len * snapped.sin())
         }
@@ -1076,8 +902,6 @@ fn apply_constraint(tool: &Tool, from: FPoint, to: FPoint) -> FPoint {
     }
 }
 
-/// Variant of [`current_style_with_fill`] that uses an explicit fill colour
-/// (when the user has set one via Shift+click) instead of the stroke colour.
 fn current_style_for_canvas(canvas: &Canvas) -> Style {
     let mut s = current_style_with_fill(&canvas.active_tool, canvas.fill_mode);
     if canvas.fill_mode {
@@ -1088,17 +912,14 @@ fn current_style_for_canvas(canvas: &Canvas) -> Style {
     s
 }
 
-/// Public wrapper for [`scale_shape`] that takes an `FPoint` anchor.
 pub fn scale_shape_about(shape: &mut Shape, anchor: FPoint, factor: f32) {
     scale_shape(shape, anchor.x, anchor.y, factor);
 }
 
-/// Public wrapper for [`rotate_shape`] that takes an `FPoint` centre.
 pub fn rotate_shape_about(shape: &mut Shape, center: FPoint, radians: f32) {
     rotate_shape(shape, center.x, center.y, radians);
 }
 
-/// Scale every coordinate of `shape` away from `(cx, cy)` by `factor`.
 fn scale_shape(shape: &mut Shape, cx: f32, cy: f32, factor: f32) {
     let s = |p: &mut FPoint| {
         p.x = cx + (p.x - cx) * factor;
@@ -1142,7 +963,6 @@ fn scale_shape(shape: &mut Shape, cx: f32, cy: f32, factor: f32) {
     shape.style.stroke_width = (shape.style.stroke_width * factor).max(0.5);
 }
 
-/// Rotate every coordinate of `shape` by `radians` about `(cx, cy)`.
 fn rotate_shape(shape: &mut Shape, cx: f32, cy: f32, radians: f32) {
     let (sn, cs) = radians.sin_cos();
     let r = |p: &mut FPoint| {
@@ -1162,12 +982,8 @@ fn rotate_shape(shape: &mut Shape, cx: f32, cy: f32, radians: f32) {
             r(to);
         }
         ShapeKind::Rectangle { rect } => {
-            // Axis-aligned `Rectangle` can't store a free angle, so the
-            // rotation converts it into a 4-point `Polygon` whose
-            // vertices live at the rotated corners. Visually identical
-            // for 0°/90°/180°/270°, but unlike the previous AABB
-            // re-bound it actually *looks* rotated for intermediate
-            // angles. Fill carries over via `shape.style`.
+            // Convert to a 4-point polygon so the rotation is visible at
+            // intermediate angles (not just multiples of 90°).
             let pts = rect_corners(*rect);
             let rotated: Vec<FPoint> = pts
                 .into_iter()
@@ -1182,9 +998,7 @@ fn rotate_shape(shape: &mut Shape, cx: f32, cy: f32, radians: f32) {
             };
         }
         ShapeKind::Ellipse { rect } => {
-            // Same trick: approximate the ellipse with a 64-point
-            // polygon and rotate that. The rasteriser handles polygons
-            // with curved-looking outlines just fine.
+            // Approximate with a 64-point polygon so rotation works at any angle.
             let cx0 = rect.x() as f32 + rect.width() as f32 / 2.0;
             let cy0 = rect.y() as f32 + rect.height() as f32 / 2.0;
             let rx = rect.width() as f32 / 2.0;
@@ -1203,9 +1017,7 @@ fn rotate_shape(shape: &mut Shape, cx: f32, cy: f32, radians: f32) {
             };
         }
         ShapeKind::BlurRect { rect, .. } => {
-            // BlurRect is special — its rasteriser needs an axis-aligned
-            // rect. Keep the AABB re-bound for now; rotating blur
-            // requires per-pixel sampling which we don't support.
+            // BlurRect requires an axis-aligned rect, so re-bound after rotation.
             let pts = rect_corners(*rect);
             let mut rotated = pts;
             for p in rotated.iter_mut() {
@@ -1242,8 +1054,6 @@ fn rect_corners(rect: sss_capture::Rect) -> [FPoint; 4] {
     ]
 }
 
-/// Move every coordinate of `shape` by `(dx, dy)` relative to its original
-/// (pre-drag) bounding box.
 fn translate_shape(shape: &mut Shape, dx: i32, dy: i32) {
     let dx_f = dx as f32;
     let dy_f = dy as f32;

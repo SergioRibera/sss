@@ -152,7 +152,7 @@ impl UiConfig {
         if tools.is_empty() {
             tools.push(Tool::Pointer);
         }
-        let initial = if self.tools.iter().any(|k| *k == self.initial_tool) {
+        let initial = if self.tools.contains(&self.initial_tool) {
             self.initial_tool.build(self)
         } else {
             tools[0].clone()

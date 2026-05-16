@@ -1,10 +1,4 @@
-//! `org.freedesktop.portal.Screenshot` fallback for sessions where
-//! `wlr-screencopy` is not advertised (mainly GNOME, KDE under Wayland).
-//!
-//! Asynchronous protocol: the `Screenshot` call returns a `Request` object
-//! path; the actual screenshot URI arrives later as a `Response` signal on
-//! that object. We subscribe to the signal *before* making the call to dodge
-//! the obvious race.
+//! `org.freedesktop.portal.Screenshot` fallback (GNOME, KDE under Wayland).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -26,12 +20,9 @@ use crate::options::CaptureOptions;
 use crate::window::{Window, WindowId};
 
 const BACKEND: &str = "wayland-portal";
-/// Hard cap for the whole portal screenshot conversation, including the
-/// user's permission dialog on GNOME / KDE. Shorter than the dbus default
-/// because on compositors without a working portal screenshot backend
-/// (niri, sway-on-vanilla-xdg-portal, …) the `Response` signal simply
-/// never arrives and we want to surface the failure quickly so the
-/// non-fatal fallback in the selector kicks in.
+// Shorter than dbus default: on compositors without a working portal screenshot
+// backend the Response signal never arrives, so we time out and let the caller
+// fall back to another backend.
 const PORTAL_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Default)]
@@ -69,8 +60,6 @@ impl PortalBackend {
     pub fn try_new() -> Result<Self> {
         let conn = DbusConnection::new_session()
             .map_err(|e| CaptureError::backend(BACKEND, format!("dbus session: {e}")))?;
-        // Sanity probe: do a no-op introspection on the portal path. We don't
-        // require it to succeed (the portal may activate on first use).
         let _ = conn
             .with_proxy(
                 "org.freedesktop.portal.Desktop",
@@ -87,13 +76,12 @@ impl PortalBackend {
         })
     }
 
-    /// Drive the portal screenshot conversation end-to-end.
     fn screenshot(&self) -> Result<RgbaImage> {
         let conn = self.conn.lock().unwrap();
         let status: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
         let uri: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 
-        // Install the signal handler *before* the call.
+        // Install the signal handler before making the call to avoid a race.
         let match_rule = MatchRule::new_signal("org.freedesktop.portal.Request", "Response");
         let status_cb = status.clone();
         let uri_cb = uri.clone();
@@ -129,7 +117,6 @@ impl PortalBackend {
             )
             .map_err(|e| CaptureError::backend(BACKEND, format!("Screenshot call: {e}")))?;
 
-        // Pump the event loop until the signal lands or we time out.
         let deadline = std::time::Instant::now() + PORTAL_TIMEOUT;
         loop {
             if std::time::Instant::now() > deadline {
@@ -186,9 +173,7 @@ impl Backend for PortalBackend {
     }
 
     fn monitors(&self) -> Result<Vec<Monitor>> {
-        // The Screenshot interface doesn't enumerate displays. We surface one
-        // synthetic primary monitor so the higher-level API behaves
-        // consistently — its bounds are set when a screenshot is taken.
+        // Portal does not enumerate displays; expose a synthetic primary.
         Ok(vec![Monitor {
             id: MonitorId(0),
             name: "Wayland (portal)".to_string(),

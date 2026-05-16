@@ -1,10 +1,4 @@
-//! Geometry primitives used throughout the crate.
-//!
-//! Every coordinate in the public API lives in the **logical desktop coordinate
-//! space**: the virtual rectangle obtained by composing every monitor
-//! side-by-side using its logical position and logical size (physical / scale).
-//! Per-backend code is responsible for translating these into the platform's
-//! native units; callers always work in plain pixels.
+//! Geometry primitives in the logical desktop coordinate space.
 
 use std::fmt;
 
@@ -61,9 +55,6 @@ impl From<(u32, u32)> for Size {
 }
 
 /// An axis-aligned rectangle.
-///
-/// Sometimes called `Area` in other Rust capture crates — `Area` is a type
-/// alias re-exported at the crate root for compatibility.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Rect {
     pub origin: Point,
@@ -81,8 +72,7 @@ impl Rect {
         Self::new(Point::new(x, y), Size::new(width, height))
     }
 
-    /// A 1×1 rectangle at the given point. Useful for `Capturer::capture_at`
-    /// when you only have coordinates.
+    /// A 1×1 rectangle at the given point.
     #[inline]
     pub const fn point(x: i32, y: i32) -> Self {
         Self::from_xywh(x, y, 1, 1)
@@ -119,8 +109,7 @@ impl Rect {
         p.x >= self.origin.x && p.x < self.right() && p.y >= self.origin.y && p.y < self.bottom()
     }
 
-    /// Geometric intersection. Returns `None` when the rectangles are disjoint
-    /// (touching edges count as disjoint).
+    /// Geometric intersection; touching edges count as disjoint.
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
         let x0 = self.origin.x.max(other.origin.x);
         let y0 = self.origin.y.max(other.origin.y);
@@ -166,12 +155,9 @@ impl From<(i32, i32, u32, u32)> for Rect {
     }
 }
 
-/// Compatibility alias matching the `scapture` naming.
 pub type Area = Rect;
 
-/// Output transform — rotation and flip combined, mirroring the Wayland
-/// `wl_output.transform` enumeration. Every backend translates its native
-/// representation into this single type.
+/// Output transform mirroring Wayland's `wl_output.transform`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Rotation {
     #[default]
@@ -186,8 +172,6 @@ pub enum Rotation {
 }
 
 impl Rotation {
-    /// Build a [`Rotation`] from float degrees (X11 / Win32 / macOS reports
-    /// them as 0 / 90 / 180 / 270 ints, sometimes negative).
     pub fn from_degrees(d: f32) -> Self {
         let d = d.rem_euclid(360.0);
         if (d - 90.0).abs() < f32::EPSILON {

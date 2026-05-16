@@ -1,22 +1,4 @@
-//! Native Wayland backend, implemented from scratch on top of
-//! [`wayland-client`] and the [`wayland-protocols-wlr`] / [`wayland-protocols`]
-//! bindings — **no external capture library is used**.
-//!
-//! Protocols spoken:
-//! * `wl_compositor`, `wl_shm`, `wl_output` (core).
-//! * `zxdg_output_manager_v1` (logical position / size, scale).
-//! * `zwlr_screencopy_manager_v1` (frame capture).
-//! * `zwlr_foreign_toplevel_manager_v1` *or*
-//!   `ext_foreign_toplevel_list_v1` (window enumeration). Best-effort: we
-//!   bind whichever the compositor advertises, and gracefully degrade to an
-//!   empty window list otherwise.
-//!
-//! Capture flow:
-//!   1. `capture_output(_region)` → new `zwlr_screencopy_frame_v1`.
-//!   2. Wait for the `buffer` event(s) → pick a supported `wl_shm::Format`.
-//!   3. Allocate an SHM file, mmap it, create a `wl_shm_pool` / `wl_buffer`.
-//!   4. `frame.copy(buffer)` → wait for `ready` or `failed`.
-//!   5. Read the mapped buffer, convert to `RgbaImage`.
+//! Native Wayland capture backend using wlr-screencopy.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -67,17 +49,7 @@ use crate::window::{Window, WindowId};
 const BACKEND: &str = "wayland-wlr";
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Dispatch outstanding wayland events with a hard deadline.
-///
-/// `EventQueue::blocking_dispatch` waits forever for at least one event to
-/// arrive, with no timeout argument. On compositors that silently drop a
-/// request (wrong version, wrong wl_output identity, etc.) that turns into
-/// an indefinite hang. Using `prepare_read` + `poll(2)` lets us bound the
-/// wait by an actual wall-clock deadline.
-///
-/// Returns `Ok(true)` when at least one event was dispatched in this call,
-/// `Ok(false)` on a clean timeout. Either way the caller should re-check
-/// its completion flag before deciding what to do next.
+/// Dispatch wayland events with a wall-clock deadline; `Ok(false)` on timeout.
 fn dispatch_until<S: 'static>(
     conn: &Connection,
     queue: &mut EventQueue<S>,
@@ -86,7 +58,6 @@ fn dispatch_until<S: 'static>(
 ) -> Result<bool> {
     use rustix::event::{poll, PollFd, PollFlags};
 
-    // 1) Drain anything already in the queue without blocking.
     let drained = queue
         .dispatch_pending(state)
         .map_err(|e| CaptureError::backend(BACKEND, format!("dispatch_pending: {e}")))?;
@@ -94,12 +65,10 @@ fn dispatch_until<S: 'static>(
         return Ok(true);
     }
 
-    // 2) Flush our outgoing requests so the compositor can respond.
     if let Err(e) = queue.flush() {
         return Err(CaptureError::backend(BACKEND, format!("flush: {e}")));
     }
 
-    // 3) Block on the socket FD with a poll timeout bounded by the deadline.
     let now = Instant::now();
     if now >= deadline {
         return Ok(false);
@@ -109,7 +78,6 @@ fn dispatch_until<S: 'static>(
     let guard = match conn.prepare_read() {
         Some(g) => g,
         None => {
-            // Events are already available; drain them.
             let n = queue
                 .dispatch_pending(state)
                 .map_err(|e| CaptureError::backend(BACKEND, format!("dispatch_pending: {e}")))?;
@@ -120,11 +88,9 @@ fn dispatch_until<S: 'static>(
     let mut fds = [PollFd::new(&fd, PollFlags::IN)];
     match poll(&mut fds, remaining_ms) {
         Ok(0) => {
-            // Timeout — drop the guard without reading.
             return Ok(false);
         }
         Ok(_) => {
-            // FD is readable; read events into the internal queue.
             guard
                 .read()
                 .map_err(|e| CaptureError::backend(BACKEND, format!("read events: {e}")))?;
@@ -142,10 +108,6 @@ fn dispatch_until<S: 'static>(
         .map_err(|e| CaptureError::backend(BACKEND, format!("dispatch_pending: {e}")))?;
     Ok(n > 0)
 }
-
-// ============================================================================
-// Output / toplevel models
-// ============================================================================
 
 #[derive(Default, Clone)]
 struct OutputInfo {
@@ -179,28 +141,16 @@ struct ToplevelInfo {
     is_maximized: bool,
 }
 
-// ============================================================================
-// State (shared between dispatch handlers)
-// ============================================================================
-
 #[derive(Default)]
 struct WlState {
-    outputs: HashMap<u32, OutputInfo>, // keyed by wl_output object id
-
-    // Frame capture state
-    // Every Buffer event the compositor sends — we pick the best one once
-    // BufferDone arrives.
-    advertised_formats: Vec<(wl_shm::Format, u32, u32, u32)>, // fmt, w, h, stride
-    pending_format: Option<(wl_shm::Format, u32, u32, u32)>,  // chosen one
+    outputs: HashMap<u32, OutputInfo>,
+    advertised_formats: Vec<(wl_shm::Format, u32, u32, u32)>,
+    pending_format: Option<(wl_shm::Format, u32, u32, u32)>,
     pending_flags: u32,
     buffer_done: bool,
     frame_done: bool,
     frame_failed: bool,
-
-    // Foreign-toplevel (wlr variant)
     wlr_toplevels: HashMap<u32, ToplevelInfo>,
-
-    // ext-foreign-toplevel variant
     ext_toplevels: HashMap<u32, ToplevelInfo>,
 }
 
@@ -214,10 +164,6 @@ impl WlState {
         self.frame_failed = false;
     }
 }
-
-// ============================================================================
-// Backend
-// ============================================================================
 
 pub(crate) struct WaylandBackend {
     inner: Mutex<Inner>,
@@ -237,12 +183,8 @@ impl WaylandBackend {
     pub fn try_new() -> Result<Self> {
         let conn = Connection::connect_to_env().map_err(|e| {
             let msg = e.to_string();
-            // Friendly hint for the most common failure mode in the wild:
-            // the binary was built with the wayland crates in dlopen mode
-            // and `libwayland-client.so.0` is not on the dynamic linker's
-            // search path. We default to static linking now, but older
-            // binaries / dev shells that override the feature set may still
-            // hit it.
+            // Hint when the wayland crates are in dlopen mode and the system
+            // libwayland-client.so.0 isn't on the dynamic linker's path.
             if msg.to_lowercase().contains("could not be loaded") {
                 eprintln!(
                     "sss_capture[wayland]: failed to load libwayland-client.so.0 — \
@@ -259,7 +201,6 @@ impl WaylandBackend {
 
         let qh = event_queue.handle();
 
-        // Bind the required globals.
         let screencopy_mgr = globals
             .bind::<ZwlrScreencopyManagerV1, _, _>(&qh, 1..=3, ())
             .map_err(|_| {
@@ -281,7 +222,6 @@ impl WaylandBackend {
             .bind::<ExtForeignToplevelListV1, _, _>(&qh, 1..=1, ())
             .ok();
 
-        // Bind every wl_output advertised at registry init time.
         let mut state = WlState::default();
         for Global {
             name,
@@ -293,19 +233,18 @@ impl WaylandBackend {
                 let v = version.min(4);
                 let output: WlOutput = globals.registry().bind(name, v, &qh, ());
                 let oid = output.id().protocol_id();
-                let mut info = OutputInfo::default();
-                info.wl_output = Some(output);
+                let info = OutputInfo {
+                    wl_output: Some(output),
+                    ..Default::default()
+                };
                 state.outputs.insert(oid, info);
             }
         }
 
-        // Dispatch once to get output geometry / mode events.
         event_queue.roundtrip(&mut state).map_err(|e| {
             CaptureError::backend(BACKEND, format!("initial roundtrip failed: {e}"))
         })?;
 
-        // Bind xdg_output for every output we know about, then roundtrip
-        // again to get logical-size info.
         if let Some(mgr) = xdg_output_mgr.as_ref() {
             let ids: Vec<u32> = state.outputs.keys().copied().collect();
             for oid in ids {
@@ -328,23 +267,17 @@ impl WaylandBackend {
             shm,
         };
 
-        // The state object is dropped here. Every subsequent operation builds
-        // a fresh event queue with a fresh `WlState`. We hold the protocol
-        // managers; outputs are re-queried on demand for accuracy.
-
         Ok(Self {
             inner: Mutex::new(inner),
         })
     }
 
-    /// Open a fresh event queue and refresh the list of outputs.
     fn refresh_state(&self, inner: &Inner) -> Result<(EventQueue<WlState>, WlState)> {
         tracing::info!("refresh_state: binding outputs on a fresh queue");
         let mut event_queue = inner.conn.new_event_queue::<WlState>();
         let qh = event_queue.handle();
         let mut state = WlState::default();
 
-        // Re-bind outputs from the global list.
         let mut bound = 0;
         for Global {
             name,
@@ -356,8 +289,10 @@ impl WaylandBackend {
                 let v = version.min(4);
                 let output: WlOutput = inner.globals.registry().bind(name, v, &qh, ());
                 let oid = output.id().protocol_id();
-                let mut info = OutputInfo::default();
-                info.wl_output = Some(output);
+                let info = OutputInfo {
+                    wl_output: Some(output),
+                    ..Default::default()
+                };
                 state.outputs.insert(oid, info);
                 bound += 1;
             }
@@ -407,20 +342,15 @@ impl WaylandBackend {
         tracing::info!("do_capture: waiting for buffer_done");
         eprintln!("sss_capture[wayland]: waiting for buffer_done…");
 
-        // Grab the cheap-clone handles we'll need under the lock ONCE and
-        // release. Holding the inner mutex across the dispatch loop would
-        // deadlock with anything that tries to relock (and is also bad
-        // hygiene: dispatch can block for FRAME_TIMEOUT, during which no
-        // other backend method could run).
+        // Hold the inner lock only long enough to clone the handles we need;
+        // dispatch_until below can block, which must not block other callers.
         let (conn, shm) = {
             let inner = self.inner.lock().unwrap();
             (inner.conn.clone(), inner.shm.clone())
         };
         let _ = event_queue.flush();
 
-        // Wait for buffer_done. The compositor sends a series of `buffer`
-        // events (one per supported wl_shm format) followed by `buffer_done`;
-        // sending `copy` before `buffer_done` is a protocol error on strict
+        // Sending `copy` before `buffer_done` is a protocol error on strict
         // compositors (niri / Hyprland refuse).
         let deadline = Instant::now() + FRAME_TIMEOUT;
         loop {
@@ -429,8 +359,7 @@ impl WaylandBackend {
             }
             if Instant::now() >= deadline {
                 eprintln!(
-                    "sss_capture[wayland]: timeout waiting for buffer_done after {:?}",
-                    FRAME_TIMEOUT
+                    "sss_capture[wayland]: timeout waiting for buffer_done after {FRAME_TIMEOUT:?}",
                 );
                 return Err(CaptureError::Timeout(FRAME_TIMEOUT));
             }
@@ -452,7 +381,6 @@ impl WaylandBackend {
             state.advertised_formats.len()
         );
 
-        // Pick a known-good format from everything advertised.
         let formats: Vec<wl_shm::Format> = state
             .advertised_formats
             .iter()
@@ -469,10 +397,8 @@ impl WaylandBackend {
             .expect("chosen format must be in the advertised set");
         tracing::info!("do_capture: chosen format={fmt:?} size={width}x{height} stride={stride}",);
 
-        // Allocate an SHM file, mmap, build pool + buffer.
         let size = (stride as usize) * (height as usize);
         let (mut file, mmap) = create_shm(size)?;
-        // Re-use the SHM proxy we cloned above; no lock needed.
         let pool = shm.create_pool(file.as_fd(), size as i32, &event_queue.handle(), ());
         let buffer: WlBuffer = pool.create_buffer(
             0,
@@ -484,12 +410,10 @@ impl WaylandBackend {
             (),
         );
 
-        // Kick off the copy.
         tracing::info!("do_capture: sending copy request");
         frame.copy(&buffer);
         let _ = event_queue.flush();
 
-        // Wait for ready / failed.
         let deadline = Instant::now() + FRAME_TIMEOUT;
         loop {
             if state.frame_done || state.frame_failed {
@@ -497,8 +421,7 @@ impl WaylandBackend {
             }
             if Instant::now() >= deadline {
                 eprintln!(
-                    "sss_capture[wayland]: timeout waiting for `ready` after {:?}",
-                    FRAME_TIMEOUT
+                    "sss_capture[wayland]: timeout waiting for `ready` after {FRAME_TIMEOUT:?}"
                 );
                 return Err(CaptureError::Timeout(FRAME_TIMEOUT));
             }
@@ -510,11 +433,9 @@ impl WaylandBackend {
         }
         tracing::info!("do_capture: frame ready");
 
-        // Read the buffer back.
         let bytes = &mmap[..];
         let img = decode_frame(bytes, fmt, width, height, stride, state.pending_flags)?;
 
-        // Cleanup
         buffer.destroy();
         pool.destroy();
         frame.destroy();
@@ -523,10 +444,6 @@ impl WaylandBackend {
         Ok(img)
     }
 }
-
-// ============================================================================
-// Backend trait impl
-// ============================================================================
 
 impl Backend for WaylandBackend {
     fn name(&self) -> &'static str {
@@ -538,8 +455,7 @@ impl Backend for WaylandBackend {
         let (_, state) = self.refresh_state(&inner)?;
         let mut out: Vec<Monitor> = state.outputs.values().map(monitor_from_info).collect();
 
-        // Mark the first output primary if none reports it (Wayland has no
-        // formal "primary" concept; this matches xrandr's default behaviour).
+        // Wayland has no formal "primary" concept; mark the first output.
         if !out.iter().any(|m| m.is_primary) {
             if let Some(first) = out.first_mut() {
                 first.is_primary = true;
@@ -553,33 +469,23 @@ impl Backend for WaylandBackend {
 
     fn windows(&self) -> Result<Vec<Window>> {
         let inner = self.inner.lock().unwrap();
-        // Re-query toplevels through whichever protocol is present.
         let mut event_queue = inner.conn.new_event_queue::<WlState>();
         let _qh = event_queue.handle();
         let mut state = WlState::default();
 
-        // Hook up the manager so it starts streaming `toplevel` events on
-        // this fresh queue.
         if let Some(mgr) = inner.wlr_toplevel_mgr.as_ref() {
-            // Manager events on this queue come through our Dispatch impl
-            // because we already wired event_created_child to the type.
-            let _ = mgr; // already bound; events fire on `qh`
-                         // No explicit `request` is needed — wlr-foreign-toplevel emits
-                         // existing toplevels on first dispatch.
+            let _ = mgr;
         }
         if let Some(list) = inner.ext_toplevel_list.as_ref() {
             let _ = list;
         }
 
-        // Two roundtrips: first emits `toplevel`, second emits per-handle
-        // properties and `done`.
         for _ in 0..3 {
             event_queue
                 .roundtrip(&mut state)
                 .map_err(|e| CaptureError::backend(BACKEND, e.to_string()))?;
         }
 
-        // Build Window list from whichever map is populated.
         let mut windows = Vec::new();
         for (id, t) in state.wlr_toplevels.iter() {
             windows.push(Window {
@@ -594,7 +500,6 @@ impl Backend for WaylandBackend {
             });
         }
         for (id, t) in state.ext_toplevels.iter() {
-            // Avoid duplicates if both protocols are advertised.
             if windows.iter().any(|w| w.id.raw() == *id as u64) {
                 continue;
             }
@@ -615,10 +520,7 @@ impl Backend for WaylandBackend {
     fn capture_monitor(&self, id: MonitorId, opts: &CaptureOptions) -> Result<RgbaImage> {
         tracing::info!("capture_monitor: id={id} show_cursor={}", opts.show_cursor);
         eprintln!("sss_capture[wayland]: capture_monitor {id}");
-        // Build the request under the lock, then DROP the lock before
-        // entering do_capture — that function reacquires the lock briefly
-        // to clone the connection and SHM proxies, and holding the lock
-        // across it would deadlock.
+        // Drop the lock before do_capture, which re-acquires it briefly.
         let (frame, mut queue, mut state) = {
             let inner = self.inner.lock().unwrap();
             let (queue, state) = self.refresh_state(&inner)?;
@@ -638,11 +540,6 @@ impl Backend for WaylandBackend {
     }
 
     fn capture_window(&self, id: WindowId, opts: &CaptureOptions) -> Result<RgbaImage> {
-        // Wayland's `zwlr_screencopy_manager_v1` doesn't expose a capture
-        // call for arbitrary windows — only outputs and regions. We resolve
-        // the window's bounds via foreign-toplevel + xdg-shell metadata and
-        // crop the output capture. In practice, very few compositors report
-        // toplevel bounds; we surface `Unsupported` when we can't.
         let _ = (id, opts);
         Err(CaptureError::unsupported(
             BACKEND,
@@ -670,10 +567,7 @@ impl Backend for WaylandBackend {
         if region.size.is_empty() {
             return Err(CaptureError::EmptyRegion(region));
         }
-        // Try the fast single-output path first if the region fits inside
-        // exactly one monitor — wlr-screencopy supports it natively. Build
-        // the request under the lock, then drop it before do_capture (same
-        // deadlock reasoning as capture_monitor).
+        // Fast path when the region fits inside exactly one output.
         let request = {
             let inner = self.inner.lock().unwrap();
             let (queue, state) = self.refresh_state(&inner)?;
@@ -714,28 +608,18 @@ impl Backend for WaylandBackend {
         if let Some((frame, mut queue, mut state)) = request {
             return self.do_capture(frame, &mut queue, &mut state);
         }
-        // Fall back to the multi-monitor composer.
         crate::backend::compose::region(self, region, opts)
     }
 
     fn cursor_position(&self) -> Result<Point> {
-        // Wayland intentionally doesn't expose the pointer to apps — this is
-        // an architectural blackout. Callers should track it themselves
-        // (e.g. through a Wayland surface they own) or use the X11 backend
-        // under XWayland.
         Err(CaptureError::CursorUnavailable(
             "Wayland does not allow apps to read the global pointer position".into(),
         ))
     }
 }
 
-// ============================================================================
-// Conversion: OutputInfo → Monitor
-// ============================================================================
-
 fn compute_monitor_id(info: &OutputInfo) -> MonitorId {
-    // FNV-1a 64-bit over the connector name (DP-1, HDMI-A-1…). When the
-    // compositor doesn't send a name we fall back to wl_output's protocol id.
+    // FNV-1a 64-bit over the connector name, with a protocol-id fallback.
     let seed = if !info.name.is_empty() {
         info.name.as_bytes()
     } else {
@@ -747,7 +631,6 @@ fn compute_monitor_id(info: &OutputInfo) -> MonitorId {
         h = h.wrapping_mul(0x100000001b3);
     }
     if h == 0xcbf29ce484222325 {
-        // No seed at all; use the wl_output proto-id for stability across runs.
         if let Some(o) = info.wl_output.as_ref() {
             return MonitorId(o.id().protocol_id() as u64);
         }
@@ -812,8 +695,6 @@ fn monitor_from_info(info: &OutputInfo) -> Monitor {
 }
 
 fn transform_to_rotation(t: i32) -> Rotation {
-    // Matches wl_output.transform values:
-    // 0=Normal, 1=90, 2=180, 3=270, 4=Flipped, 5=Flipped90, 6=Flipped180, 7=Flipped270
     match t {
         0 => Rotation::Normal,
         1 => Rotation::Rotate90,
@@ -827,12 +708,7 @@ fn transform_to_rotation(t: i32) -> Rotation {
     }
 }
 
-// ============================================================================
-// SHM helpers
-// ============================================================================
-
 fn create_shm(size: usize) -> Result<(File, MmapMut)> {
-    // Use memfd via rustix when available; otherwise a tmpfile-style approach.
     let fd = create_memfd("sss_capture", size)?;
     // SAFETY: fd is freshly created and owned; FromRawFd consumes ownership.
     let file = unsafe { File::from_raw_fd(fd.into_raw_fd()) };
@@ -859,10 +735,6 @@ impl IntoRawFd for OwnedFd {
     }
 }
 
-// ============================================================================
-// Pixel decoding
-// ============================================================================
-
 fn decode_frame(
     bytes: &[u8],
     fmt: wl_shm::Format,
@@ -871,7 +743,6 @@ fn decode_frame(
     stride: u32,
     flags: u32,
 ) -> Result<RgbaImage> {
-    // wl_buffer flags: bit 0 = y_invert.
     let y_invert = (flags & 1) != 0;
     let mut rgba = vec![0u8; (width * height * 4) as usize];
 
@@ -886,13 +757,13 @@ fn decode_frame(
         let dst = &mut rgba[(y * width * 4) as usize..((y + 1) * width * 4) as usize];
         match fmt {
             wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888 => {
-                // Memory layout (little-endian, [31:0] A:R:G:B): B,G,R,A
+                // Little-endian [31:0] A:R:G:B in memory is B,G,R,A.
                 for x in 0..width as usize {
                     let s = &src[x * 4..x * 4 + 4];
                     let d = &mut dst[x * 4..x * 4 + 4];
-                    d[0] = s[2]; // R
-                    d[1] = s[1]; // G
-                    d[2] = s[0]; // B
+                    d[0] = s[2];
+                    d[1] = s[1];
+                    d[2] = s[0];
                     d[3] = if matches!(fmt, wl_shm::Format::Argb8888) {
                         s[3]
                     } else {
@@ -901,7 +772,6 @@ fn decode_frame(
                 }
             }
             wl_shm::Format::Abgr8888 | wl_shm::Format::Xbgr8888 => {
-                // Memory layout: R,G,B,A
                 for x in 0..width as usize {
                     let s = &src[x * 4..x * 4 + 4];
                     let d = &mut dst[x * 4..x * 4 + 4];
@@ -957,12 +827,7 @@ fn decode_frame(
     })
 }
 
-/// Picks the most desirable format from the set advertised by the compositor.
-/// All 32-bit pixel layouts are equivalent at the byte level after
-/// `decode_frame`; we just need to make sure the compositor supports the one
-/// we ask for.
 fn pick_format(advertised: &[wl_shm::Format]) -> Option<wl_shm::Format> {
-    // Preference order: opaque XRGB then alpha-carrying variants.
     let order = [
         wl_shm::Format::Xrgb8888,
         wl_shm::Format::Argb8888,
@@ -976,10 +841,6 @@ fn pick_format(advertised: &[wl_shm::Format]) -> Option<wl_shm::Format> {
     order.iter().find(|f| advertised.contains(f)).copied()
 }
 
-// ============================================================================
-// Dispatch handlers
-// ============================================================================
-
 impl Dispatch<WlRegistry, GlobalListContents> for WlState {
     fn event(
         _state: &mut Self,
@@ -989,8 +850,6 @@ impl Dispatch<WlRegistry, GlobalListContents> for WlState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
-        // We rely on `wayland_client::globals::GlobalList` for global
-        // tracking; nothing else to do here.
     }
 }
 
@@ -1004,10 +863,9 @@ impl Dispatch<WlOutput, ()> for WlState {
         _qh: &QueueHandle<Self>,
     ) {
         let oid = proxy.id().protocol_id();
-        let info = state.outputs.entry(oid).or_insert_with(|| {
-            let mut i = OutputInfo::default();
-            i.wl_output = Some(proxy.clone());
-            i
+        let info = state.outputs.entry(oid).or_insert_with(|| OutputInfo {
+            wl_output: Some(proxy.clone()),
+            ..Default::default()
         });
         match event {
             wl_output::Event::Geometry {
@@ -1101,26 +959,24 @@ impl Dispatch<ZwlrScreencopyFrameV1, ()> for WlState {
     ) {
         match event {
             zwlr_screencopy_frame_v1::Event::Buffer {
-                format,
+                format: wayland_client::WEnum::Value(fmt),
                 width,
                 height,
                 stride,
             } => {
-                if let wayland_client::WEnum::Value(fmt) = format {
-                    tracing::info!(
-                        "screencopy: Buffer event fmt={fmt:?} {width}x{height} stride={stride}",
-                    );
-                    state.advertised_formats.push((fmt, width, height, stride));
-                }
+                tracing::info!(
+                    "screencopy: Buffer event fmt={fmt:?} {width}x{height} stride={stride}",
+                );
+                state.advertised_formats.push((fmt, width, height, stride));
             }
             zwlr_screencopy_frame_v1::Event::BufferDone => {
                 tracing::info!("screencopy: BufferDone");
                 state.buffer_done = true;
             }
-            zwlr_screencopy_frame_v1::Event::Flags { flags } => {
-                if let wayland_client::WEnum::Value(f) = flags {
-                    state.pending_flags = f.bits();
-                }
+            zwlr_screencopy_frame_v1::Event::Flags {
+                flags: wayland_client::WEnum::Value(f),
+            } => {
+                state.pending_flags = f.bits();
             }
             zwlr_screencopy_frame_v1::Event::Ready { .. } => {
                 state.frame_done = true;
@@ -1134,8 +990,6 @@ impl Dispatch<ZwlrScreencopyFrameV1, ()> for WlState {
         }
     }
 }
-
-// ---- foreign-toplevel (wlroots) -------------------------------------------
 
 impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for WlState {
     fn event(
@@ -1178,14 +1032,13 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for WlState {
             zwlr_foreign_toplevel_handle_v1::Event::Title { title } => t.title = title,
             zwlr_foreign_toplevel_handle_v1::Event::AppId { app_id } => t.app_id = app_id,
             zwlr_foreign_toplevel_handle_v1::Event::State { state: s } => {
-                // Decode the byte array as native-endian u32 enum values.
                 let chunks = s.chunks_exact(4);
                 let states: Vec<u32> = chunks
                     .map(|c| u32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
                     .collect();
-                t.is_active = states.contains(&2); // ACTIVE
-                t.is_minimized = states.contains(&1); // MINIMIZED
-                t.is_maximized = states.contains(&0); // MAXIMIZED
+                t.is_active = states.contains(&2);
+                t.is_minimized = states.contains(&1);
+                t.is_maximized = states.contains(&0);
             }
             zwlr_foreign_toplevel_handle_v1::Event::Closed => {
                 state.wlr_toplevels.remove(&id);
@@ -1194,8 +1047,6 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for WlState {
         }
     }
 }
-
-// ---- ext-foreign-toplevel-list --------------------------------------------
 
 impl Dispatch<ExtForeignToplevelListV1, ()> for WlState {
     fn event(
@@ -1239,8 +1090,6 @@ impl Dispatch<ExtForeignToplevelHandleV1, ()> for WlState {
         }
     }
 }
-
-// ---- Stateless `Dispatch` impls for objects with no events we care about --
 
 delegate_noop!(WlState: ignore WlShm);
 delegate_noop!(WlState: ignore WlShmPool);

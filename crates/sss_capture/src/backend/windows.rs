@@ -1,16 +1,4 @@
-//! Windows backend, written directly on top of the Win32 API through the
-//! [`windows`] crate. No third-party capture library is used.
-//!
-//! Implementation highlights:
-//! * Monitor enumeration via `EnumDisplayMonitors` + `GetMonitorInfoW`, with
-//!   per-monitor DPI resolved through `GetDpiForMonitor`.
-//! * Frame capture via the classic GDI path: `CreateCompatibleDC`,
-//!   `CreateCompatibleBitmap`, `BitBlt(SRCCOPY | CAPTUREBLT)`, `GetDIBits`.
-//!   This works on every Windows version from Vista upwards, supports remote
-//!   sessions, and is single-frame (no resource-hungry duplication objects).
-//! * Window enumeration via `EnumWindows` + `GetWindowText`,
-//!   `GetWindowRect`, `IsIconic`, `IsZoomed`, `GetForegroundWindow`.
-//! * Cursor position via `GetCursorPos`.
+//! Windows GDI capture backend.
 
 #![allow(non_snake_case, unsafe_op_in_unsafe_fn)]
 
@@ -45,16 +33,12 @@ use crate::window::{Window, WindowId};
 const BACKEND: &str = "windows-gdi";
 
 pub(crate) struct WindowsBackend {
-    // Win32 has no per-process state we need to cache; everything is global
-    // and the calls are cheap. The Mutex protects shared TLS use during the
-    // EnumWindows/EnumDisplayMonitors callbacks.
+    // Guards thread-local buffers used by EnumWindows/EnumDisplayMonitors.
     _lock: Mutex<()>,
 }
 
 impl WindowsBackend {
     pub fn try_new() -> Result<Self> {
-        // A trivial probe to confirm GDI is available; if `GetDC(NULL)` fails
-        // we're running as a headless service.
         unsafe {
             let dc = GetDC(HWND(0));
             if dc.0 == 0 {
@@ -78,7 +62,6 @@ impl Backend for WindowsBackend {
 
     fn monitors(&self) -> Result<Vec<Monitor>> {
         let mut out = enumerate_monitors()?;
-        // Mark the monitor that contains POINT(0,0) — Win32's notion of primary.
         unsafe {
             let primary = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
             if let Some(m) = out.iter_mut().find(|m| m.id.raw() == primary.0 as u64) {
@@ -132,8 +115,6 @@ impl Backend for WindowsBackend {
         if region.size.is_empty() {
             return Err(CaptureError::EmptyRegion(region));
         }
-        // BitBlt against the desktop DC can grab any rectangle of the virtual
-        // screen in a single call.
         let _ = opts;
         capture_rect(region).or_else(|_| compose::region(self, region, opts))
     }
@@ -145,10 +126,6 @@ impl Backend for WindowsBackend {
         Ok(Point::new(p.x, p.y))
     }
 }
-
-// -----------------------------------------------------------------------------
-// Monitor enumeration
-// -----------------------------------------------------------------------------
 
 thread_local! {
     static MONITOR_BUF: RefCell<Vec<Monitor>> = const { RefCell::new(Vec::new()) };
@@ -163,7 +140,7 @@ unsafe extern "system" fn monitor_enum_proc(
     let mut info: MONITORINFOEXW = std::mem::zeroed();
     info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
     if !GetMonitorInfoW(hmonitor, &mut info.monitorInfo as *mut MONITORINFO).as_bool() {
-        return TRUE; // continue
+        return TRUE;
     }
     let MONITORINFO {
         rcMonitor, dwFlags, ..
@@ -179,7 +156,6 @@ unsafe extern "system" fn monitor_enum_proc(
             .collect::<Vec<_>>(),
     );
 
-    // Per-monitor DPI.
     let (mut dpi_x, mut dpi_y) = (96u32, 96u32);
     let _ = GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
     let scale = dpi_x as f32 / 96.0;
@@ -191,9 +167,9 @@ unsafe extern "system" fn monitor_enum_proc(
             bounds: Rect::from_xywh(rcMonitor.left, rcMonitor.top, width, height),
             physical_size: (width, height),
             scale_factor: scale,
-            rotation: Rotation::Normal, // Win32 doesn't surface CRT rotation here
+            rotation: Rotation::Normal,
             refresh_rate: None,
-            is_primary: (dwFlags & 1) /* MONITORINFOF_PRIMARY */ != 0,
+            is_primary: (dwFlags & 1) != 0,
         });
     });
     TRUE
@@ -210,10 +186,6 @@ fn enumerate_monitors() -> Result<Vec<Monitor>> {
     Ok(out)
 }
 
-// -----------------------------------------------------------------------------
-// Window enumeration
-// -----------------------------------------------------------------------------
-
 thread_local! {
     static WINDOW_BUF: RefCell<Vec<Window>> = const { RefCell::new(Vec::new()) };
 }
@@ -224,7 +196,6 @@ unsafe extern "system" fn window_enum_proc(hwnd: HWND, _lparam: LPARAM) -> BOOL 
     }
     let len = GetWindowTextLengthW(hwnd);
     if len == 0 {
-        // Skip unnamed shell helpers / hidden tool windows.
         return TRUE;
     }
     let mut buf = vec![0u16; len as usize + 1];
@@ -244,7 +215,7 @@ unsafe extern "system" fn window_enum_proc(hwnd: HWND, _lparam: LPARAM) -> BOOL 
         cell.borrow_mut().push(Window {
             id: WindowId(hwnd.0 as u64),
             title,
-            app_name: String::new(), // Win32 has no cheap way to get app name
+            app_name: String::new(),
             bounds: Rect::from_xywh(
                 rect.left,
                 rect.top,
@@ -268,10 +239,6 @@ fn enumerate_windows() -> Result<Vec<Window>> {
     }
     Ok(WINDOW_BUF.with(|cell| cell.borrow_mut().drain(..).collect::<Vec<_>>()))
 }
-
-// -----------------------------------------------------------------------------
-// GDI BitBlt capture
-// -----------------------------------------------------------------------------
 
 fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
     if bounds.size.is_empty() {
@@ -299,7 +266,7 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
         }
         let old = SelectObject(mem_dc, bitmap);
 
-        // SRCCOPY | CAPTUREBLT to include layered windows (top-level transparent UI).
+        // CAPTUREBLT is required to include layered (transparent) top-level UI.
         let ok = BitBlt(
             mem_dc,
             0,
@@ -320,12 +287,11 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
             return Err(CaptureError::backend(BACKEND, "BitBlt failed"));
         }
 
-        // GetDIBits to extract raw BGRA pixels.
         let mut bmi: BITMAPINFO = std::mem::zeroed();
         bmi.bmiHeader = BITMAPINFOHEADER {
             biSize: size_of::<BITMAPINFOHEADER>() as u32,
             biWidth: bounds.width() as i32,
-            biHeight: -(bounds.height() as i32), // top-down
+            biHeight: -(bounds.height() as i32),
             biPlanes: 1,
             biBitCount: 32,
             biCompression: BI_RGB.0 as u32,
@@ -354,10 +320,10 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
             return Err(CaptureError::backend(BACKEND, "GetDIBits failed"));
         }
 
-        // Convert BGRA → RGBA in-place.
         for chunk in raw.chunks_exact_mut(4) {
             chunk.swap(0, 2);
-            chunk[3] = 255; // GDI leaves alpha undefined for opaque blits.
+            // GDI leaves alpha undefined on opaque blits.
+            chunk[3] = 255;
         }
 
         RgbaImage::from_raw(bounds.width(), bounds.height(), raw)
@@ -365,6 +331,5 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
     }
 }
 
-// Helper: silence unused-import warning when PCWSTR is only used downstream.
 #[allow(dead_code)]
 fn _silence_pcwstr(_: PCWSTR) {}

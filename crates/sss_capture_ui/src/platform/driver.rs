@@ -1,16 +1,4 @@
-//! Top-level driver: connects [`crate::Selector`] to `winit`.
-//!
-//! Two execution paths:
-//!
-//! * **`editor` feature off** — minimal selection-only path. Boots a fullscreen
-//!   `winit` window per monitor, paints the captured screenshot as background,
-//!   tracks the rubber-band rectangle and returns the result. Equivalent to
-//!   `slurp`.
-//! * **`editor` feature on** — same windowing layer, plus an egui toolbar
-//!   stacked on top with every annotation tool wired into [`crate::Canvas`].
-//!
-//! The driver always runs the canvas state machine and always renders shapes
-//! over the captured frame at confirm time through [`crate::render::composite`].
+//! Top-level winit-based driver, with optional egui editor toolbar.
 
 use std::sync::Arc;
 
@@ -31,13 +19,8 @@ use crate::trigger::CaptureTrigger;
 /// Entry point invoked by `Selector::run`.
 pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
     let Selector { config, capturer } = sel;
-    // 1) Snapshot the desktop now (Eager) so we have something to paint
-    //    behind the toolbar. Lazy mode skips this and grabs at confirm time.
-    //
-    // Capture failure is non-fatal here: when the OS / compositor refuses
-    // (Wayland portal timeout, GNOME consent dialog dismissed, …) we still
-    // want to show the GUI so the user can pick a region and we retry the
-    // capture on confirm. The background just stays empty until then.
+    // Eager mode captures up front; failure is non-fatal so the user can still
+    // pick a region and the capture is retried on confirm.
     let initial = if matches!(config.trigger, CaptureTrigger::Eager) {
         match capturer.capture_all_with(config.capture_opts) {
             Ok(img) => Some(img),
@@ -111,10 +94,6 @@ struct ModState {
     meta: bool,
 }
 
-// ---------------------------------------------------------------------------
-// ApplicationHandler
-// ---------------------------------------------------------------------------
-
 struct App {
     config: crate::selector::Config,
     capturer: Arc<sss_capture::Capturer>,
@@ -129,7 +108,6 @@ struct App {
     mods: ModState,
     #[cfg(feature = "editor")]
     gpu: Option<Arc<crate::render::gpu::Gpu>>,
-    /// Tracks SelectorMode at runtime — `AnyOf` lets the user switch tabs.
     runtime_mode: SelectorMode,
 }
 
@@ -154,15 +132,12 @@ impl ApplicationHandler for App {
             self.monitors.len()
         );
         for (i, monitor) in self.monitors.iter().enumerate() {
-            // Build a fullscreen attribute set targeting the winit MonitorHandle
-            // whose position matches the sss_capture monitor.
             let target = winit_monitors.iter().find(|m| {
                 let pos = m.position();
                 pos.x == monitor.bounds().x() && pos.y == monitor.bounds().y()
             });
-            // Fall back to `Borderless(None)` so the compositor picks the
-            // current output even when winit cannot enumerate them (a known
-            // wart on some Wayland setups).
+            // `Borderless(None)` lets the compositor pick the current output
+            // when winit can't enumerate (some Wayland setups).
             let fullscreen = Some(winit::window::Fullscreen::Borderless(target.cloned()));
             tracing::info!(
                 monitor = %monitor.name(),
@@ -177,9 +152,8 @@ impl ApplicationHandler for App {
                 .with_resizable(false)
                 .with_visible(true)
                 .with_active(true)
-                // Explicit inner_size — winit Wayland sometimes opens a 0×0
-                // window when neither inner_size nor a configured fullscreen
-                // is set, which the compositor then hides.
+                // Without an explicit inner_size winit-Wayland can open a 0x0
+                // window that the compositor then hides.
                 .with_inner_size(winit::dpi::PhysicalSize::new(
                     monitor.bounds().width().max(640),
                     monitor.bounds().height().max(480),
@@ -190,8 +164,6 @@ impl ApplicationHandler for App {
                 Ok(window) => {
                     let window = Arc::new(window);
                     let id = window.id();
-                    // Kick off the first frame — `ControlFlow::Wait` would
-                    // otherwise sit forever until the user moved the cursor.
                     window.request_redraw();
                     tracing::info!(?id, "overlay window created and redraw requested");
                     let overlay = OverlayWindow {
@@ -203,17 +175,13 @@ impl ApplicationHandler for App {
                     self.windows.push(overlay);
                 }
                 Err(e) => {
-                    eprintln!(
-                        "sss_capture_ui: failed to create overlay window for {}: {e}",
-                        monitor
-                    );
+                    eprintln!("sss_capture_ui: failed to create overlay window for {monitor}: {e}");
                     tracing::error!(error = %e, "failed to create overlay window for {monitor}");
                 }
             }
         }
         tracing::info!("opened {} overlay window(s)", self.windows.len());
 
-        // Initialise GPU state once we have a window with a valid handle.
         #[cfg(feature = "editor")]
         if self.config.toolbar {
             tracing::info!("initialising wgpu device for the editor toolbar");
@@ -267,7 +235,6 @@ impl ApplicationHandler for App {
                     Key::Named(NamedKey::Backspace) => {
                         self.canvas.handle(CanvasEvent::TextBackspace);
                     }
-                    // Ctrl+Z / Ctrl+Shift+Z = undo / redo
                     Key::Character("z") | Key::Character("Z") if self.mods.ctrl => {
                         if self.mods.shift {
                             self.canvas.handle(CanvasEvent::Redo);
@@ -278,12 +245,10 @@ impl ApplicationHandler for App {
                     Key::Character("y") | Key::Character("Y") if self.mods.ctrl => {
                         self.canvas.handle(CanvasEvent::Redo);
                     }
-                    // Ctrl+C — copy intent, then confirm.
                     Key::Character("c") | Key::Character("C") if self.mods.ctrl => {
                         self.action.copy = true;
                         self.confirm(event_loop);
                     }
-                    // Ctrl+S — save intent, then confirm.
                     Key::Character("s") | Key::Character("S") if self.mods.ctrl => {
                         self.action.save = true;
                         self.confirm(event_loop);
@@ -330,13 +295,6 @@ impl ApplicationHandler for App {
                 tracing::trace!(?id, "redraw requested");
                 #[cfg(feature = "editor")]
                 self.render_window(id, event_loop);
-                #[cfg(not(feature = "editor"))]
-                {
-                    // No GPU backend compiled — the user sees their normal
-                    // desktop with the system cursor and the rubber-band is
-                    // computed in software but invisible. Hosts that need a
-                    // visual rectangle should build with `--features editor`.
-                }
             }
             WindowEvent::Occluded(occluded) => {
                 tracing::debug!(?id, occluded, "window occlusion changed");
@@ -367,11 +325,9 @@ impl ApplicationHandler for App {
 
 impl App {
     fn confirm(&mut self, event_loop: &ActiveEventLoop) {
-        // Build the outcome based on the (runtime) mode + canvas state.
         let region = self.canvas.region();
         let outcome = match self.runtime_mode {
             SelectorMode::Monitor => {
-                // Pick the monitor under the cursor at confirm time.
                 let p =
                     sss_capture::Point::new(self.last_cursor.x as i32, self.last_cursor.y as i32);
                 if let Ok(m) = self.capturer.monitor_at(p) {
@@ -386,8 +342,6 @@ impl App {
                 }
             }
             SelectorMode::Window => {
-                // The minimal driver doesn't draw window thumbnails; fall back
-                // to the foreground window under the cursor.
                 let cursor_point =
                     sss_capture::Point::new(self.last_cursor.x as i32, self.last_cursor.y as i32);
                 let win = self
@@ -418,13 +372,10 @@ impl App {
         event_loop.exit();
     }
 
-    /// Materialise the captured image for `rect`. In Eager mode we crop the
-    /// pre-grabbed full-desktop screenshot and overlay shapes. In Lazy mode
-    /// we ask the capturer right now.
+    /// Materialise the captured image for `rect`.
     fn capture_region(&self, rect: sss_capture::Rect) -> Option<CapImage> {
         let raw = match self.initial.clone() {
             Some(img) => {
-                // Crop from the pre-captured full desktop.
                 let monitors_bb = sss_capture::Rect::bounding(
                     &self.monitors.iter().map(|m| m.bounds()).collect::<Vec<_>>(),
                 )
@@ -448,28 +399,17 @@ impl App {
                 .map(|i| i.into_rgba()),
         };
         let mut buf = raw?;
-        // Bake shapes onto the cropped image.
         crate::render::composite::flatten(&mut buf, &self.canvas, (rect.x(), rect.y()));
         Some(CapImage::new(buf))
     }
 }
 
-// ---------------------------------------------------------------------------
-// Editor-feature: egui + wgpu rendering
-// ---------------------------------------------------------------------------
-
 #[cfg(feature = "editor")]
 impl App {
     fn init_gpu(&mut self) {
-        // Build wgpu's instance + adapter + device + per-window state.
-        //
-        // wgpu 22 keeps an internal reference to the `compatible_surface`
-        // passed to `request_adapter` for as long as the adapter lives, so
-        // we MUST NOT drop that surface ahead of time. The flow below
-        // creates the first window's surface, hands it to the adapter, and
-        // then *moves it* into the first `WindowGpu` (via
-        // `WindowGpu::from_surface`) so it stays alive for the full
-        // session.
+        // wgpu 22 keeps an internal reference to the surface used to create
+        // the adapter for as long as the adapter lives, so the first window's
+        // surface must outlive everything else.
         if self.windows.is_empty() {
             tracing::warn!("init_gpu: no overlay windows; skipping");
             return;
@@ -505,7 +445,6 @@ impl App {
             }
         };
 
-        // Attach the surface we already have to the first window.
         match crate::render::gpu::WindowGpu::from_surface(first_window, first_surface, &gpu) {
             Ok(state) => {
                 tracing::info!(
@@ -518,12 +457,10 @@ impl App {
             Err(e) => {
                 eprintln!("sss_capture_ui: window-0 wgpu init failed: {e}");
                 tracing::error!(error = %e, "wgpu: window-0 init failed");
-                // Without window 0 the GPU is unusable; bail out cleanly.
                 return;
             }
         }
 
-        // Create surfaces + per-window state for the rest.
         for (idx, win) in self.windows.iter_mut().enumerate().skip(1) {
             match crate::render::gpu::WindowGpu::new(win.window.clone(), &gpu) {
                 Ok(state) => {
@@ -551,7 +488,6 @@ impl App {
             Some(g) => g,
             None => return,
         };
-        // Borrow split: pull out the OverlayWindow we render, leave others.
         let pos = match self.windows.iter().position(|w| w.window.id() == id) {
             Some(p) => p,
             None => return,
@@ -561,23 +497,18 @@ impl App {
             (m.bounds().x(), m.bounds().y())
         };
 
-        // We need disjoint borrows of `windows[pos].gpu` (mut) and the egui
-        // input from the `window` (ref). Take ownership of `gpu` slot to
-        // sidestep the borrow checker, then put it back.
+        // Take and re-insert window_gpu to split the borrow against `window`.
         let mut window_gpu = match self.windows[pos].gpu.take() {
             Some(g) => g,
             None => return,
         };
         let window_arc = self.windows[pos].window.clone();
 
-        // 1) Build raw input from winit state.
-        let raw_input = window_gpu.egui_winit.take_egui_input(&*window_arc);
+        let raw_input = window_gpu.egui_winit.take_egui_input(&window_arc);
 
-        // 2) egui frame -------------------------------------------------------
         let mut confirm = false;
         let mut cancel = false;
         let full_output = window_gpu.egui_ctx.clone().run(raw_input, |ctx| {
-            // Toolbar
             if self.config.toolbar {
                 let out = draw_toolbar(
                     ctx,
@@ -602,8 +533,6 @@ impl App {
                     cancel = true;
                 }
             }
-            // Shape canvas — drawn into the egui central panel so we cover
-            // the whole client area of the window.
             egui::CentralPanel::default()
                 .frame(egui::Frame::none())
                 .show(ctx, |ui| {
@@ -618,7 +547,7 @@ impl App {
 
         window_gpu
             .egui_winit
-            .handle_platform_output(&*window_arc, full_output.platform_output.clone());
+            .handle_platform_output(&window_arc, full_output.platform_output.clone());
 
         let primitives = window_gpu
             .egui_ctx
@@ -628,7 +557,6 @@ impl App {
             pixels_per_point: full_output.pixels_per_point,
         };
 
-        // 3) Upload textures and render through wgpu.
         for (id, image_delta) in &full_output.textures_delta.set {
             window_gpu
                 .renderer
@@ -672,15 +600,10 @@ impl App {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        // Opaque clear color: `background_dim` controls how
-                        // dark the dim is, but `a` is always 1.0. Letting
-                        // the surface alpha float means the compositor has
-                        // to per-pixel-blend the overlay against the
-                        // desktop on every frame, which is expensive on
-                        // multi-monitor setups and (in practice) GPU-driver
-                        // unsafe — we saw a kernel-side null deref the
-                        // first time this overlay went live on a 4-monitor
-                        // niri session.
+                        // Opaque (alpha=1.0): per-pixel compositor blending
+                        // against the desktop is expensive on multi-monitor
+                        // setups and has triggered GPU-driver kernel crashes
+                        // on niri with 4 outputs.
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 0.0,
                             g: 0.0,
@@ -704,10 +627,8 @@ impl App {
             window_gpu.renderer.free_texture(id);
         }
 
-        // Put the gpu state back.
         self.windows[pos].gpu = Some(window_gpu);
 
-        // Apply the side effects from the toolbar.
         if confirm {
             self.confirm(_event_loop);
         } else if cancel {

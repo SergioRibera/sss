@@ -1,8 +1,4 @@
-//! Multi-monitor composition.
-//!
-//! Used by every backend that doesn't have a single-shot region capture API:
-//! we ask the backend to capture every overlapping monitor individually, then
-//! rotate / scale-resample / paste each result into the destination buffer.
+//! Multi-monitor composition for backends without single-shot region capture.
 
 use image::imageops::{overlay, resize, rotate180, rotate270, rotate90, FilterType};
 use image::{Rgba, RgbaImage};
@@ -13,8 +9,7 @@ use crate::geometry::{Rect, Rotation};
 use crate::monitor::Monitor;
 use crate::options::CaptureOptions;
 
-/// Rotate / flip an image so it matches the on-screen orientation of the
-/// originating monitor.
+/// Rotate / flip an image to match the on-screen orientation.
 pub(crate) fn apply_transform(img: RgbaImage, rotation: Rotation) -> RgbaImage {
     let rotated = match rotation {
         Rotation::Normal | Rotation::Flipped => img,
@@ -29,7 +24,6 @@ pub(crate) fn apply_transform(img: RgbaImage, rotation: Rotation) -> RgbaImage {
     }
 }
 
-/// Resize an image to a target logical-pixel size using Lanczos3.
 fn to_logical(img: RgbaImage, width: u32, height: u32) -> RgbaImage {
     if img.width() == width && img.height() == height {
         return img;
@@ -37,8 +31,7 @@ fn to_logical(img: RgbaImage, width: u32, height: u32) -> RgbaImage {
     resize(&img, width, height, FilterType::Lanczos3)
 }
 
-/// Capture every monitor and stitch them into a single image whose origin is
-/// the top-left of the **bounding box** of all monitors.
+/// Capture every monitor and stitch into one image at the bounding-box origin.
 pub(crate) fn all_monitors(backend: &dyn Backend, opts: &CaptureOptions) -> Result<RgbaImage> {
     let monitors = backend.monitors()?;
     if monitors.is_empty() {
@@ -49,7 +42,7 @@ pub(crate) fn all_monitors(backend: &dyn Backend, opts: &CaptureOptions) -> Resu
     compose(backend, &monitors, bounds, opts)
 }
 
-/// Capture the slice of the desktop that falls inside `region`.
+/// Capture the desktop slice that falls inside `region`.
 pub(crate) fn region(
     backend: &dyn Backend,
     region: Rect,
@@ -96,12 +89,9 @@ fn compose(
             }
         };
 
-        // 1. Bring panel into on-screen orientation.
         let rotated = apply_transform(raw, monitor.rotation);
-        // 2. Resample to logical size so coordinates line up.
         let logical = to_logical(rotated, m_bounds.width(), m_bounds.height());
 
-        // 3. Crop to the intersection in monitor-local coordinates.
         let local_x = (intersection.origin.x - m_bounds.origin.x).max(0) as u32;
         let local_y = (intersection.origin.y - m_bounds.origin.y).max(0) as u32;
         let crop_w = intersection
@@ -115,7 +105,6 @@ fn compose(
         }
         let crop = image::imageops::crop_imm(&logical, local_x, local_y, crop_w, crop_h).to_image();
 
-        // 4. Paste into the output buffer.
         let place_x = (intersection.origin.x - output_bounds.origin.x) as i64;
         let place_y = (intersection.origin.y - output_bounds.origin.y) as i64;
         overlay(&mut result, &crop, place_x, place_y);
@@ -124,10 +113,7 @@ fn compose(
     Ok(result)
 }
 
-/// Reverse the rotation reported by the platform: given an image in logical
-/// (on-screen) orientation, rotate it back into the panel's native
-/// orientation. Used by the `capture_region` algorithm to feed
-/// logical-coordinate crops back to backends that operate in panel pixels.
+/// Rotate an image from logical on-screen orientation back to panel orientation.
 #[allow(dead_code)]
 pub(crate) fn inverse_transform(img: RgbaImage, rotation: Rotation) -> RgbaImage {
     let undone = match rotation {

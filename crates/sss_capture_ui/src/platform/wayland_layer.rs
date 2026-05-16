@@ -1,20 +1,4 @@
-//! Wayland layer-shell driver — bypass winit / wgpu entirely.
-//!
-//! This is the path that actually works on wlroots compositors (niri, sway,
-//! Hyprland, river, cosmic, …). It uses:
-//!
-//! * `wl_compositor` + `zwlr_layer_shell_v1` to put one overlay surface per
-//!   `wl_output`, anchored to all four edges and on the *Overlay* layer.
-//!   That guarantees the surface floats above every other client, including
-//!   niri's tiling columns — which is what fixes the "windows tiled as a
-//!   new column" problem.
-//! * `wl_shm` + `memfd_create` + `mmap` for the pixel buffers. No GPU is
-//!   involved — we paint with the same CPU compositor that bakes the final
-//!   image. This was the *other* immediate problem: four GPU-accelerated
-//!   surfaces in `PresentMode::Mailbox` were blendering the desktop in
-//!   real-time and taking the kernel down.
-//! * `wl_seat` / `wl_pointer` / `wl_keyboard` (with `xkbcommon`) for input,
-//!   wired straight into the existing `Canvas` state machine.
+//! Wayland layer-shell driver: CPU-rendered overlay via wlr-layer-shell.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -48,14 +32,6 @@ use crate::geometry::FPoint;
 use crate::mode::SelectorMode;
 use crate::selector::{Outcome, PostAction, Selection, Selector, SelectorError};
 
-/// Cheap probe used by `platform::mod::run` to decide whether to call into
-/// this driver. Returns true when the current `WAYLAND_DISPLAY` advertises
-/// `zwlr_layer_shell_v1` (every wlroots compositor; KWin in nested-output
-/// mode; cosmic). Returns false on GNOME / KDE-Wayland (they don't expose
-/// the protocol to regular clients).
-/// Dummy state used solely for the layer-shell probe — wayland-client's
-/// `registry_queue_init` requires a `Dispatch` impl for the state type
-/// even when we're going to drop the queue immediately.
 struct ProbeState;
 
 impl Dispatch<WlRegistry, GlobalListContents> for ProbeState {
@@ -86,15 +62,10 @@ pub(crate) fn is_available() -> bool {
         .any(|g| g.interface == ZwlrLayerShellV1::interface().name)
 }
 
-// ---------------------------------------------------------------------------
-// Entry point
-// ---------------------------------------------------------------------------
-
 pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
     let Selector { config, capturer } = sel;
 
-    // Always eager-capture: with layer-shell we paint the screenshot under
-    // the overlay surface, so we need pixels before we can show anything.
+    // Layer-shell paints behind the overlay so we always capture eagerly.
     let initial = match capturer.capture_all_with(config.capture_opts) {
         Ok(img) => Some(img),
         Err(e) => {
@@ -109,7 +80,6 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
 
     let monitors = capturer.monitors().map_err(SelectorError::Capture)?;
 
-    // -------- bind wayland globals -----------------------------------------
     let conn = Connection::connect_to_env()
         .map_err(|e| SelectorError::Backend(format!("wayland connect: {e}")))?;
     let (globals, mut event_queue) = registry_queue_init::<State>(&conn)
@@ -134,9 +104,14 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
         m => m,
     };
 
-    // Create the state up front (with empty overlays + empty output infos)
-    // so we can bind wl_outputs into it and dispatch their geometry events
-    // before we try to match sss_capture monitors to wl_outputs.
+    let snap_step = config.ui.snap_step;
+    let current_color = config.ui.default_stroke_color;
+    let current_width = config.ui.default_stroke_width;
+    let current_fill = config.ui.default_fill;
+    let mut canvas = Canvas::new();
+    if current_fill.is_some() {
+        canvas.set_fill_color(current_fill);
+    }
     let mut state = State {
         running: true,
         outcome: None,
@@ -145,7 +120,7 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
             save: false,
             save_path_hint: config.save_path_hint.clone(),
         },
-        canvas: Canvas::new(),
+        canvas,
         runtime_mode,
         config: config.clone(),
         background: initial.clone(),
@@ -163,10 +138,10 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
         width_popup: None,
         snap_popup: None,
         snap_marker: None,
-        snap_step: 10.0,
-        current_color: crate::color::Color::RED,
-        current_width: 3.0,
-        current_fill: None,
+        snap_step,
+        current_color,
+        current_width,
+        current_fill,
         color_hover_at: None,
         width_hover: false,
         radial: None,
@@ -177,9 +152,6 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
         qh: Some(qh.clone()),
     };
 
-    // Bind every wl_output advertised at startup, with the registry global
-    // name as `Dispatch` user-data so we can populate `output_infos[name]`
-    // when geometry / mode events arrive.
     for g in globals.contents().clone_list() {
         if g.interface == WlOutput::interface().name {
             let v = g.version.min(4);
@@ -197,12 +169,9 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
         .roundtrip(&mut state)
         .map_err(|e| SelectorError::Backend(format!("wl_output roundtrip: {e}")))?;
 
-    // Match each sss_capture::Monitor to its wl_output by *position*. The
-    // (x, y) reported by `wl_output.geometry` is in the compositor's
-    // coordinate space — same as what sss_capture::Monitor::bounds() uses.
-    // Matching by index (the previous behaviour) was wrong: niri's global
-    // advertisement order doesn't match sss_capture's monitor ordering, so
-    // captures landed on the wrong physical screen.
+    // Match by wl_output position (sss_capture::Monitor::bounds uses the
+    // same coordinate space). Matching by index breaks on niri where the
+    // wl_output advertisement order differs from sss_capture's enumeration.
     for monitor in &monitors {
         let matched: Option<(u32, WlOutput)> = state
             .output_infos
@@ -258,34 +227,21 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
         });
     }
 
-    // -------- input -----------------------------------------------------
     let pointer = seat.get_pointer(&qh, ());
     let keyboard = seat.get_keyboard(&qh, ());
     state.pointer = Some(pointer.clone());
-    // Load the system cursor theme so we can swap between
-    // `crosshair` / `move` / `nwse-resize` / … based on where the
-    // pointer is. Failure here is non-fatal: we just keep the
-    // compositor-default cursor.
     match super::cursor::CursorContext::new(&conn, shm.clone(), 24) {
         Ok(ctx) => state.cursor_ctx = Some(ctx),
         Err(e) => tracing::warn!(error = %e, "cursor theme load failed; using compositor default"),
     }
 
-    // -------- main event loop ----------------------------------------------
     while state.running {
-        // Pump events without an indefinite blocking call: dispatch any
-        // pending events with a short bounded wait, then redraw whatever
-        // surface asked for it.
-        if dispatch_until(
+        let _ = dispatch_until(
             &conn,
             &mut event_queue,
             &mut state,
             Duration::from_millis(50),
-        )? {
-            // events arrived; possibly nothing visible changed, but cheaper
-            // than skipping a redraw.
-        }
-        // Redraw surfaces that requested it.
+        )?;
         for i in 0..state.overlays.len() {
             if state.overlays[i].needs_redraw && state.overlays[i].configured {
                 render_overlay(i, &shm, &qh, &mut state);
@@ -293,7 +249,6 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
         }
     }
 
-    // Build the outcome.
     let capturer_arc = capturer.clone();
     let final_image = build_outcome_image(&state, capturer_arc.as_ref());
     let outcome = match state.outcome.take().unwrap_or(Outcome::Cancelled) {
@@ -313,15 +268,8 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
         },
         Outcome::Cancelled => Outcome::Cancelled,
     };
-    // Cleanup. Order matters here:
-    //   1. Tear down every per-overlay buffer + pool + layer surface so the
-    //      compositor knows the overlay is gone and removes it.
-    //   2. Release pointer / keyboard.
-    //   3. Round-trip once so the destroy requests are flushed and acked
-    //      before we drop the connection. Without this the compositor can
-    //      legitimately keep showing the layer surface for a few frames
-    //      *after* the program has called the post-action (clipboard /
-    //      file save), which the user perceives as "the app didn't close".
+    // Tear down surfaces and round-trip before dropping the connection so the
+    // compositor actually drops the overlay frames before we hand control back.
     for ov in state.overlays.iter_mut() {
         for buf in ov.buffers.drain(..) {
             buf.wl_buffer.destroy();
@@ -371,10 +319,6 @@ fn build_outcome_image(state: &State, _capturer: &sss_capture::Capturer) -> Opti
     Some(CapImage::new(cropped))
 }
 
-// ---------------------------------------------------------------------------
-// Dispatching with timeout
-// ---------------------------------------------------------------------------
-
 fn dispatch_until(
     conn: &Connection,
     queue: &mut wayland_client::EventQueue<State>,
@@ -416,10 +360,6 @@ fn dispatch_until(
     Ok(n > 0)
 }
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
 pub(crate) struct State {
     running: bool,
     outcome: Option<Outcome>,
@@ -429,76 +369,34 @@ pub(crate) struct State {
     config: crate::selector::Config,
     background: Option<CapImage>,
     overlays: Vec<Overlay>,
-    /// `wl_output` info collected from registry + Geometry / Mode events.
-    /// Keyed by the wl_registry global name. Used to match each
-    /// `sss_capture::Monitor` to the correct `WlOutput` *by position*,
-    /// rather than by array index (which produces miswired overlays on
-    /// multi-monitor setups where the sss_capture order and the wayland
-    /// global order disagree — e.g. niri with 4 outputs, one rotated).
+    /// wl_output info keyed by registry global name; used to match each
+    /// sss_capture::Monitor to its WlOutput by position.
     output_infos: HashMap<u32, WlOutputInfo>,
     active_overlay: Option<usize>,
     pointer_pos_local: FPoint,
     pointer_pos_global: FPoint,
     mods: ModState,
-    /// The user pressed `P` — the next left click samples the background
-    /// pixel under the cursor and applies it as the active stroke
-    /// colour. Reset back to `false` after the sample (or on Esc).
+    /// While true, the next left click samples a background pixel.
     pipette_pending: bool,
-    /// User-toggled HUD overlay that magnifies the pixels under the
-    /// cursor. Toggled with `M`.
     magnifier_on: bool,
-    /// Snap drag endpoints to a 10-px grid and to existing shape
-    /// vertices within tolerance. Toggled with `G`.
     snap_on: bool,
-    /// HSV custom-colour popup. When `Some`, the renderer draws the
-    /// picker beneath the toolbar and the click handler routes to it.
     picker: Option<HsvPicker>,
-    /// While the user holds the left button after clicking inside the
-    /// picker, motion events keep updating the same region (Hue strip
-    /// or SV square) so dragging through the gradient feels live.
     picker_drag: Option<HsvHit>,
-    /// Stroke-width slider popup.
     width_popup: Option<WidthPopup>,
-    /// Snap-step slider popup — its own instance, intentionally not a
-    /// reskin of the width popup. It has its own renderer + hit-test
-    /// so the dotted preview can grow independently and a tweak to
-    /// the stroke slider can't accidentally bleed in.
     snap_popup: Option<SnapPopup>,
-    /// Bitmap of vertices the snap engine considered a hit during the
-    /// last `pointer-move`. Only used as a visual cue.
     snap_marker: Option<FPoint>,
-    /// Snap-grid spacing in screen pixels. The "snap" toolbar button
-    /// opens the same slider popup as the stroke width for editing this.
     snap_step: f32,
-    /// Persistent stroke colour kept *outside* the active tool so it
-    /// survives tool switches. The active tool is reseated to this
-    /// colour every time the tool changes.
+    /// Stroke colour kept across tool switches.
     current_color: crate::color::Color,
-    /// Same idea for stroke width.
     current_width: f32,
-    /// Persistent fill colour (used for closed-shape variants that draw
-    /// a filled interior).
     current_fill: Option<crate::color::Color>,
-    /// When the user opens the colour popup via hover, the renderer
-    /// shows the same `HsvPicker` until the cursor leaves the swatch.
     color_hover_at: Option<u64>,
-    /// Likewise for the width slider — opened by hovering the width chip.
     width_hover: bool,
-    /// Quick-access radial menu (opened with right-click). When `Some`
-    /// the renderer paints a ring of preset colour / width pills and
-    /// the click handler routes to it.
     radial: Option<RadialMenu>,
-    /// Drag/resize/rotate gizmo for the selected shape. Activated by
-    /// the new gizmo button in the selection decor.
     transform_drag: Option<TransformDrag>,
-    /// Per-pointer cursor management (lazy, lives next to the wl_pointer).
     cursor_ctx: Option<super::cursor::CursorContext>,
-    /// Cached so the cursor module can call `wl_compositor.create_surface`
-    /// without us threading it through every call.
     compositor: Option<WlCompositor>,
     pointer: Option<WlPointer>,
-    /// QueueHandle for spawning cursor / helper surfaces from inside a
-    /// `Dispatch` callback.
     qh: Option<QueueHandle<State>>,
 }
 
@@ -506,15 +404,11 @@ struct WlOutputInfo {
     wl_output: WlOutput,
     x: i32,
     y: i32,
-    /// Physical pixel size announced by `wl_output.mode`.
     mode_w: i32,
     mode_h: i32,
-    /// Compositor scale factor (wl_output.scale event).
     scale: i32,
-    /// Wayland transform enum value (0=Normal, 1=90, 2=180, 3=270, …).
     transform: i32,
-    /// True once `wl_output.done` arrived — i.e. all geometry events have
-    /// landed and this entry is safe to read.
+    /// True once `wl_output.done` arrived; geometry is safe to read.
     done: bool,
 }
 
@@ -539,11 +433,7 @@ struct Overlay {
     monitor: Monitor,
     configured: bool,
     size: (u32, u32),
-    /// Pool of SHM buffers — at least 2 for true double-buffering. Each
-    /// `BusyFlag` flips to `true` when we attach the buffer and back to
-    /// `false` when the compositor sends `wl_buffer.release`. Render picks
-    /// the first non-busy buffer (or allocates a new one if both are still
-    /// in flight).
+    /// Each `BusyFlag` flips on attach and off on `wl_buffer.release`.
     buffers: Vec<OverlayBuffer>,
     needs_redraw: bool,
     pointer_inside: bool,
@@ -567,10 +457,6 @@ struct ModState {
     meta: bool,
 }
 
-// ---------------------------------------------------------------------------
-// Rendering — paint pixels into the surface's wl_shm buffer.
-// ---------------------------------------------------------------------------
-
 fn render_overlay(idx: usize, shm: &WlShm, qh: &QueueHandle<State>, state: &mut State) {
     use std::sync::atomic::Ordering;
     let (w, h) = state.overlays[idx].size;
@@ -580,10 +466,8 @@ fn render_overlay(idx: usize, shm: &WlShm, qh: &QueueHandle<State>, state: &mut 
     let stride = w as usize * 4;
     let size = stride * h as usize;
 
-    // Drop any buffers whose size doesn't match the current surface size.
     state.overlays[idx].buffers.retain(|b| b.size == size);
 
-    // Pick a buffer the compositor isn't currently reading from.
     let buf_idx = state.overlays[idx]
         .buffers
         .iter()
@@ -591,8 +475,7 @@ fn render_overlay(idx: usize, shm: &WlShm, qh: &QueueHandle<State>, state: &mut 
     let buf_idx = match buf_idx {
         Some(i) => i,
         None => {
-            // Both buffers in flight — allocate a new one (capped at 3 to
-            // avoid unbounded growth on a stuck compositor).
+            // Cap buffer count so a stuck compositor doesn't grow unbounded.
             if state.overlays[idx].buffers.len() >= 3 {
                 tracing::trace!(
                     idx,
@@ -618,7 +501,8 @@ fn render_overlay(idx: usize, shm: &WlShm, qh: &QueueHandle<State>, state: &mut 
                 qh,
                 busy.clone(),
             );
-            let _ = file; // pool dup'd the fd
+            // pool dup'd the fd
+            let _ = file;
             state.overlays[idx].buffers.push(OverlayBuffer {
                 mmap,
                 wl_buffer,
@@ -630,11 +514,10 @@ fn render_overlay(idx: usize, shm: &WlShm, qh: &QueueHandle<State>, state: &mut 
         }
     };
 
-    // Paint. We take the OverlayBuffer out of the Vec to satisfy the borrow
-    // checker (paint needs &State; the mmap lives inside state.overlays).
+    // Pull the buffer out so paint can borrow &State alongside &mut mmap.
     let mut buf = state.overlays[idx].buffers.swap_remove(buf_idx);
     paint(idx, w, h, &mut buf.mmap, state);
-    // Mark busy *before* we attach + commit.
+    // Mark busy before attach+commit so the release race is harmless.
     buf.busy.store(true, Ordering::Release);
     let attached = buf.wl_buffer.clone();
     state.overlays[idx].buffers.push(buf);
@@ -656,18 +539,11 @@ fn shm_alloc(size: usize) -> Result<(File, MmapMut), String> {
     Ok((file, mmap))
 }
 
-/// Paint XRGB8888 pixels straight into the mmap. Layout matches what
-/// `wl_shm::Format::Xrgb8888` advertises: bytes `[B, G, R, X]` little
-/// endian.
+/// Paint XRGB8888 ([B,G,R,X] little-endian) into the mmap.
 fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
     let mon_bounds = state.overlays[idx].monitor.bounds();
     let bytes = mmap.as_mut();
 
-    // 1) Build the background + shapes in an RGBA scratch image, then blit
-    //    that into the SHM buffer (RGBA → BGRX). Doing this in RGBA space
-    //    lets us reuse `composite::flatten_with_preview` so the user sees
-    //    every shape — including the in-flight drag preview and any
-    //    pending text — *live* as they paint.
     let monitors_bb = MonitorRect::bounding(
         &state
             .overlays
@@ -690,26 +566,25 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
             }
         }
     }
-    // Apply every shape (committed + in-flight preview + pending text).
     crate::render::composite::flatten_with_preview(
         &mut rgba,
         &state.canvas,
         (mon_bounds.x(), mon_bounds.y()),
     );
 
-    // 2) Copy the RGBA scratch into the SHM buffer as BGRX in one tight loop.
     let raw = rgba.as_raw();
     for i in 0..(w * h) as usize {
         let s = i * 4;
-        bytes[s] = raw[s + 2]; // B
-        bytes[s + 1] = raw[s + 1]; // G
-        bytes[s + 2] = raw[s]; // R
-        bytes[s + 3] = 0xff; // X
+        bytes[s] = raw[s + 2];
+        bytes[s + 1] = raw[s + 1];
+        bytes[s + 2] = raw[s];
+        bytes[s + 3] = 0xff;
     }
 
-    // 2) Subtle dim outside the active region.
-    if let Some(region) = state.canvas.region() {
-        // Coordinates in monitor-local pixels.
+    // With no active region the whole monitor is dimmed so the overlay reads
+    // as engaged immediately; once a region exists only the outside is dimmed.
+    let dim = state.config.ui.background_dim;
+    let region_local = state.canvas.region().map(|region| {
         let r_x = (region.x() - mon_bounds.x()).max(0).min(w as i32);
         let r_y = (region.y() - mon_bounds.y()).max(0).min(h as i32);
         let r_w = ((region.x() + region.width() as i32) - mon_bounds.x())
@@ -720,50 +595,50 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
             .max(0)
             .min(h as i32)
             - r_y;
-        if r_w > 0 && r_h > 0 {
-            // Darken everything outside (r_x, r_y, r_w, r_h).
-            for y in 0..h as i32 {
-                for x in 0..w as i32 {
-                    let inside = x >= r_x && x < r_x + r_w && y >= r_y && y < r_y + r_h;
-                    if inside {
+        (r_x, r_y, r_w, r_h)
+    });
+    let visible_region = region_local.filter(|(_, _, rw, rh)| *rw > 0 && *rh > 0);
+    if dim > 0 {
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                if let Some((r_x, r_y, r_w, r_h)) = visible_region {
+                    if x >= r_x && x < r_x + r_w && y >= r_y && y < r_y + r_h {
                         continue;
                     }
-                    let d = (y as u32 * w * 4 + x as u32 * 4) as usize;
-                    bytes[d] = bytes[d].saturating_sub(80);
-                    bytes[d + 1] = bytes[d + 1].saturating_sub(80);
-                    bytes[d + 2] = bytes[d + 2].saturating_sub(80);
                 }
-            }
-            // Draw the rectangle outline in cyan.
-            for x in 0..r_w {
-                paint_pixel(bytes, w, h, (r_x + x) as u32, r_y as u32, [255, 255, 255]);
-                paint_pixel(
-                    bytes,
-                    w,
-                    h,
-                    (r_x + x) as u32,
-                    (r_y + r_h - 1) as u32,
-                    [255, 255, 255],
-                );
-            }
-            for y in 0..r_h {
-                paint_pixel(bytes, w, h, r_x as u32, (r_y + y) as u32, [255, 255, 255]);
-                paint_pixel(
-                    bytes,
-                    w,
-                    h,
-                    (r_x + r_w - 1) as u32,
-                    (r_y + y) as u32,
-                    [255, 255, 255],
-                );
+                let d = (y as u32 * w * 4 + x as u32 * 4) as usize;
+                bytes[d] = bytes[d].saturating_sub(dim);
+                bytes[d + 1] = bytes[d + 1].saturating_sub(dim);
+                bytes[d + 2] = bytes[d + 2].saturating_sub(dim);
             }
         }
     }
+    if let Some((r_x, r_y, r_w, r_h)) = visible_region {
+        let outline = state.config.ui.region_outline_color.to_rgb();
+        for x in 0..r_w {
+            paint_pixel(bytes, w, h, (r_x + x) as u32, r_y as u32, outline);
+            paint_pixel(
+                bytes,
+                w,
+                h,
+                (r_x + x) as u32,
+                (r_y + r_h - 1) as u32,
+                outline,
+            );
+        }
+        for y in 0..r_h {
+            paint_pixel(bytes, w, h, r_x as u32, (r_y + y) as u32, outline);
+            paint_pixel(
+                bytes,
+                w,
+                h,
+                (r_x + r_w - 1) as u32,
+                (r_y + y) as u32,
+                outline,
+            );
+        }
+    }
 
-    // 2.5) Snap grid (faint dots) — only visible while snap mode is on
-    //      AND there's an active editing region. Painting the grid over
-    //      the dimmed outside area is just visual noise; clipping to the
-    //      region keeps it focused on the canvas the user is editing.
     if state.snap_on {
         if let Some(region) = state.canvas.region() {
             let r_x = (region.x() - mon_bounds.x()).max(0);
@@ -783,26 +658,16 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
                     h,
                     state.snap_step,
                     (r_x, r_y, r_w as u32, r_h as u32),
-                    // The snapper rounds against *global* coords, so the
-                    // visual grid has to anchor to the same origin —
-                    // otherwise the dots and the actual snap targets
-                    // drift apart by `(mon.x() % step, mon.y() % step)`.
+                    // The grid must anchor to the same global origin as
+                    // snap_point or the dots drift from the snap targets.
                     (mon_bounds.x(), mon_bounds.y()),
                 );
             }
         }
     }
 
-    // 3) Selection decoration — dashed bounding box around the shape the
-    //    user has picked with the Pointer tool, plus a tiny "delete"
-    //    button. Drawn after the canvas but before the toolbar so the
-    //    toolbar can sit on top.
     draw_selection_decor(bytes, w, h, idx, state);
 
-    // 4) Floating toolbar — drawn on whichever overlay currently hosts the
-    //    selection, anchored *to the selection rectangle*. For Monitor /
-    //    Window modes (no rectangle yet) we anchor to the cursor overlay's
-    //    top-center so the user always has access to Confirm / Cancel.
     let main_layout = state.toolbar_layout_for(idx);
     let side_layout = state.side_toolbar_layout_for(idx);
     if let Some(layout) = main_layout.as_ref() {
@@ -812,7 +677,6 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
         layout.draw(bytes, w, h, state);
     }
     if main_layout.is_none() && state.overlays[idx].pointer_inside {
-        // Fall-back instruction line when there's no toolbar yet.
         draw_text(
             bytes,
             w,
@@ -828,15 +692,13 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
         );
     }
 
-    // 5) HSV colour picker popup (opt-in via the "MORE" button).
     if let Some(picker) = state.picker.as_ref() {
         if picker.overlay_idx == idx {
             draw_hsv_picker(bytes, w, h, picker);
         }
     }
 
-    // 5.4) Radial quick-access menu (right-click). Drawn before the
-    //      width popup so the slider sits on top if both somehow stack.
+    // Drawn before the width popup so the slider sits on top if both stack.
     if let Some(r) = state.radial.as_ref() {
         if r.overlay_idx == idx {
             let palette = &state.config.palette.color_palette;
@@ -844,27 +706,32 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
             let lx = state.pointer_pos_global.x as i32 - mon.x();
             let ly = state.pointer_pos_global.y as i32 - mon.y();
             let hover_c = r.slot_color(palette.len(), lx, ly);
-            let hover_w = r.slot_width(lx, ly, palette.len());
-            draw_radial_menu(bytes, w, h, r, palette, hover_c, hover_w);
+            let hover_w = r.slot_width(lx, ly, palette.len(), state.config.ui.radial_widths.len());
+            draw_radial_menu(
+                bytes,
+                w,
+                h,
+                r,
+                palette,
+                &state.config.ui.radial_widths,
+                hover_c,
+                hover_w,
+            );
         }
     }
 
-    // 5.5) Width slider popup.
     if let Some(wp) = state.width_popup.as_ref() {
         if wp.overlay_idx == idx {
             draw_width_popup(bytes, w, h, wp, state.active_tool_width());
         }
     }
 
-    // 5.55) Snap-step slider popup — its own widget.
     if let Some(sp) = state.snap_popup.as_ref() {
         if sp.overlay_idx == idx {
             draw_snap_popup(bytes, w, h, sp, state.snap_step);
         }
     }
 
-    // 5.6) Snap-target marker (a small white cross that shows up at the
-    //      snapped point so the user can tell the grid/vertex caught it).
     if state.snap_on {
         if let Some(p) = state.snap_marker {
             let mon = state.overlays[idx].monitor.bounds();
@@ -874,7 +741,6 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
                 paint_pixel(bytes, w, h, (lx + d) as u32, ly as u32, [255, 255, 255]);
                 paint_pixel(bytes, w, h, lx as u32, (ly + d) as u32, [255, 255, 255]);
             }
-            // 1px outline so it's visible on white backgrounds too.
             for d in -5..=5 {
                 paint_pixel(bytes, w, h, (lx + d) as u32, (ly - 1) as u32, [0, 0, 0]);
                 paint_pixel(bytes, w, h, (lx + d) as u32, (ly + 1) as u32, [0, 0, 0]);
@@ -884,15 +750,8 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
         }
     }
 
-    // 5.7) Constrain guides removed — they didn't help in practice; the
-    //      Shift modifier is still honoured by the canvas, we just don't
-    //      paint the reference rays anymore.
-
-    // 6) Magnifier HUD — drawn last so it sits above every other overlay
-    //    element (toolbar, picker, etc.) when the user toggles it on.
     draw_magnifier(bytes, w, h, idx, state);
 
-    // 7) Pipette / snap mode hint, top-left of the active overlay.
     if state.overlays[idx].pointer_inside {
         let mut hints = Vec::<&str>::new();
         if state.pipette_pending {
@@ -916,26 +775,17 @@ fn paint_pixel(bytes: &mut [u8], w: u32, h: u32, x: u32, y: u32, rgb: [u8; 3]) {
         return;
     }
     let d = (y * w * 4 + x * 4) as usize;
-    bytes[d] = rgb[2]; // B
-    bytes[d + 1] = rgb[1]; // G
-    bytes[d + 2] = rgb[0]; // R
+    bytes[d] = rgb[2];
+    bytes[d + 1] = rgb[1];
+    bytes[d + 2] = rgb[0];
     bytes[d + 3] = 0xff;
 }
 
-// (Floating toolbar implementation lives at the bottom of this file.)
-
-/// Draw a string with the 5x7 bitmap font we already embedded in
-/// `composite::glyph_bits`. We can't reuse `composite::draw_text` directly
-/// because it operates on `image::RgbaImage`; this version writes straight
-/// to the `wl_shm` BGRX buffer.
 fn draw_text(bytes: &mut [u8], w: u32, h: u32, x: u32, y: u32, text: &str, rgb: [u8; 3]) {
     draw_text_sized(bytes, w, h, x, y, text, rgb, 13.0);
 }
 
-/// Draw `text` with Hack-Regular at `px` pixel size, anchored at top-left
-/// `(x, y)` in monitor-local coordinates. Per-glyph coverage is alpha-
-/// blended against the existing BGRX bytes so anti-aliased edges look
-/// clean over both light and dark backgrounds.
+/// Draw `text` at `(x, y)`, alpha-blending each glyph against the BGRX buffer.
 fn draw_text_sized(
     bytes: &mut [u8],
     w: u32,
@@ -953,7 +803,6 @@ fn draw_text_sized(
         let glyph = match super::font::glyph_for(ch, px) {
             Some(g) => g,
             None => {
-                // Whitespace or a missing glyph — advance and continue.
                 pen_x += super::font::measure(&ch.to_string(), px);
                 continue;
             }
@@ -983,10 +832,6 @@ fn draw_text_sized(
         pen_x += glyph.advance;
     }
 }
-
-// ---------------------------------------------------------------------------
-// Dispatch impls
-// ---------------------------------------------------------------------------
 
 impl Dispatch<WlRegistry, GlobalListContents> for State {
     fn event(
@@ -1061,8 +906,7 @@ impl Dispatch<WlPointer, ()> for State {
                     state.overlays[i].pointer_inside = true;
                     state.overlays[i].needs_redraw = true;
                     update_pointer(state, i, surface_x, surface_y);
-                    // Remember the serial; every subsequent set_cursor
-                    // request has to echo it back to the compositor.
+                    // The compositor needs this serial on every set_cursor.
                     if let Some(ctx) = state.cursor_ctx.as_mut() {
                         ctx.enter_serial = serial;
                         ctx.invalidate();
@@ -1099,23 +943,17 @@ impl Dispatch<WlPointer, ()> for State {
             } => {
                 if let Some(i) = state.active_overlay {
                     update_pointer(state, i, surface_x, surface_y);
-                    // Picker drag: dragging through the hue strip or the
-                    // SV square updates the colour live without falling
-                    // through into the canvas.
                     if let Some(hit) = state.picker_drag {
                         if let Some(p) = state.picker.as_ref() {
                             let mon = state.overlays[i].monitor.bounds();
                             let lx = state.pointer_pos_global.x as i32 - mon.x();
                             let ly = state.pointer_pos_global.y as i32 - mon.y();
-                            // Allow dragging slightly outside the bounds so
-                            // the marker can be pinned to an edge.
                             let _ = p;
                             state.apply_picker_hit(hit, lx, ly);
                             mark_all_redraw(state);
                             return;
                         }
                     }
-                    // Width-slider drag: same idea — keep updating value.
                     if state.width_popup.as_ref().is_some_and(|w| w.dragging) {
                         let mon = state.overlays[i].monitor.bounds();
                         let lx = state.pointer_pos_global.x as i32 - mon.x();
@@ -1124,7 +962,6 @@ impl Dispatch<WlPointer, ()> for State {
                         mark_all_redraw(state);
                         return;
                     }
-                    // Snap-slider drag.
                     if state.snap_popup.as_ref().is_some_and(|w| w.dragging) {
                         let mon = state.overlays[i].monitor.bounds();
                         let lx = state.pointer_pos_global.x as i32 - mon.x();
@@ -1133,20 +970,13 @@ impl Dispatch<WlPointer, ()> for State {
                         mark_all_redraw(state);
                         return;
                     }
-                    // Snap the global pointer to the nearest 10-px grid +
-                    // shape vertex when the user has the SNAP toggle on.
-                    // The raw position stays untouched in
-                    // `state.pointer_pos_global` so the cursor visual
-                    // tracks the real mouse position; only the position
-                    // fed to the canvas is snapped.
+                    // Snap only the canvas-facing position; pointer_pos_global
+                    // keeps the raw cursor so the system cursor still tracks it.
                     let (p, snap_hit) = if state.snap_on {
                         let snapped =
                             snap_point(&state.canvas, state.pointer_pos_global, state.snap_step);
                         let dx = snapped.x - state.pointer_pos_global.x;
                         let dy = snapped.y - state.pointer_pos_global.y;
-                        // Only show the marker when the snap actually moved
-                        // the point — otherwise the cross would flash
-                        // constantly under the cursor on every motion.
                         let hit = if (dx * dx + dy * dy).sqrt() > 0.5 {
                             Some(snapped)
                         } else {
@@ -1158,38 +988,15 @@ impl Dispatch<WlPointer, ()> for State {
                     };
                     state.snap_marker = snap_hit;
                     state.canvas.handle(CanvasEvent::PointerMove(p));
-                    // Cursor swap is cheap (no-op when the name didn't
-                    // change) so it's safe on every motion event.
                     refresh_cursor(state);
-                    // *Only* repaint when a drag is in progress. Hover-only
-                    // mouse movement changes nothing visible, and triggering
-                    // a full SHM redraw on every motion event was the source
-                    // of the user-reported flicker. When dragging we mark
-                    // *every* overlay dirty: the region rectangle, the dim
-                    // mask and any cross-monitor stroke have to update on
-                    // every screen, not just the one the cursor is on.
-                    // Active transform-gizmo drag — translate pointer
-                    // delta into a scale factor / rotation angle and
-                    // commit it back onto the selected shape. Eats the
-                    // motion so the canvas's normal drag handler doesn't
-                    // also fire.
                     if state.transform_drag.is_some() {
                         state.apply_transform_drag();
                         mark_all_redraw(state);
                         return;
                     }
-                    // Hover-driven popup management: when the pointer
-                    // sits on the persistent colour swatch / width chip /
-                    // snap-step chip we open the matching popup; when it
-                    // leaves both the chip and the popup we close any
-                    // hover-opened popup. Click-pinned popups are left
-                    // alone — those stay open until clicked away.
                     state.update_hover_popups();
-                    // Repaint on motion when a drag is in progress *or*
-                    // when a cursor-tracking HUD is on (magnifier / pipette
-                    // overlay). Pure hover is otherwise skipped because a
-                    // full SHM redraw on every motion event is what caused
-                    // the earlier flicker.
+                    // Hover-only motion is skipped here; a full SHM redraw on
+                    // every motion event caused a visible flicker.
                     if state.canvas.is_drag_active()
                         || state.magnifier_on
                         || state.pipette_pending
@@ -1206,27 +1013,19 @@ impl Dispatch<WlPointer, ()> for State {
                 state: btn_state,
                 ..
             } => {
-                // Right-click (BTN_RIGHT = 0x111):
-                //   * commits the in-flight polygon when one's in progress
-                //   * otherwise opens the quick-access radial menu under
-                //     the cursor (colour swatches + width presets).
+                // BTN_RIGHT (0x111): commit polygon, or toggle radial menu.
                 if button == 0x111 {
                     if matches!(btn_state, WEnum::Value(ButtonState::Pressed)) {
                         if state.canvas.is_drawing_polygon() {
                             state.canvas.commit_polygon();
                             mark_all_redraw(state);
                         } else if state.radial.is_some() {
-                            // Toggle off when already open.
                             state.radial = None;
                             mark_all_redraw(state);
                         } else if let Some(i) = state.active_overlay {
                             let mon = state.overlays[i].monitor.bounds();
                             let lx = state.pointer_pos_global.x as i32 - mon.x();
                             let ly = state.pointer_pos_global.y as i32 - mon.y();
-                            // Compute the menu rect for the current
-                            // palette and clamp it so it stays fully on
-                            // the overlay even when the cursor is near
-                            // a corner.
                             let palette_len = state.config.palette.color_palette.len();
                             let probe = RadialMenu {
                                 origin: (0, 0),
@@ -1251,9 +1050,6 @@ impl Dispatch<WlPointer, ()> for State {
                 }
                 let pressed = matches!(btn_state, WEnum::Value(ButtonState::Pressed));
                 if !pressed {
-                    // End any active popup drag regardless of where the
-                    // release lands — releasing the button is the user's
-                    // way of locking in the value.
                     state.picker_drag = None;
                     if let Some(wp) = state.width_popup.as_mut() {
                         wp.dragging = false;
@@ -1261,8 +1057,6 @@ impl Dispatch<WlPointer, ()> for State {
                     if let Some(sp) = state.snap_popup.as_mut() {
                         sp.dragging = false;
                     }
-                    // Commit the gizmo drag: leave the shape in its
-                    // final transformed state and snapshot the history.
                     if state.transform_drag.is_some() {
                         state.transform_drag = None;
                         state.canvas.snapshot_history();
@@ -1270,41 +1064,29 @@ impl Dispatch<WlPointer, ()> for State {
                     }
                 }
                 if let Some(i) = state.active_overlay {
-                    // If the click landed on a toolbar button, treat it as
-                    // a toolbar action and *don't* feed it to the canvas
-                    // (otherwise we'd start a stray brush stroke on the
-                    // toolbar's own pixels).
                     if pressed {
-                        // Pipette: when armed, the next left click samples
-                        // the background pixel under the cursor and uses
-                        // it as the new stroke colour. Does *not* commit
-                        // any shape.
                         if state.pipette_pending {
                             sample_pipette(state);
                             state.pipette_pending = false;
                             mark_all_redraw(state);
                             return;
                         }
-                        // Quick-access menu: rectangular buttons make
-                        // slot hit-tests reliable. Clicks on a colour or
-                        // width cell commit + close; clicks anywhere
-                        // else inside the panel are eaten (so they don't
-                        // start a stroke through the menu).
                         if state.radial.is_some() {
                             let mon = state.overlays[i].monitor.bounds();
                             let lx = state.pointer_pos_global.x as i32 - mon.x();
                             let ly = state.pointer_pos_global.y as i32 - mon.y();
                             let palette_len = state.config.palette.color_palette.len();
+                            let widths_len = state.config.ui.radial_widths.len();
                             let r = state.radial.as_ref().unwrap();
                             let inside = r.contains(palette_len, lx, ly);
                             let color_slot = r.slot_color(palette_len, lx, ly);
-                            let width_slot = r.slot_width(lx, ly, palette_len);
+                            let width_slot = r.slot_width(lx, ly, palette_len, widths_len);
                             if let Some(slot) = color_slot {
                                 let c = state.config.palette.color_palette[slot];
                                 state.apply_pick_color(c);
                                 state.radial = None;
                             } else if let Some(slot) = width_slot {
-                                let w = RADIAL_WIDTHS[slot];
+                                let w = state.config.ui.radial_widths[slot];
                                 state.update_current_width(w);
                                 state.radial = None;
                             } else if !inside {
@@ -1313,13 +1095,6 @@ impl Dispatch<WlPointer, ()> for State {
                             mark_all_redraw(state);
                             return;
                         }
-                        // HSV colour picker — any click inside the
-                        // popup's outer rect is consumed (so it doesn't
-                        // fall through to the canvas and start a stroke),
-                        // and clicks land on one of the interactive
-                        // regions (Hue/Sv) apply a hue/sat-val change.
-                        // Clicking also pins the picker so it stays open
-                        // even when the cursor leaves the chip column.
                         if state.pointer_in_picker() {
                             if let Some((hit, lx, ly)) = state.hit_picker() {
                                 state.apply_picker_hit(hit, lx, ly);
@@ -1331,9 +1106,6 @@ impl Dispatch<WlPointer, ()> for State {
                             mark_all_redraw(state);
                             return;
                         }
-                        // Stroke-width slider eats any click inside its
-                        // outer rect, pins, and starts a drag if the
-                        // click was on the slider track.
                         if state.pointer_in_width_popup() {
                             let (lx, ly) = state.pointer_local(i);
                             state.apply_width_slider(lx, ly);
@@ -1344,7 +1116,6 @@ impl Dispatch<WlPointer, ()> for State {
                             mark_all_redraw(state);
                             return;
                         }
-                        // Snap-step slider — separate widget, same idea.
                         if state.pointer_in_snap_popup() {
                             let (lx, ly) = state.pointer_local(i);
                             if state.pointer_on_snap_track() {
@@ -1364,20 +1135,11 @@ impl Dispatch<WlPointer, ()> for State {
                             mark_all_redraw(state);
                             return;
                         }
-                        // Selection action bar (raise / lower / gizmo /
-                        // delete) takes precedence over the canvas's
-                        // normal click handling so the small icons remain
-                        // reachable even when the click would otherwise
-                        // land on the shape itself.
                         if let Some(action) = pointer_on_selection_button(state) {
                             state.apply_button(action);
                             mark_all_redraw(state);
                             return;
                         }
-                        // Gizmo handles: the bottom-right corner box
-                        // starts a uniform scale, the top-centre pin
-                        // starts a rotation. Two separate handles keep
-                        // the two operations discoverable.
                         if let Some((kind, _shape_rect)) = pointer_on_gizmo_handle(state) {
                             if let Some(id) = state.canvas.selected() {
                                 let shape =
@@ -1415,11 +1177,7 @@ impl Dispatch<WlPointer, ()> for State {
                             return;
                         }
                     }
-                    // Clicking somewhere that isn't a popup, chip, gizmo
-                    // handle or selection button closes any pinned
-                    // popups before the canvas sees the click. Keeps
-                    // popups from sticking around after the user has
-                    // moved on to drawing.
+                    // Click in empty space dismisses any pinned popups.
                     if pressed {
                         if let Some(p) = state.picker.as_ref() {
                             if p.pinned {
@@ -1454,8 +1212,6 @@ impl Dispatch<WlPointer, ()> for State {
                 }
             }
             wl_pointer::Event::Axis { axis, value, .. } => {
-                // Vertical scroll over the width button steps the active
-                // tool's stroke width — 1 unit per notch, 5 with Shift.
                 if !matches!(axis, WEnum::Value(wl_pointer::Axis::VerticalScroll)) {
                     return;
                 }
@@ -1463,8 +1219,7 @@ impl Dispatch<WlPointer, ()> for State {
                     return;
                 }
                 let step = if state.mods.shift { 5.0 } else { 1.0 };
-                // The protocol sends `value` in surface units. Positive =
-                // down (smaller width), negative = up (larger width).
+                // Positive value = scroll down, which decreases the width.
                 let delta = if value > 0.0 { -step } else { step };
                 state.step_active_tool_width(delta);
                 mark_all_redraw(state);
@@ -1493,22 +1248,7 @@ fn refresh_cursor(state: &mut State) {
     ) else {
         return;
     };
-    // We need a QueueHandle to create surfaces. We borrow it from the
-    // pointer (proxies cache their queue assignment).
-    let _ = (&comp, &ptr); // borrow-check appeasement
-                           // The compositor / qh are static for the duration of the run. Build a
-                           // throwaway QueueHandle by getting it from any tracked proxy.
-                           // Wayland-client proxies don't expose their qh directly, so we go via
-                           // the connection: cursor surfaces are attached to the data queue, and
-                           // every dispatch path lives there.
-                           // In practice we already passed `qh` when creating each overlay; we
-                           // reach it via `pointer`'s queue using the convention that
-                           // proxies created with the same `&qh` share that handle.
-                           //
-                           // The simplest path is: thread the QueueHandle into State.
-                           //
-                           // …but for the smallest diff today we delegate via the `dispatch` qh
-                           // captured at startup. See: `State::qh_for_cursor`.
+    let _ = (&comp, &ptr);
     if let Some(qh) = state.qh.as_ref() {
         ctx.apply(&ptr, &comp, qh, desired);
     }
@@ -1520,11 +1260,7 @@ fn update_pointer(state: &mut State, overlay_idx: usize, sx: f64, sy: f64) {
     state.pointer_pos_global = FPoint::new(mon.x() as f32 + sx as f32, mon.y() as f32 + sy as f32);
 }
 
-// evdev keycodes the protocol delivers (Linux input event codes). We skip
-// xkbcommon for now — it adds a hard `-lxkbcommon` linker requirement and
-// for an overlay's handful of shortcuts the layout-independent codes are
-// good enough. (Layouts where C/S aren't on the AZERTY-equivalent of QWERTY
-// `C`/`S` keys will need the xkbcommon path later.)
+// Linux evdev keycodes; we skip xkbcommon to avoid the linker dependency.
 mod ev {
     pub const ESC: u32 = 1;
     pub const ENTER: u32 = 28;
@@ -1564,24 +1300,12 @@ impl Dispatch<WlKeyboard, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            wl_keyboard::Event::Keymap { .. } => {
-                // We deliberately ignore the keymap and use raw evdev
-                // keycodes for the small set of shortcuts the overlay
-                // recognises. See the `ev::*` constants above.
-            }
+            wl_keyboard::Event::Keymap { .. } => {}
             wl_keyboard::Event::Modifiers { mods_depressed, .. } => {
-                // wl_keyboard.modifiers gives us the xkb modifier mask,
-                // but we just need the rough flags. Reading directly from
-                // pressed-down keys (see Key event below) is more robust
-                // for the overlay's needs. As a backup we still parse the
-                // mask: bit 0 = Shift, bit 2 = Ctrl, bit 3 = Alt, bit 6 =
-                // Super (default xkb-default layout).
                 state.mods.shift = (mods_depressed & 0x01) != 0;
                 state.mods.ctrl = (mods_depressed & 0x04) != 0;
                 state.mods.alt = (mods_depressed & 0x08) != 0;
                 state.mods.meta = (mods_depressed & 0x40) != 0;
-                // Forward Shift to the canvas so two-point drags honour
-                // the constrain modifier (square / circle / 45° line).
                 state.canvas.set_constrain(state.mods.shift);
             }
             wl_keyboard::Event::Key {
@@ -1590,8 +1314,8 @@ impl Dispatch<WlKeyboard, ()> for State {
                 ..
             } => {
                 let pressed = matches!(key_state, WEnum::Value(KeyState::Pressed));
-                // Track modifier press/release locally too — the
-                // `Modifiers` event sometimes lags behind a chord.
+                // Track modifier press/release here too — wl_keyboard.modifiers
+                // can lag behind the keys event for a chord.
                 match key {
                     ev::LCTRL | ev::RCTRL => state.mods.ctrl = pressed,
                     ev::LSHIFT | ev::RSHIFT => {
@@ -1608,7 +1332,6 @@ impl Dispatch<WlKeyboard, ()> for State {
                 match key {
                     ev::ESC => {
                         if state.canvas.is_typing_text() {
-                            // Discard the in-flight text but keep the overlay open.
                             state.canvas.handle(CanvasEvent::TextCancel);
                             mark_all_redraw(state);
                         } else if state.pipette_pending {
@@ -1624,21 +1347,15 @@ impl Dispatch<WlKeyboard, ()> for State {
                     }
                     ev::ENTER | ev::KP_ENTER => {
                         if state.canvas.is_typing_text() {
-                            // Commit the text, stay in the overlay.
                             state.canvas.handle(CanvasEvent::TextCommit);
                             mark_all_redraw(state);
                         } else if state.canvas.is_drawing_polygon() {
-                            // Close + commit the polygon, stay in the
-                            // overlay for further edits.
                             state.canvas.commit_polygon();
                             mark_all_redraw(state);
                         } else {
                             confirm(state);
                         }
                     }
-                    // Ctrl+Shift+Backspace clears the canvas. The single
-                    // backspace stays bound to Text-mode backspace so the
-                    // text tool keeps working.
                     ev::BACKSPACE if state.mods.ctrl && state.mods.shift => {
                         state.canvas.clear_shapes();
                         mark_all_redraw(state);
@@ -1665,9 +1382,6 @@ impl Dispatch<WlKeyboard, ()> for State {
                         state.canvas.handle(CanvasEvent::Redo);
                         mark_all_redraw(state);
                     }
-                    // Layer order — matches the convention used by Figma,
-                    // Photoshop, Inkscape (Ctrl+] forwards, Ctrl+[ backwards).
-                    // Shift bumps to top / bottom.
                     ev::RBRACKET if state.mods.ctrl => {
                         if state.mods.shift {
                             state.canvas.raise_to_top();
@@ -1684,26 +1398,18 @@ impl Dispatch<WlKeyboard, ()> for State {
                         }
                         mark_all_redraw(state);
                     }
-                    // Pipette — next click samples the background pixel
-                    // under the cursor as the new stroke colour. Esc
-                    // earlier in this match already cancels it.
                     ev::P if !state.mods.ctrl => {
                         state.pipette_pending = !state.pipette_pending;
                         mark_all_redraw(state);
                     }
-                    // Magnifier HUD.
                     ev::M if !state.mods.ctrl => {
                         state.magnifier_on = !state.magnifier_on;
                         mark_all_redraw(state);
                     }
-                    // Grid + vertex snapping.
                     ev::G if !state.mods.ctrl => {
                         state.snap_on = !state.snap_on;
                         mark_all_redraw(state);
                     }
-                    // Scale the selected shape — `=` (with shift = `+`) makes
-                    // it bigger, `-` makes it smaller. 10% steps; with Shift
-                    // we bump to 25% for coarse adjustments.
                     ev::EQUAL => {
                         let f = if state.mods.shift { 1.25 } else { 1.10 };
                         state.canvas.scale_selected(f);
@@ -1714,8 +1420,6 @@ impl Dispatch<WlKeyboard, ()> for State {
                         state.canvas.scale_selected(f);
                         mark_all_redraw(state);
                     }
-                    // Rotate the selected shape. `,` rotates CCW, `.` CW.
-                    // 5° steps by default; 45° with Shift.
                     ev::COMMA => {
                         let deg = if state.mods.shift { 45.0 } else { 5.0 };
                         state.canvas.rotate_selected(-(deg as f32).to_radians());
@@ -1744,7 +1448,6 @@ fn confirm(state: &mut State) {
     let region = state.canvas.region();
     let outcome = match state.runtime_mode {
         SelectorMode::Monitor | SelectorMode::AnyOf if region.is_none() => {
-            // Pick the monitor under the pointer.
             state.active_overlay.map(|i| Outcome::Monitor {
                 monitor: state.overlays[i].monitor.id(),
                 rect: state.overlays[i].monitor.bounds(),
@@ -1834,7 +1537,6 @@ impl Dispatch<WlOutput, u32> for State {
     }
 }
 
-// Stateless proxies — no events we care about.
 delegate_noop!(State: ignore WlCompositor);
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: ignore WlShmPool);
@@ -1849,43 +1551,22 @@ impl Dispatch<WlBuffer, BusyFlag> for State {
     ) {
         use std::sync::atomic::Ordering;
         if matches!(event, wayland_client::protocol::wl_buffer::Event::Release) {
-            // Compositor finished reading — buffer is safe to overwrite.
             busy.store(false, Ordering::Release);
         }
     }
 }
 delegate_noop!(State: ignore ZwlrLayerShellV1);
 
-// Silence: HashMap of monitor-by-name kept around for future use.
 #[allow(dead_code)]
 fn _silence_map(_: HashMap<u32, ()>) {}
 
-// Silence: Write trait kept around for any future SHM debug dump.
 #[allow(dead_code)]
 fn _silence_write(_: &mut dyn Write) {}
 
-// Silence Instant import (kept for future redraw throttling).
 #[allow(dead_code)]
 fn _silence_instant() -> Instant {
     Instant::now()
 }
-
-// ============================================================================
-// Floating toolbar — CPU-rendered, anchored to the live selection.
-// ============================================================================
-//
-// The toolbar is *anchored* to whatever's currently selected:
-//
-//   * Area / AnyOf mode with a rectangle ≥ 2×2 → toolbar floats just above
-//     the rectangle (or just below it when there's no room above), centred
-//     horizontally on the rectangle. Updates on every drag event.
-//   * Monitor mode → top-centre of the overlay under the cursor.
-//   * Window mode → top-centre of the overlay under the cursor.
-//   * No selection yet → no toolbar (just the hint line).
-//
-// Buttons are plain coloured rectangles painted directly into the wl_shm
-// buffer; hit-tests are done in monitor-local pixel coordinates against
-// the same rects. No GPU, no widget toolkit.
 
 const TB_PAD_X: i32 = 8;
 const TB_PAD_Y: i32 = 6;
@@ -1898,26 +1579,16 @@ const TB_GAP_FROM_REGION: i32 = 14;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ButtonAction {
     SelectTool(usize),
-    /// Same as `SelectTool` but also turns fill mode on so the user gets
-    /// the filled variant of a closed shape.
+    /// Pick a tool and switch fill mode on for closed shapes.
     SelectToolFilled(usize),
-    /// Wipe every committed shape from the canvas.
     ClearAll,
-    /// Open / close the HSV custom colour picker popup.
     TogglePicker,
-    /// Open / close the stroke-width slider popup.
     ToggleWidthPopup,
-    /// Open / close the snap-step slider popup (reuses the same widget).
     ToggleSnapPopup,
-    /// Raise the selected shape one layer.
     RaiseSelected,
-    /// Lower the selected shape one layer.
     LowerSelected,
-    /// Toggle the snap-to-grid mode.
     ToggleSnap,
-    /// Toggle the magnifier HUD.
     ToggleMagnifier,
-    /// Arm the pipette so the next click samples a colour.
     TogglePipette,
     DeleteSelected,
     Undo,
@@ -1928,7 +1599,6 @@ pub(crate) enum ButtonAction {
     Save,
 }
 
-/// One of the small CPU-drawn icons rendered on tool / action buttons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ToolbarIcon {
     Pointer,
@@ -1951,53 +1621,37 @@ pub(crate) enum ToolbarIcon {
     Confirm,
     Copy,
     Save,
-    /// Solid square painted with the current colour (used by the
-    /// persistent colour-swatch button).
     ColorSwatch,
-    /// Tiny clear-all icon.
     Clear,
-    /// Pipette / eyedropper icon.
     Pipette,
-    /// Snap-to-grid icon (the grid).
     Snap,
-    /// Magnifier (a lens with a handle).
     Magnifier,
-    /// Raise (front) chevron.
     Raise,
-    /// Lower (back) chevron.
     Lower,
-    /// Trash can — used for "delete selected".
     Trash,
-    /// Diagonal arrows — scale handle in the selection decor.
     GizmoScale,
-    /// Curved arrow — rotate handle in the selection decor.
     GizmoRotate,
 }
 
+type Shape = (i32, i32, u32, u32);
+
 pub(crate) struct ToolbarButton {
-    /// Rect in MONITOR-LOCAL pixels (origin top-left of the overlay).
-    pub rect: (i32, i32, u32, u32),
+    /// Rect in monitor-local pixels.
+    pub rect: Shape,
     pub action: ButtonAction,
-    /// Optional icon — drawn centered inside the button.
     pub icon: Option<ToolbarIcon>,
-    /// Optional text label — drawn centered when no icon is set.
-    /// `Cow` so callers can supply either a `&'static str` constant or a
-    /// dynamically formatted string (e.g. the stroke-width readout).
     pub label: std::borrow::Cow<'static, str>,
     pub tint: Option<[u8; 3]>,
     pub active: bool,
 }
 
 pub(crate) struct ToolbarLayout {
-    /// Monitor-local rect for the toolbar background.
-    bg: (i32, i32, u32, u32),
+    bg: Shape,
     buttons: Vec<ToolbarButton>,
 }
 
 impl ToolbarLayout {
-    /// Rect of the button whose action matches `action`, if any. The
-    /// hover engine uses this to compute the chip↔popup corridor.
-    fn button_rect_for(&self, action: ButtonAction) -> Option<(i32, i32, u32, u32)> {
+    fn button_rect_for(&self, action: ButtonAction) -> Option<Shape> {
         self.buttons
             .iter()
             .find(|b| b.action == action)
@@ -2014,18 +1668,30 @@ impl ToolbarLayout {
         None
     }
 
-    fn draw(&self, bytes: &mut [u8], w: u32, h: u32, _state: &State) {
-        // Background panel.
-        fill_rect_bytes(bytes, w, h, self.bg, [22, 22, 24]);
-        // Subtle 1px border.
-        outline_rect(bytes, w, h, self.bg, [80, 80, 84]);
+    fn draw(&self, bytes: &mut [u8], w: u32, h: u32, state: &State) {
+        let chrome = &state.config.ui.chrome;
+        let panel = chrome.toolbar_bg.to_rgb();
+        let border = chrome.toolbar_border.to_rgb();
+        let fg = chrome.toolbar_fg.to_rgb();
+        let active = chrome.button_active_bg.to_rgb();
+        let active_border = chrome.button_active_border.to_rgb();
+        let button = chrome.button_bg.to_rgb();
+        let darken = |rgb: [u8; 3], by: u8| {
+            [
+                rgb[0].saturating_sub(by),
+                rgb[1].saturating_sub(by),
+                rgb[2].saturating_sub(by),
+            ]
+        };
+        fill_rect_bytes(bytes, w, h, self.bg, panel);
+        outline_rect(bytes, w, h, self.bg, border);
 
         for b in &self.buttons {
             let (rx, ry, rw, rh) = b.rect;
             let fill = if b.active {
-                [60, 110, 200]
+                active
             } else {
-                b.tint.unwrap_or([42, 42, 46])
+                b.tint.unwrap_or(button)
             };
             fill_rect_bytes(bytes, w, h, (rx, ry, rw, rh), fill);
             outline_rect(
@@ -2034,32 +1700,21 @@ impl ToolbarLayout {
                 h,
                 (rx, ry, rw, rh),
                 if b.active {
-                    [180, 220, 255]
+                    active_border
                 } else {
-                    [70, 70, 76]
+                    darken(border, 10)
                 },
             );
-            // Prefer the icon over the text label when one is supplied.
             if let Some(icon) = b.icon {
                 let cx = rx + rw as i32 / 2;
                 let cy = ry + rh as i32 / 2;
-                draw_icon(bytes, w, h, cx, cy, icon, [240, 240, 240]);
+                draw_icon(bytes, w, h, cx, cy, icon, fg);
             } else if !b.label.is_empty() {
-                // The chip uses the TTF renderer (`draw_text` →
-                // Hack-Regular at 13 px), so we have to measure the
-                // text in that font — not the old 5×7 bitmap. With
-                // the bitmap-derived width the label drifted to the
-                // left edge of the chip.
                 let label = b.label.as_ref();
                 let px = 13.0;
                 let text_w = super::font::measure(label, px).ceil() as i32;
-                // Approximate cap height — Hack at 13 px draws roughly
-                // 9 px tall caps with a small ascent above the baseline.
                 let text_h = (px * 0.75) as i32;
                 let tx = rx + (rw as i32 - text_w) / 2;
-                // draw_text anchors at the top-left of the glyph cell
-                // (y is the *top* of the bounding box, not the baseline),
-                // so the vertical centring is just (rh - text_h) / 2.
                 let ty = ry + (rh as i32 - text_h) / 2;
                 draw_text(
                     bytes,
@@ -2068,20 +1723,15 @@ impl ToolbarLayout {
                     tx.max(rx + 2) as u32,
                     ty.max(ry + 2) as u32,
                     label,
-                    [240, 240, 240],
+                    fg,
                 );
             }
         }
     }
 }
 
-/// CPU-draw a 16×16-ish icon centered on (cx, cy). The shapes are kept
-/// intentionally simple — straight lines, filled rects, a small circle —
-/// so users can recognise the tool without needing a font pack on the
-/// system.
+/// CPU-draw a small icon centred on `(cx, cy)`.
 fn draw_icon(bytes: &mut [u8], w: u32, h: u32, cx: i32, cy: i32, kind: ToolbarIcon, rgb: [u8; 3]) {
-    // Try the user-supplied SVG first; fall back to the built-in geometry
-    // when the placeholder is still empty or the SVG fails to parse.
     if let Some(raster) = super::icons::rasterise(kind, rgb) {
         blit_icon(bytes, w, h, cx, cy, raster);
         return;
@@ -2115,7 +1765,6 @@ fn blit_icon(
                 continue;
             }
             let d = (dy * w + dx) as usize * 4;
-            // Source-over against existing BGRX.
             let inv = 255 - a as u16;
             bytes[d] = ((b as u16 * a as u16 + bytes[d] as u16 * inv) / 255) as u8;
             bytes[d + 1] = ((g as u16 * a as u16 + bytes[d + 1] as u16 * inv) / 255) as u8;
@@ -2134,10 +1783,9 @@ fn draw_icon_fallback(
     kind: ToolbarIcon,
     rgb: [u8; 3],
 ) {
-    let s = 7; // half-size of the icon bounding box
+    let s = 7;
     match kind {
         ToolbarIcon::Pointer => {
-            // Arrowhead pointing up-left.
             for i in 0..=s {
                 paint_pixel(bytes, w, h, (cx - s + i) as u32, (cy - s + i) as u32, rgb);
             }
@@ -2145,19 +1793,16 @@ fn draw_icon_fallback(
                 paint_pixel(bytes, w, h, (cx - s) as u32, (cy - s + i) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx - s + i) as u32, (cy - s) as u32, rgb);
             }
-            // Tail to bottom-right.
             for i in 0..=(s - 1) {
                 paint_pixel(bytes, w, h, (cx + i / 2) as u32, (cy + i) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + i / 2 + 1) as u32, (cy + i) as u32, rgb);
             }
         }
         ToolbarIcon::Brush => {
-            // Diagonal "pencil" stroke.
             for i in -s..=s {
                 paint_pixel(bytes, w, h, (cx + i) as u32, (cy + i) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + i + 1) as u32, (cy + i) as u32, rgb);
             }
-            // A little nib at the bottom-right.
             for dy in -1..=1 {
                 for dx in -1..=1 {
                     paint_pixel(bytes, w, h, (cx + s + dx) as u32, (cy + s + dy) as u32, rgb);
@@ -2170,11 +1815,9 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Arrow => {
-            // Diagonal line + arrowhead at the bottom-right.
             for i in -s..=s {
                 paint_pixel(bytes, w, h, (cx + i) as u32, (cy + i) as u32, rgb);
             }
-            // Head: horizontal + vertical segments.
             for i in 0..=4 {
                 paint_pixel(bytes, w, h, (cx + s - i) as u32, (cy + s) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + s) as u32, (cy + s - i) as u32, rgb);
@@ -2200,7 +1843,6 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Blur => {
-            // 4×4 checkerboard pattern.
             for y in -s..=s {
                 for x in -s..=s {
                     if ((x + s) / 2 + (y + s) / 2) % 2 == 0 {
@@ -2210,7 +1852,6 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Eraser => {
-            // Big X.
             for i in -s..=s {
                 paint_pixel(bytes, w, h, (cx + i) as u32, (cy + i) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + i) as u32, (cy - i) as u32, rgb);
@@ -2219,7 +1860,6 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Step => {
-            // Circle outline + "1" in the middle.
             let r = s as f32;
             for t in 0..64 {
                 let a = (t as f32 / 64.0) * std::f32::consts::TAU;
@@ -2227,11 +1867,9 @@ fn draw_icon_fallback(
                 let y = cy + (r * a.sin()).round() as i32;
                 paint_pixel(bytes, w, h, x as u32, y as u32, rgb);
             }
-            // Tiny "1" rendered with the same bitmap font, centred.
             draw_text(bytes, w, h, (cx - 4) as u32, (cy - 6) as u32, "1", rgb);
         }
         ToolbarIcon::Text => {
-            // Big "T".
             for x in -s..=s {
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy - s) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy - s + 1) as u32, rgb);
@@ -2242,7 +1880,6 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Polygon => {
-            // Five-pointed regular pentagon outline.
             let r = s as f32;
             let mut prev = (cx, cy - s);
             for i in 1..=5 {
@@ -2254,7 +1891,6 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Undo => {
-            // Curved arrow ⤺.
             let r = (s - 1) as f32;
             for t in 16..56 {
                 let a = (t as f32 / 64.0) * std::f32::consts::TAU;
@@ -2262,7 +1898,6 @@ fn draw_icon_fallback(
                 let y = cy + (r * a.sin()).round() as i32;
                 paint_pixel(bytes, w, h, x as u32, y as u32, rgb);
             }
-            // Arrowhead at the end.
             for i in 0..=3 {
                 paint_pixel(bytes, w, h, (cx - s + i) as u32, (cy - 1) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx - s + i) as u32, (cy + i - 1) as u32, rgb);
@@ -2282,14 +1917,12 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Cancel => {
-            // X (smaller than the eraser).
             for i in -(s - 1)..=(s - 1) {
                 paint_pixel(bytes, w, h, (cx + i) as u32, (cy + i) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + i) as u32, (cy - i) as u32, rgb);
             }
         }
         ToolbarIcon::Confirm => {
-            // Checkmark.
             for i in 0..s / 2 {
                 paint_pixel(bytes, w, h, (cx - s + i + 2) as u32, (cy + i) as u32, rgb);
                 paint_pixel(
@@ -2314,7 +1947,6 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Copy => {
-            // Two overlapping rectangles.
             for x in -s..=(s - 3) {
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy - s + 3) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy + s) as u32, rgb);
@@ -2333,7 +1965,6 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::Save => {
-            // Floppy outline.
             for x in -s..=s {
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy - s) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy + s) as u32, rgb);
@@ -2342,11 +1973,9 @@ fn draw_icon_fallback(
                 paint_pixel(bytes, w, h, (cx - s) as u32, (cy + y) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + s) as u32, (cy + y) as u32, rgb);
             }
-            // Top notch.
             for x in -(s - 3)..=(s - 3) {
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy - s + 3) as u32, rgb);
             }
-            // Bottom label rectangle.
             for x in -(s - 3)..=(s - 3) {
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy + 1) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + x) as u32, (cy + s - 2) as u32, rgb);
@@ -2356,16 +1985,11 @@ fn draw_icon_fallback(
                 paint_pixel(bytes, w, h, (cx + (s - 3)) as u32, (cy + y) as u32, rgb);
             }
         }
-        // Newly added variants — the SVG-rasterised version is what
-        // ships in production; the fallback is just a small outlined
-        // square so the chip is still visible if the SVG is missing.
         ToolbarIcon::GizmoScale => {
-            // Diagonal arrow ↘↖ — a clear "drag the corner to resize" hint.
             for i in 0..=s {
                 paint_pixel(bytes, w, h, (cx - s + i) as u32, (cy - s + i) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx + s - i) as u32, (cy + s - i) as u32, rgb);
             }
-            // Arrowheads on each tip.
             for d in 0..=3 {
                 paint_pixel(bytes, w, h, (cx - s + d) as u32, (cy - s) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx - s) as u32, (cy - s + d) as u32, rgb);
@@ -2374,7 +1998,6 @@ fn draw_icon_fallback(
             }
         }
         ToolbarIcon::GizmoRotate => {
-            // 3/4 circle with an arrow tip — the standard "rotate" glyph.
             for theta in 0..280 {
                 let a = (theta as f32 - 30.0).to_radians();
                 let rx = cx + ((s - 1) as f32 * a.cos()).round() as i32;
@@ -2401,8 +2024,6 @@ fn draw_icon_fallback(
         | ToolbarIcon::Raise
         | ToolbarIcon::Lower
         | ToolbarIcon::Trash => {
-            // Outlined diamond — distinct from the other simple icons so
-            // unfilled SVG placeholders are still identifiable.
             for d in 0..s {
                 paint_pixel(bytes, w, h, (cx + d) as u32, (cy - s + d) as u32, rgb);
                 paint_pixel(bytes, w, h, (cx - d) as u32, (cy - s + d) as u32, rgb);
@@ -2413,29 +2034,16 @@ fn draw_icon_fallback(
     }
 }
 
-/// Is `(px, py)` inside the literal chip-to-popup corridor: either of
-/// the two rects (chip / popup) *or* the narrow vertical bridge that
-/// joins them. Earlier the corridor was the bounding union of the two
-/// rects, but that bounding box is too generous — for a chip on the
-/// far left and a wide popup beneath it, the rect could swallow every
-/// chip in between and keep the popup open while the user was hovering
-/// completely unrelated buttons.
-fn in_chip_popup_corridor(
-    chip: (i32, i32, u32, u32),
-    popup: (i32, i32, u32, u32),
-    px: i32,
-    py: i32,
-    slack: i32,
-) -> bool {
+/// `(px, py)` is inside the chip rect, the popup rect, or the narrow
+/// vertical bridge joining them. The bounding union was too generous and
+/// kept popups open over unrelated chips.
+fn in_chip_popup_corridor(chip: Shape, popup: Shape, px: i32, py: i32, slack: i32) -> bool {
     if rect_contains(chip, px, py, slack) {
         return true;
     }
     if rect_contains(popup, px, py, slack) {
         return true;
     }
-    // Bridge: a column with the chip's horizontal extent, spanning
-    // the vertical gap between the chip and the popup (whichever side
-    // the popup is on).
     let chip_bottom = chip.1 + chip.3 as i32;
     let popup_bottom = popup.1 + popup.3 as i32;
     let (by, bh) = if popup.1 >= chip_bottom {
@@ -2443,7 +2051,6 @@ fn in_chip_popup_corridor(
     } else if chip.1 >= popup_bottom {
         (popup_bottom, (chip.1 - popup_bottom).max(0))
     } else {
-        // Chip and popup overlap vertically — no bridge needed.
         (0, 0)
     };
     if bh > 0 {
@@ -2453,22 +2060,18 @@ fn in_chip_popup_corridor(
     }
 }
 
-/// `true` when `(px, py)` is inside `rect` expanded by `slack` pixels
-/// on every side.
-fn rect_contains(rect: (i32, i32, u32, u32), px: i32, py: i32, slack: i32) -> bool {
+fn rect_contains(rect: Shape, px: i32, py: i32, slack: i32) -> bool {
     let (x, y, w, h) = rect;
     px >= x - slack && px < x + w as i32 + slack && py >= y - slack && py < y + h as i32 + slack
 }
 
-/// `true` when two rectangles share any pixel. Open-rect convention
-/// (right/bottom edges exclusive), same as the rest of the file.
-fn rects_overlap(a: (i32, i32, u32, u32), b: (i32, i32, u32, u32)) -> bool {
+fn rects_overlap(a: Shape, b: Shape) -> bool {
     let (ax, ay, aw, ah) = a;
     let (bx, by, bw, bh) = b;
     !(ax + aw as i32 <= bx || bx + bw as i32 <= ax || ay + ah as i32 <= by || by + bh as i32 <= ay)
 }
 
-fn fill_rect_bytes(bytes: &mut [u8], w: u32, h: u32, rect: (i32, i32, u32, u32), rgb: [u8; 3]) {
+fn fill_rect_bytes(bytes: &mut [u8], w: u32, h: u32, rect: Shape, rgb: [u8; 3]) {
     let (rx, ry, rw, rh) = rect;
     for y in ry.max(0)..(ry + rh as i32).min(h as i32) {
         for x in rx.max(0)..(rx + rw as i32).min(w as i32) {
@@ -2477,7 +2080,7 @@ fn fill_rect_bytes(bytes: &mut [u8], w: u32, h: u32, rect: (i32, i32, u32, u32),
     }
 }
 
-fn outline_rect(bytes: &mut [u8], w: u32, h: u32, rect: (i32, i32, u32, u32), rgb: [u8; 3]) {
+fn outline_rect(bytes: &mut [u8], w: u32, h: u32, rect: Shape, rgb: [u8; 3]) {
     let (rx, ry, rw, rh) = rect;
     if rw == 0 || rh == 0 {
         return;
@@ -2497,15 +2100,12 @@ fn outline_rect(bytes: &mut [u8], w: u32, h: u32, rect: (i32, i32, u32, u32), rg
 }
 
 impl State {
-    /// Build a fresh `ToolbarLayout` if a toolbar should be shown on
-    /// overlay `idx`. None means: don't draw a toolbar on this overlay.
     pub(crate) fn toolbar_layout_for(&self, idx: usize) -> Option<ToolbarLayout> {
         if !self.config.toolbar {
             return None;
         }
         let mon = self.overlays[idx].monitor.bounds();
 
-        // ---- pick the anchor rectangle (in *global* / virtual-desktop coords)
         let (anchor_rect, follow_region) = match (self.canvas.region(), self.runtime_mode) {
             (Some(r), SelectorMode::Area) | (Some(r), SelectorMode::AnyOf)
                 if r.width() >= 2 && r.height() >= 2 =>
@@ -2513,7 +2113,6 @@ impl State {
                 (r, true)
             }
             (_, SelectorMode::Monitor) | (_, SelectorMode::Window) => {
-                // Show the toolbar on the overlay currently under the cursor.
                 if self.active_overlay != Some(idx) {
                     return None;
                 }
@@ -2522,11 +2121,10 @@ impl State {
             _ => return None,
         };
 
-        // For Area mode the toolbar only shows on the overlay that *contains*
-        // the selection (or the cursor overlay if the selection spans multiple).
+        // For region-anchored toolbars, prefer the overlay with the largest
+        // intersection so a selection spanning two monitors gets only one bar.
         if follow_region {
             if let Some(inter) = mon.intersection(&anchor_rect) {
-                // Pick the overlay with the largest intersection.
                 let mut best = (idx, inter.width() as u64 * inter.height() as u64);
                 for (i, ov) in self.overlays.iter().enumerate() {
                     if i == idx {
@@ -2547,7 +2145,6 @@ impl State {
             }
         }
 
-        // ---- build the button list
         let mut buttons: Vec<ToolbarButton> = Vec::new();
 
         let tools = &self.config.palette.tools;
@@ -2559,10 +2156,7 @@ impl State {
                 tool,
                 Tool::Rectangle(_) | Tool::Ellipse(_) | Tool::Polygon(_)
             );
-            // Outlined variant — active only when this tool is selected
-            // AND fill mode is off. (For closed shapes the filled variant
-            // takes over when fill is on; non-closed shapes always go
-            // through this chip.)
+            // Outlined chip is active iff selected and (not-closed or fill off).
             let outlined_active =
                 std::mem::discriminant(tool) == active_disc && (!is_closed || !fill_on);
             buttons.push(ToolbarButton {
@@ -2573,9 +2167,6 @@ impl State {
                 tint: None,
                 active: outlined_active,
             });
-            // Filled companion chip for closed shapes — active only when
-            // *this* tool is selected AND fill mode is on, so the two
-            // chips never both light up at once.
             if is_closed {
                 let filled_active = std::mem::discriminant(tool) == active_disc && fill_on;
                 buttons.push(ToolbarButton {
@@ -2589,8 +2180,6 @@ impl State {
             }
         }
 
-        // Action buttons — built without a capturing closure so we can
-        // freely poke at `buttons` from anywhere in this loop.
         fn make_action(icon: ToolbarIcon, action: ButtonAction) -> ToolbarButton {
             ToolbarButton {
                 rect: (0, 0, TB_BTN_W as u32, TB_BTN_H as u32),
@@ -2601,10 +2190,6 @@ impl State {
                 active: false,
             }
         }
-        // Persistent colour swatch — clicking opens the HSV picker, and
-        // hovering also opens it (auto-close on leave). The tint is the
-        // current State.current_color so it reflects the active colour
-        // regardless of which tool is selected.
         buttons.push(ToolbarButton {
             rect: (0, 0, TB_BTN_W as u32, TB_BTN_H as u32),
             action: ButtonAction::TogglePicker,
@@ -2617,18 +2202,15 @@ impl State {
             ]),
             active: self.picker.is_some() || self.color_hover_at.is_some(),
         });
-        // Stroke-width chip — shows the persistent State.current_width,
-        // clicking *or* hovering opens the slider popup.
         let w = self.current_width.round() as i32;
         buttons.push(ToolbarButton {
             rect: (0, 0, (TB_BTN_W + 4) as u32, TB_BTN_H as u32),
             action: ButtonAction::ToggleWidthPopup,
             icon: None,
-            label: std::borrow::Cow::Owned(format!("{}px", w)),
+            label: std::borrow::Cow::Owned(format!("{w}px")),
             tint: None,
             active: self.width_popup.is_some() || self.width_hover,
         });
-        // Hint toggles.
         buttons.push(ToolbarButton {
             rect: (0, 0, TB_BTN_W as u32, TB_BTN_H as u32),
             action: ButtonAction::TogglePipette,
@@ -2645,8 +2227,6 @@ impl State {
             tint: None,
             active: self.snap_on,
         });
-        // Snap-step chip — opens its own dedicated popup (separate
-        // widget from the stroke-width slider).
         buttons.push(ToolbarButton {
             rect: (0, 0, (TB_BTN_W + 4) as u32, TB_BTN_H as u32),
             action: ButtonAction::ToggleSnapPopup,
@@ -2663,18 +2243,12 @@ impl State {
             tint: None,
             active: self.magnifier_on,
         });
-        // The canvas-unrelated actions (undo / redo / clear / cancel /
-        // copy / save / confirm) live on a separate side toolbar — see
-        // [`State::side_toolbar_layout_for`]. Keeping them off the main
-        // toolbar makes the editor row less overwhelming.
         let _ = make_action;
 
-        // ---- compute total width
         let mut total_w: i32 = TB_PAD_X * 2;
         let mut prev_kind: Option<u8> = None;
         for b in &buttons {
-            // Kind is used to insert separators between groups: tools (0),
-            // colors (1), actions (2).
+            // 0 = tools, 1 = everything else, used to insert separators.
             let kind = match b.action {
                 ButtonAction::SelectTool(_) => 0u8,
                 _ => 1,
@@ -2689,7 +2263,6 @@ impl State {
         }
         let total_h = TB_BTN_H + TB_PAD_Y * 2;
 
-        // ---- pick toolbar position (monitor-local coordinates)
         let region_local_x = anchor_rect.x() - mon.x();
         let region_local_y = anchor_rect.y() - mon.y();
         let region_local_w = anchor_rect.width() as i32;
@@ -2706,12 +2279,10 @@ impl State {
         } else if below + total_h <= mon_h - 8 {
             below
         } else {
-            // Last resort: pinned to the top of the monitor.
             8
         };
         tb_y = tb_y.max(8).min(mon_h - total_h - 8).max(8);
 
-        // ---- assign per-button rects walking left to right
         let mut cursor_x = tb_x + TB_PAD_X;
         let cursor_y = tb_y + TB_PAD_Y;
         let mut prev_kind: Option<u8> = None;
@@ -2735,12 +2306,6 @@ impl State {
         })
     }
 
-    /// Build the *side* toolbar layout for overlay `idx`. The side bar
-    /// holds the canvas-unrelated actions (undo / redo / clear / cancel
-    /// / copy / save / confirm) and stays glued to the active region
-    /// (or the cursor overlay in Monitor / Window mode). It hugs the
-    /// right edge by default and flips to the left when that doesn't
-    /// fit, mirroring how the main toolbar picks above vs. below.
     pub(crate) fn side_toolbar_layout_for(&self, idx: usize) -> Option<ToolbarLayout> {
         if !self.config.toolbar {
             return None;
@@ -2762,7 +2327,6 @@ impl State {
         };
 
         if follow_region {
-            // Same "biggest intersection wins" logic as the main toolbar.
             if let Some(inter) = mon.intersection(&anchor_rect) {
                 let mut best = (idx, inter.width() as u64 * inter.height() as u64);
                 for (i, ov) in self.overlays.iter().enumerate() {
@@ -2784,7 +2348,6 @@ impl State {
             }
         }
 
-        // Build the button list.
         fn make_action(icon: ToolbarIcon, action: ButtonAction) -> ToolbarButton {
             ToolbarButton {
                 rect: (0, 0, TB_BTN_W as u32, TB_BTN_H as u32),
@@ -2795,47 +2358,43 @@ impl State {
                 active: false,
             }
         }
-        let mut buttons: Vec<ToolbarButton> = Vec::new();
-        buttons.push(make_action(ToolbarIcon::Undo, ButtonAction::Undo));
-        buttons.push(make_action(ToolbarIcon::Redo, ButtonAction::Redo));
-        buttons.push(ToolbarButton {
-            rect: (0, 0, TB_BTN_W as u32, TB_BTN_H as u32),
-            action: ButtonAction::ClearAll,
-            icon: Some(ToolbarIcon::Clear),
-            label: std::borrow::Cow::Borrowed(""),
-            tint: None,
-            active: false,
-        });
-        buttons.push(make_action(ToolbarIcon::Cancel, ButtonAction::Cancel));
+        let mut buttons: Vec<ToolbarButton> = vec![
+            make_action(ToolbarIcon::Undo, ButtonAction::Undo),
+            make_action(ToolbarIcon::Redo, ButtonAction::Redo),
+            ToolbarButton {
+                rect: (0, 0, TB_BTN_W as u32, TB_BTN_H as u32),
+                action: ButtonAction::ClearAll,
+                icon: Some(ToolbarIcon::Clear),
+                label: std::borrow::Cow::Borrowed(""),
+                tint: None,
+                active: false,
+            },
+            make_action(ToolbarIcon::Cancel, ButtonAction::Cancel),
+            make_action(ToolbarIcon::Confirm, ButtonAction::Confirm),
+        ];
         if self.config.show_copy {
             buttons.push(make_action(ToolbarIcon::Copy, ButtonAction::Copy));
         }
         if self.config.show_save {
             buttons.push(make_action(ToolbarIcon::Save, ButtonAction::Save));
         }
-        buttons.push(make_action(ToolbarIcon::Confirm, ButtonAction::Confirm));
 
         let total_h = TB_PAD_Y * 2
             + buttons.len() as i32 * TB_BTN_H
             + (buttons.len() as i32 - 1).max(0) * TB_GAP;
         let total_w = TB_PAD_X * 2 + TB_BTN_W;
 
-        // ---- pick toolbar position (monitor-local coordinates)
         let region_local_x = anchor_rect.x() - mon.x();
         let region_local_y = anchor_rect.y() - mon.y();
         let region_local_h = anchor_rect.height() as i32;
         let mon_w = mon.width() as i32;
         let mon_h = mon.height() as i32;
 
-        // Vertical centring on the region.
         let mut tb_y = region_local_y + (region_local_h - total_h) / 2;
         tb_y = tb_y.max(8).min(mon_h - total_h - 8).max(8);
 
-        // The side toolbar needs to clear the main toolbar — when the
-        // region is small enough that the main bar extends past the
-        // region's right edge horizontally, anchoring to the region
-        // edge would have the two bars overlap. Use whichever right
-        // edge is farther out.
+        // Use the farther of the region edge and the main toolbar edge so
+        // the side bar always clears the main one.
         let main_bg = self.toolbar_layout_for(idx).map(|l| l.bg);
         let main_right = main_bg
             .as_ref()
@@ -2844,7 +2403,6 @@ impl State {
         let main_left = main_bg.as_ref().map(|(x, _, _, _)| *x).unwrap_or(mon_w);
         let region_right = region_local_x + anchor_rect.width() as i32;
         let region_left = region_local_x;
-        // Prefer the right side, fall back to the left.
         let right = region_right.max(main_right) + TB_GAP_FROM_REGION;
         let left = region_left.min(main_left) - total_w - TB_GAP_FROM_REGION;
         let mut tb_x = if right + total_w <= mon_w - 8 {
@@ -2852,17 +2410,14 @@ impl State {
         } else if left >= 8 {
             left
         } else {
-            // Last resort: hug the right edge of the monitor.
             mon_w - total_w - 8
         };
         tb_x = tb_x.max(8).min(mon_w - total_w - 8).max(8);
 
-        // If even after the horizontal clearance the side bar overlaps
-        // the main bar vertically, shift tb_y so the two stack cleanly.
+        // Stack vertically when the side bar would overlap the main bar.
         if let Some(main) = main_bg {
             let side_rect = (tb_x, tb_y, total_w as u32, total_h as u32);
             if rects_overlap(side_rect, main) {
-                // Pick the direction with more room.
                 let main_top = main.1;
                 let main_bot = main.1 + main.3 as i32;
                 let above_room = main_top - 8;
@@ -2875,7 +2430,6 @@ impl State {
             }
         }
 
-        // Position each button.
         let cursor_x = tb_x + TB_PAD_X;
         let mut cursor_y = tb_y + TB_PAD_Y;
         for b in buttons.iter_mut() {
@@ -2890,8 +2444,6 @@ impl State {
         })
     }
 
-    /// Translate a global pointer position to monitor-local coords on the
-    /// given overlay.
     fn pointer_local(&self, idx: usize) -> (i32, i32) {
         let mon = self.overlays[idx].monitor.bounds();
         (
@@ -2900,8 +2452,6 @@ impl State {
         )
     }
 
-    /// True if the pointer is currently sitting on a button anywhere in
-    /// either toolbar (main editor row or side action column).
     fn pointer_on_toolbar(&self) -> Option<(ToolbarLayout, ButtonAction)> {
         let idx = self.active_overlay?;
         let (px, py) = self.pointer_local(idx);
@@ -2918,9 +2468,6 @@ impl State {
         None
     }
 
-    /// Whether the pointer is anywhere inside the bounds of either
-    /// toolbar — used by `desired_cursor` so the cursor doesn't change
-    /// to a draw glyph when the user is just navigating the chrome.
     fn pointer_on_any_toolbar_bg(&self) -> bool {
         let Some(idx) = self.active_overlay else {
             return false;
@@ -2939,16 +2486,10 @@ impl State {
         false
     }
 
-    /// Apply the pointer-delta of the active gizmo drag to the selected
-    /// shape: replace it with a transformed clone of `original`. Called
-    /// on every motion event while a drag is in progress.
     fn apply_transform_drag(&mut self) {
         let Some(id) = self.canvas.selected() else {
             return;
         };
-        // Snap the pointer to the grid before computing the gizmo
-        // delta whenever snap mode is on — otherwise scale/rotate move
-        // pixel-by-pixel in spite of the user wanting grid alignment.
         let pp = if self.snap_on {
             snap_point_step(self.pointer_pos_global, self.snap_step)
         } else {
@@ -2986,29 +2527,12 @@ impl State {
         self.canvas.replace_shape(id, new_shape);
     }
 
-    /// Open/close hover-triggered popups based on the current pointer
-    /// position. Click-pinned popups are left alone.
-    ///
-    /// To avoid flicker when moving the pointer from the chip down into
-    /// its popup, the close-test uses a *corridor*: the bounding union
-    /// of the triggering chip's rect and the popup's rect (plus a few
-    /// pixels of slack). As long as the pointer is anywhere inside that
-    /// rectangle the popup stays open.
     fn update_hover_popups(&mut self) {
-        // While the magnifier, pipette HUD or snap marker are on, the
-        // on-screen pointer reads have a "mini cursor" companion that
-        // tracks the real pointer (the magnifier ring, the pipette
-        // sample crosshair or the snap-target cross). Moving toward
-        // any of those overlays makes the cursor pass through chips on
-        // the way, which used to fire hover-open repeatedly. Suppress
-        // hover-driven opens in those modes — the user can still click
-        // to open popups explicitly. Pinned popups are untouched.
+        // Suppress hover-opens when a HUD is on so moving toward it doesn't
+        // flicker popups along the way. Pinned popups are untouched.
         if self.magnifier_on || self.pipette_pending || self.snap_on {
             return;
         }
-        // If any popup is already pinned, hover does nothing — the
-        // user has explicitly opted into "this popup stays". Hover
-        // can't override that.
         let any_pinned = self.picker.as_ref().is_some_and(|p| p.pinned)
             || self.width_popup.as_ref().is_some_and(|p| p.pinned)
             || self.snap_popup.as_ref().is_some_and(|p| p.pinned);
@@ -3022,7 +2546,6 @@ impl State {
         let (px, py) = self.pointer_local(idx);
         let action = layout.hit(px, py);
 
-        // Chip rects used in the chip↔popup corridor tests below.
         let color_chip = layout.button_rect_for(ButtonAction::TogglePicker);
         let width_chip = layout.button_rect_for(ButtonAction::ToggleWidthPopup);
         let snap_chip = layout.button_rect_for(ButtonAction::ToggleSnapPopup);
@@ -3031,7 +2554,6 @@ impl State {
         let on_width_chip = matches!(action, Some(ButtonAction::ToggleWidthPopup));
         let on_snap_chip = matches!(action, Some(ButtonAction::ToggleSnapPopup));
 
-        // ---- Color swatch hover → HSV picker -----------------------------
         if on_color_chip && self.picker.is_none() && !any_pinned {
             self.color_hover_at = Some(0);
             self.width_popup = None;
@@ -3062,7 +2584,6 @@ impl State {
             }
         }
 
-        // ---- Width chip hover → stroke slider ----------------------------
         if on_width_chip && self.width_popup.is_none() && !any_pinned {
             self.width_hover = true;
             self.picker = None;
@@ -3092,7 +2613,6 @@ impl State {
             self.width_hover = false;
         }
 
-        // ---- Snap chip hover → snap-step slider --------------------------
         if on_snap_chip && self.snap_popup.is_none() && !any_pinned {
             self.picker = None;
             self.color_hover_at = None;
@@ -3119,12 +2639,7 @@ impl State {
         }
     }
 
-    /// Three-state click toggle for the stroke-width slider chip:
-    ///   * closed             → open + pin
-    ///   * open (hover-only)  → pin
-    ///   * open + pinned      → close
-    /// Always closes the colour picker and the snap popup so there's
-    /// only one editor popup visible at a time.
+    /// Click toggles closed → open+pin → close. Closes other popups.
     fn open_width_popup(&mut self) {
         if let Some(p) = self.width_popup.as_mut() {
             if p.pinned {
@@ -3156,7 +2671,6 @@ impl State {
         });
     }
 
-    /// Same idea for the snap-step slider — entirely independent state.
     fn open_snap_popup(&mut self) {
         if let Some(p) = self.snap_popup.as_mut() {
             if p.pinned {
@@ -3188,40 +2702,21 @@ impl State {
         });
     }
 
-    /// Reseat the active tool's brush settings from the persistent
-    /// per-session values held in `State` (current_color / current_width /
-    /// current_fill). Called whenever the active tool changes or the
-    /// persistent values are updated, so the tool always reflects the
-    /// swatch + slider readouts shown in the toolbar.
-    ///
-    /// `current_fill` is propagated faithfully: `Some` turns fill on
-    /// (closed shapes get the tint), `None` turns it off. The earlier
-    /// version only pushed when it was `Some`, which meant once the
-    /// user had clicked a Filled variant the fill state was sticky —
-    /// clicking back to the outlined chip set fill to None on the
-    /// canvas but `push_current_to_tool` immediately re-enabled it
-    /// because `current_fill` was still `Some`. Every subsequent
-    /// outlined-tool selection then drew filled. Fixing both paths
-    /// (here + `SelectTool` clearing `current_fill`) keeps the toggle
-    /// honest.
+    /// Reseat the active tool's brush settings from the persistent values.
     fn push_current_to_tool(&mut self) {
         set_active_tool_color(&mut self.canvas.active_tool, self.current_color);
         set_active_tool_width(&mut self.canvas.active_tool, self.current_width);
         self.canvas.set_fill_color(self.current_fill);
     }
 
-    /// Apply the action attached to a button click. Returns true when the
-    /// caller should stop the click from reaching the canvas.
+    /// Apply a button click; returns true so the caller can swallow the click.
     fn apply_button(&mut self, action: ButtonAction) -> bool {
         match action {
             ButtonAction::SelectTool(i) => {
                 if let Some(t) = self.config.palette.tools.get(i).cloned() {
                     self.canvas.set_tool(t);
-                    // Outlined variants disable fill mode. Clear both
-                    // the persistent state *and* the canvas's setting
-                    // — clearing only the canvas wasn't enough because
-                    // `push_current_to_tool` would re-apply
-                    // `current_fill` and turn fill right back on.
+                    // Clearing only the canvas fill isn't enough — the next
+                    // push_current_to_tool would re-apply current_fill.
                     self.current_fill = None;
                     self.push_current_to_tool();
                     mark_all_redraw(self);
@@ -3230,10 +2725,6 @@ impl State {
             ButtonAction::SelectToolFilled(i) => {
                 if let Some(t) = self.config.palette.tools.get(i).cloned() {
                     self.canvas.set_tool(t);
-                    // Filled variant: track fill alongside stroke from the
-                    // persistent colour. Both update together on future
-                    // picker / pipette / palette clicks (see
-                    // `apply_pick_color`).
                     self.current_fill = Some(self.current_color);
                     self.canvas.set_fill_color(Some(self.current_color));
                     self.push_current_to_tool();
@@ -3245,11 +2736,7 @@ impl State {
                 mark_all_redraw(self);
             }
             ButtonAction::TogglePicker => {
-                // Three-state toggle:
-                //   * closed             → open + pin
-                //   * open (hover-only)  → pin (so it stays put when the
-                //                          cursor wanders off the chip)
-                //   * open + pinned     → close
+                // Click toggles closed → open+pin → close.
                 if let Some(p) = self.picker.as_mut() {
                     if p.pinned {
                         self.picker = None;
@@ -3258,8 +2745,6 @@ impl State {
                         p.pinned = true;
                     }
                 } else if let Some(idx) = self.active_overlay {
-                    // Opening any popup closes the other one — only one
-                    // editor popup should be visible at a time.
                     self.width_popup = None;
                     let (x, y) = popup_origin_below_toolbar(self, idx, HSV_PICKER_W, HSV_PICKER_H)
                         .unwrap_or_else(|| {
@@ -3340,10 +2825,7 @@ impl State {
     }
 }
 
-/// Resolve a popup origin (`x`, `y`) that sits just below the toolbar
-/// for the given overlay. Returns `None` when no toolbar is visible on
-/// this overlay (e.g. the cursor moved off-region) — callers should
-/// fall back to a screen-centre anchor in that case.
+/// Popup origin just below the toolbar, or `None` when the toolbar is hidden.
 fn popup_origin_below_toolbar(
     state: &State,
     idx: usize,
@@ -3361,7 +2843,6 @@ fn popup_origin_below_toolbar(
     x = x.clamp(8, mon_w - popup_w - 8);
     let mut y = tb_y + tb_h as i32 + 8;
     if y + popup_h > mon_h - 8 {
-        // Toolbar is at the bottom — flip the popup above it instead.
         y = tb_y - popup_h - 8;
     }
     y = y.clamp(8, mon_h - popup_h - 8);
@@ -3385,17 +2866,12 @@ fn tool_icon(t: &crate::tool::Tool) -> ToolbarIcon {
     }
 }
 
-/// Icon for the *filled* variant of a closed-shape tool. Only meaningful
-/// for the three shapes that have a closed interior.
 fn filled_tool_icon(t: &crate::tool::Tool) -> ToolbarIcon {
     use crate::tool::Tool;
     match t {
         Tool::Rectangle(_) => ToolbarIcon::RectangleFilled,
         Tool::Ellipse(_) => ToolbarIcon::EllipseFilled,
         Tool::Polygon(_) => ToolbarIcon::PolygonFilled,
-        // The other tools shouldn't reach this branch (we only push the
-        // filled chip for closed shapes), but return the outlined icon
-        // so we never panic if the call site changes.
         _ => tool_icon(t),
     }
 }
@@ -3409,10 +2885,6 @@ fn set_active_tool_width(t: &mut crate::tool::Tool, width: f32) {
         | Tool::Rectangle(b)
         | Tool::Ellipse(b)
         | Tool::Polygon(b) => b.width = width,
-        // Steps don't have a stroke per se; drive their disc radius
-        // off the stroke chip too so the same slider scales them.
-        // `radius = width * 4 + 4` keeps the historical default 14 px
-        // close to where it used to be (default width 3 → radius 16).
         Tool::Step(s) => s.radius = (width * 4.0 + 4.0).max(6.0),
         _ => {}
     }
@@ -3433,38 +2905,27 @@ fn set_active_tool_color(t: &mut crate::tool::Tool, color: crate::color::Color) 
     }
 }
 
-// ============================================================================
-// Selection decoration (Pointer tool)
-// ============================================================================
-
 const DELETE_BTN_W: u32 = 24;
 const DELETE_BTN_H: u32 = 24;
 const DELETE_BTN_OFFSET: i32 = 4;
 const SEL_BTN_GAP: i32 = 4;
 
-/// One of the small action buttons that sit above a selected shape: the
-/// delete X, the raise/lower layer arrows and the transform gizmo. Click
-/// hit-tests in `pointer_on_selection_button()` dispatch to the matching
-/// `ButtonAction`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SelectionButton {
-    pub rect: (i32, i32, u32, u32),
+    pub rect: Shape,
     pub action: ButtonAction,
     pub icon: ToolbarIcon,
     pub tint: [u8; 3],
 }
 
-/// Layout (in monitor-local pixels) of the selection-decor floating
-/// toolbar. Returns `None` when there's nothing selected on this
-/// overlay or the Pointer tool isn't active.
 fn selection_decor_layout(
     overlay_idx: usize,
     state: &State,
 ) -> Option<(
-    /*shape*/ (i32, i32, u32, u32),
+    /*shape*/ Shape,
     Vec<SelectionButton>,
-    /*scale handle*/ (i32, i32, u32, u32),
-    /*rotate handle*/ (i32, i32, u32, u32),
+    /*scale handle*/ Shape,
+    /*rotate handle*/ Shape,
 )> {
     if !matches!(state.canvas.active_tool, crate::tool::Tool::Pointer) {
         return None;
@@ -3474,14 +2935,8 @@ fn selection_decor_layout(
     let bounds = shape.bounds();
     let mon = state.overlays[overlay_idx].monitor.bounds();
 
-    // Selection decor (action bar, gizmo handles, dashed outline) must
-    // only render on the overlay that actually contains the shape. The
-    // earlier implementation computed local coords against *every*
-    // overlay's origin, which produced phantom decorations on other
-    // monitors whenever the shape's local coords happened to overlap
-    // the corresponding screen position. Same class of bug as the
-    // original blur-leak: we now pick the overlay with the largest
-    // intersection and bail out elsewhere.
+    // Only render decor on the overlay with the largest intersection so the
+    // gizmo doesn't appear on every monitor at the matching local position.
     let inter = match mon.intersection(&bounds) {
         Some(r) if r.width() > 0 && r.height() > 0 => r,
         _ => return None,
@@ -3503,7 +2958,6 @@ fn selection_decor_layout(
     let local_y = bounds.y() - mon.y();
     let shape_rect = (local_x, local_y, bounds.width(), bounds.height());
 
-    // ---- Action bar (raise / lower / gizmo / delete) -------------------
     let entries: [(ButtonAction, ToolbarIcon, [u8; 3]); 3] = [
         (
             ButtonAction::RaiseSelected,
@@ -3526,14 +2980,10 @@ fn selection_decor_layout(
     let mon_w = mon.width() as i32;
     let mon_h = mon.height() as i32;
 
-    // Horizontal placement: right-align against the shape's right edge,
-    // then clamp so it stays on the monitor.
     let mut bar_x = local_x + bounds.width() as i32 - total_w + DELETE_BTN_OFFSET;
     bar_x = bar_x.clamp(4, (mon_w - total_w - 4).max(4));
 
-    // Vertical placement: try above the shape. If that's off-screen,
-    // place below. Reserve room above for the rotate handle when the
-    // gizmo is on so the two never overlap.
+    // Reserve room above the action bar for the rotate handle.
     let extra_for_rotate = DELETE_BTN_H as i32 + 8;
     let above = local_y - DELETE_BTN_H as i32 - DELETE_BTN_OFFSET - extra_for_rotate;
     let below = local_y + bounds.height() as i32 + DELETE_BTN_OFFSET;
@@ -3542,7 +2992,6 @@ fn selection_decor_layout(
     } else if below + DELETE_BTN_H as i32 <= mon_h - 4 {
         below
     } else {
-        // Last resort: pin to the top inside the shape.
         local_y.max(4)
     };
     bar_y = bar_y.clamp(4, (mon_h - DELETE_BTN_H as i32 - 4).max(4));
@@ -3558,10 +3007,6 @@ fn selection_decor_layout(
         });
     }
 
-    // ---- Gizmo handles -------------------------------------------------
-    // Scale: bottom-right corner. Rotate: top-centre, on a short stem
-    // *between* the shape and the action bar so it never overlaps the
-    // delete / raise / lower icons.
     let scale_x = (local_x + bounds.width() as i32 - DELETE_BTN_W as i32 / 2)
         .clamp(4, (mon_w - DELETE_BTN_W as i32 - 4).max(4));
     let scale_y = (local_y + bounds.height() as i32 - DELETE_BTN_H as i32 / 2)
@@ -3570,19 +3015,13 @@ fn selection_decor_layout(
 
     let rotate_x = (local_x + bounds.width() as i32 / 2 - DELETE_BTN_W as i32 / 2)
         .clamp(4, (mon_w - DELETE_BTN_W as i32 - 4).max(4));
-    // Sit immediately above the shape, with the action bar already
-    // pushed an extra row higher to make room.
     let rotate_y = (local_y - DELETE_BTN_H as i32 - DELETE_BTN_OFFSET).max(4);
     let rotate_rect = (rotate_x, rotate_y, DELETE_BTN_W, DELETE_BTN_H);
 
     Some((shape_rect, buttons, scale_rect, rotate_rect))
 }
 
-/// Paint the dashed selection outline on *every* overlay whose monitor
-/// intersects the selected shape, so the bounding box reads as a
-/// continuous frame even when the user drags the shape across a
-/// monitor boundary. Interactive widgets (action bar, gizmo handles)
-/// stay scoped to the owning overlay via `selection_decor_layout`.
+/// Paint the dashed outline on every overlay the shape's bounds touches.
 fn draw_selection_outline_if_visible(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &State) {
     if !matches!(state.canvas.active_tool, crate::tool::Tool::Pointer) {
         return;
@@ -3610,9 +3049,6 @@ fn draw_selection_outline_if_visible(bytes: &mut [u8], w: u32, h: u32, idx: usiz
 }
 
 fn draw_selection_decor(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &State) {
-    // The dashed outline shows on *every* monitor the shape spans —
-    // even on overlays the shape only just clips. The interactive bits
-    // (action bar, scale / rotate handles) stay on the owning monitor.
     draw_selection_outline_if_visible(bytes, w, h, idx, state);
 
     let (shape_rect, buttons, scale_rect, rotate_rect) = match selection_decor_layout(idx, state) {
@@ -3620,7 +3056,6 @@ fn draw_selection_decor(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &St
         None => return,
     };
 
-    // 2) Action buttons (raise / lower / gizmo / delete).
     for b in &buttons {
         fill_rect_bytes(bytes, w, h, b.rect, b.tint);
         outline_rect(bytes, w, h, b.rect, [255, 220, 220]);
@@ -3629,7 +3064,6 @@ fn draw_selection_decor(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &St
         draw_icon(bytes, w, h, cx, cy, b.icon, [240, 240, 240]);
     }
 
-    // 3) Scale handle (bottom-right) — drag to scale.
     fill_rect_bytes(bytes, w, h, scale_rect, [60, 110, 200]);
     outline_rect(bytes, w, h, scale_rect, [200, 220, 255]);
     let cx = scale_rect.0 + scale_rect.2 as i32 / 2;
@@ -3643,9 +3077,8 @@ fn draw_selection_decor(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &St
         ToolbarIcon::GizmoScale,
         [240, 240, 240],
     );
-    // 4) Rotate handle (top-centre, on a short stem) — drag to rotate.
     let stem_x = rotate_rect.0 + rotate_rect.2 as i32 / 2;
-    let stem_y0 = shape_rect.1; // top of the selected shape
+    let stem_y0 = shape_rect.1;
     let stem_y1 = rotate_rect.1 + rotate_rect.3 as i32;
     for y in stem_y1..stem_y0 {
         paint_pixel(bytes, w, h, stem_x as u32, y as u32, [200, 220, 255]);
@@ -3665,7 +3098,7 @@ fn draw_selection_decor(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &St
     );
 }
 
-fn draw_dashed_rect(bytes: &mut [u8], w: u32, h: u32, rect: (i32, i32, u32, u32), rgb: [u8; 3]) {
+fn draw_dashed_rect(bytes: &mut [u8], w: u32, h: u32, rect: Shape, rgb: [u8; 3]) {
     let (rx, ry, rw, rh) = rect;
     if rw == 0 || rh == 0 {
         return;
@@ -3673,7 +3106,6 @@ fn draw_dashed_rect(bytes: &mut [u8], w: u32, h: u32, rect: (i32, i32, u32, u32)
     let on = 6;
     let off = 4;
     let stride = on + off;
-    // Top + bottom edges.
     for x in 0..rw as i32 {
         if (x % stride) < on {
             paint_pixel(bytes, w, h, (rx + x) as u32, ry as u32, rgb);
@@ -3687,7 +3119,6 @@ fn draw_dashed_rect(bytes: &mut [u8], w: u32, h: u32, rect: (i32, i32, u32, u32)
             );
         }
     }
-    // Left + right edges.
     for y in 0..rh as i32 {
         if (y % stride) < on {
             paint_pixel(bytes, w, h, rx as u32, (ry + y) as u32, rgb);
@@ -3709,10 +3140,7 @@ pub(crate) enum GizmoHandle {
     Rotate,
 }
 
-/// Hit-test the gizmo handles (bottom-right corner = scale, top-centre
-/// pin = rotate). Returns the handle kind and the shape rect, or `None`
-/// when the pointer isn't over either.
-fn pointer_on_gizmo_handle(state: &State) -> Option<(GizmoHandle, (i32, i32, u32, u32))> {
+fn pointer_on_gizmo_handle(state: &State) -> Option<(GizmoHandle, Shape)> {
     let idx = state.active_overlay?;
     let (shape_rect, _btns, scale_rect, rotate_rect) = selection_decor_layout(idx, state)?;
     let mon = state.overlays[idx].monitor.bounds();
@@ -3727,8 +3155,6 @@ fn pointer_on_gizmo_handle(state: &State) -> Option<(GizmoHandle, (i32, i32, u32
     None
 }
 
-/// Returns the `ButtonAction` for whichever button in the selection-decor
-/// the pointer is hovering, if any.
 fn pointer_on_selection_button(state: &State) -> Option<ButtonAction> {
     let idx = state.active_overlay?;
     let (_shape_rect, buttons, _scale_rect, _rotate_rect) = selection_decor_layout(idx, state)?;
@@ -3744,7 +3170,6 @@ fn pointer_on_selection_button(state: &State) -> Option<ButtonAction> {
     None
 }
 
-/// Bresenham line for the fallback icon drawer. Cheap and pixely.
 fn draw_line_simple(bytes: &mut [u8], w: u32, h: u32, a: (i32, i32), b: (i32, i32), rgb: [u8; 3]) {
     let (mut x0, mut y0) = a;
     let (x1, y1) = b;
@@ -3770,21 +3195,6 @@ fn draw_line_simple(bytes: &mut [u8], w: u32, h: u32, a: (i32, i32), b: (i32, i3
     }
 }
 
-// ============================================================================
-// HSV color picker popup
-// ============================================================================
-
-// HSV picker geometry:
-//   ┌──────────────────────────┐    HSV_PICKER_W wide
-//   │   Hue strip   (HUE_H)    │
-//   ├──────────────────────────┤
-//   │                          │
-//   │   Saturation / Value     │
-//   │   square    (SV_H)       │
-//   │                          │
-//   ├────────────┬─────────────┤
-//   │ swatch     │  #RRGGBB    │   foot row
-//   └────────────┴─────────────┘
 const HSV_PICKER_W: i32 = 260;
 const HSV_HUE_H: i32 = 18;
 const HSV_GAP_Y: i32 = 6;
@@ -3795,23 +3205,15 @@ const HSV_PICKER_H: i32 = HSV_HUE_H + HSV_GAP_Y + HSV_SV_H + HSV_GAP_Y + HSV_FOO
 const HSV_PICKER_GAP: i32 = 8;
 
 pub(crate) struct HsvPicker {
-    /// Current hue in [0, 1).
     pub hue: f32,
-    /// Current saturation in [0, 1].
     pub sat: f32,
-    /// Current value in [0, 1].
     pub val: f32,
-    /// Top-left (monitor-local) the picker is anchored to.
     pub origin: (i32, i32),
-    /// Which overlay last hosted the picker — clicks elsewhere close it.
     pub overlay_idx: usize,
-    /// `true` after a click → stays open. `false` for hover-opened
-    /// popups, which close when the pointer leaves both the triggering
-    /// swatch and the popup itself.
+    /// `true` when clicked → stays open; `false` when opened by hover.
     pub pinned: bool,
 }
 
-/// Region of the picker a pointer click landed on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HsvHit {
     Hue,
@@ -3819,7 +3221,7 @@ pub(crate) enum HsvHit {
 }
 
 impl HsvPicker {
-    fn outer_rect(&self) -> (i32, i32, u32, u32) {
+    fn outer_rect(&self) -> Shape {
         (
             self.origin.0,
             self.origin.1,
@@ -3827,7 +3229,7 @@ impl HsvPicker {
             HSV_PICKER_H as u32,
         )
     }
-    fn hue_rect(&self) -> (i32, i32, u32, u32) {
+    fn hue_rect(&self) -> Shape {
         (
             self.origin.0,
             self.origin.1,
@@ -3835,7 +3237,7 @@ impl HsvPicker {
             HSV_HUE_H as u32,
         )
     }
-    fn sv_rect(&self) -> (i32, i32, u32, u32) {
+    fn sv_rect(&self) -> Shape {
         (
             self.origin.0,
             self.origin.1 + HSV_HUE_H + HSV_GAP_Y,
@@ -3843,7 +3245,7 @@ impl HsvPicker {
             HSV_SV_H as u32,
         )
     }
-    fn foot_rect(&self) -> (i32, i32, u32, u32) {
+    fn foot_rect(&self) -> Shape {
         (
             self.origin.0,
             self.origin.1 + HSV_HUE_H + HSV_GAP_Y + HSV_SV_H + HSV_GAP_Y,
@@ -3857,9 +3259,8 @@ impl HsvPicker {
         lx >= x - 4 && lx < x + w as i32 + 4 && ly >= y - 4 && ly < y + h as i32 + 4
     }
 
-    /// What region of the picker did the user click on?
     fn hit(&self, lx: i32, ly: i32) -> Option<HsvHit> {
-        let inside = |r: (i32, i32, u32, u32), lx: i32, ly: i32| {
+        let inside = |r: Shape, lx: i32, ly: i32| {
             lx >= r.0 && lx < r.0 + r.2 as i32 && ly >= r.1 && ly < r.1 + r.3 as i32
         };
         if inside(self.hue_rect(), lx, ly) {
@@ -3876,10 +3277,7 @@ impl HsvPicker {
         ((lx - r.0).clamp(0, r.2 as i32 - 1) as f32) / (r.2 as f32)
     }
 
-    /// Returns (saturation, value) for the click position inside the SV
-    /// square: x → value (0 dark on the left, 1 bright on the right);
-    /// y → saturation (0 white at the top, 1 fully-saturated at the
-    /// bottom). Matches the Photoshop convention most users expect.
+    /// (saturation, value): x is value, y is saturation (Photoshop layout).
     fn sv_at(&self, lx: i32, ly: i32) -> (f32, f32) {
         let r = self.sv_rect();
         let v = ((lx - r.0).clamp(0, r.2 as i32 - 1) as f32) / (r.2 as f32);
@@ -3887,13 +3285,11 @@ impl HsvPicker {
         (s, v)
     }
 
-    /// Resolved RGB at the picker's currently-selected H/S/V.
     pub fn current_rgb(&self) -> [u8; 3] {
         hsv_to_rgb(self.hue, self.sat, self.val)
     }
 }
 
-/// RGB → HSV conversion. Returns (hue ∈ [0,1), sat ∈ [0,1], val ∈ [0,1]).
 fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
     let r = r as f32 / 255.0;
     let g = g as f32 / 255.0;
@@ -3915,7 +3311,6 @@ fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
     (h, s, v)
 }
 
-/// HSV → RGB conversion.
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [u8; 3] {
     let h = h.rem_euclid(1.0) * 6.0;
     let c = v * s;
@@ -3936,11 +3331,8 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [u8; 3] {
     ]
 }
 
-/// Paints the full HSV picker — hue strip on top, SV square below, then
-/// a 22-px footer with the current swatch and `#RRGGBB` readout.
 fn draw_hsv_picker(bytes: &mut [u8], w: u32, h: u32, picker: &HsvPicker) {
     let (ox, oy, pw, ph) = picker.outer_rect();
-    // Background panel + border with a small drop shadow.
     fill_rect_bytes(
         bytes,
         w,
@@ -3957,7 +3349,6 @@ fn draw_hsv_picker(bytes: &mut [u8], w: u32, h: u32, picker: &HsvPicker) {
     );
     fill_rect_bytes(bytes, w, h, (ox - 2, oy - 2, pw + 4, ph + 4), [22, 22, 24]);
 
-    // Hue strip --------------------------------------------------------
     let (hx, hy, hw, hh) = picker.hue_rect();
     for ix in 0..hw as i32 {
         let hue = ix as f32 / hw as f32;
@@ -3966,7 +3357,6 @@ fn draw_hsv_picker(bytes: &mut [u8], w: u32, h: u32, picker: &HsvPicker) {
             paint_pixel(bytes, w, h, (hx + ix) as u32, (hy + iy) as u32, rgb);
         }
     }
-    // Selected hue tick.
     let tick_x = hx + (picker.hue * hw as f32).round() as i32;
     for iy in -2..=hh as i32 + 1 {
         paint_pixel(
@@ -3995,7 +3385,6 @@ fn draw_hsv_picker(bytes: &mut [u8], w: u32, h: u32, picker: &HsvPicker) {
         );
     }
 
-    // Saturation/value square -----------------------------------------
     let (sx, sy, sw, sh) = picker.sv_rect();
     for iy in 0..sh as i32 {
         let s = iy as f32 / sh as f32;
@@ -4005,7 +3394,6 @@ fn draw_hsv_picker(bytes: &mut [u8], w: u32, h: u32, picker: &HsvPicker) {
             paint_pixel(bytes, w, h, (sx + ix) as u32, (sy + iy) as u32, rgb);
         }
     }
-    // Selected (sat, val) marker — small circle, contrast-aware.
     let mx = sx + (picker.val * sw as f32).round() as i32;
     let my = sy + (picker.sat * sh as f32).round() as i32;
     let marker = if picker.val > 0.55 && picker.sat < 0.6 {
@@ -4021,7 +3409,6 @@ fn draw_hsv_picker(bytes: &mut [u8], w: u32, h: u32, picker: &HsvPicker) {
         paint_pixel(bytes, w, h, (mx + dx) as u32, (my + dy) as u32, marker);
     }
 
-    // Footer: swatch + hex readout ------------------------------------
     let (fx, fy, fw, fh) = picker.foot_rect();
     let rgb = picker.current_rgb();
     let swatch_w = 40;
@@ -4048,21 +3435,13 @@ fn draw_hsv_picker(bytes: &mut [u8], w: u32, h: u32, picker: &HsvPicker) {
     let _ = fw;
 }
 
-// ============================================================================
-// Stroke-width slider popup
-// ============================================================================
-
 const WIDTH_POPUP_W: i32 = 220;
 const WIDTH_POPUP_H: i32 = 44;
 const WIDTH_MIN: f32 = 1.0;
 const WIDTH_MAX: f32 = 50.0;
 
-/// Quick-access menu opened by right-click — a small grid of square
-/// colour swatches plus a row of stroke-width discs. Replaces the
-/// earlier angular "radial" layout, whose pie-slice hit-tests were
-/// fiddly close to the boundaries.
+/// Right-click quick menu: grid of colour swatches plus a row of widths.
 pub(crate) struct RadialMenu {
-    /// Top-left, monitor-local.
     pub origin: (i32, i32),
     pub overlay_idx: usize,
 }
@@ -4071,13 +3450,9 @@ const RADIAL_CELL: i32 = 26;
 const RADIAL_GAP: i32 = 4;
 const RADIAL_COLS: i32 = 4;
 const RADIAL_PAD: i32 = 8;
-/// Stroke-width presets — the row beneath the colour grid.
-const RADIAL_WIDTHS: &[f32] = &[1.0, 3.0, 6.0, 12.0];
 
 impl RadialMenu {
-    /// Returns the menu's outer rect in monitor-local pixels for a
-    /// palette of the given length.
-    fn outer_rect(&self, palette_len: usize) -> (i32, i32, u32, u32) {
+    fn outer_rect(&self, palette_len: usize) -> Shape {
         let cols = RADIAL_COLS;
         let n = palette_len.max(1) as i32;
         let rows = (n + cols - 1) / cols;
@@ -4089,7 +3464,7 @@ impl RadialMenu {
         (self.origin.0, self.origin.1, total_w as u32, total_h as u32)
     }
 
-    fn color_cell_rect(&self, palette_len: usize, i: usize) -> (i32, i32, u32, u32) {
+    fn color_cell_rect(&self, palette_len: usize, i: usize) -> Shape {
         let (ox, oy, _, _) = self.outer_rect(palette_len);
         let col = i as i32 % RADIAL_COLS;
         let row = i as i32 / RADIAL_COLS;
@@ -4109,7 +3484,7 @@ impl RadialMenu {
         oy + RADIAL_PAD + grid_h + RADIAL_GAP
     }
 
-    fn width_cell_rect(&self, palette_len: usize, i: usize) -> (i32, i32, u32, u32) {
+    fn width_cell_rect(&self, palette_len: usize, i: usize) -> Shape {
         let (ox, _, _, _) = self.outer_rect(palette_len);
         let y = self.width_row_y(palette_len);
         (
@@ -4121,21 +3496,11 @@ impl RadialMenu {
     }
 
     fn slot_color(&self, palette_len: usize, lx: i32, ly: i32) -> Option<usize> {
-        for i in 0..palette_len {
-            if rect_contains(self.color_cell_rect(palette_len, i), lx, ly, 0) {
-                return Some(i);
-            }
-        }
-        None
+        (0..palette_len).find(|&i| rect_contains(self.color_cell_rect(palette_len, i), lx, ly, 0))
     }
 
-    fn slot_width(&self, lx: i32, ly: i32, palette_len: usize) -> Option<usize> {
-        for i in 0..RADIAL_WIDTHS.len() {
-            if rect_contains(self.width_cell_rect(palette_len, i), lx, ly, 0) {
-                return Some(i);
-            }
-        }
-        None
+    fn slot_width(&self, lx: i32, ly: i32, palette_len: usize, widths_len: usize) -> Option<usize> {
+        (0..widths_len).find(|&i| rect_contains(self.width_cell_rect(palette_len, i), lx, ly, 0))
     }
 
     fn contains(&self, palette_len: usize, lx: i32, ly: i32) -> bool {
@@ -4143,18 +3508,14 @@ impl RadialMenu {
     }
 }
 
-/// Gizmo drag state — which handle is being pulled.
+/// Active transform-gizmo drag.
 #[derive(Clone, Debug)]
 pub(crate) enum TransformDrag {
-    /// Uniform scale from a corner; `anchor` is the opposite corner held
-    /// fixed, `start_dist` is its initial radial distance at drag-start.
     Scale {
         anchor: FPoint,
         start_dist: f32,
         original: Box<crate::shape::Shape>,
     },
-    /// Rotation about the bounds centre; `start_angle` is the angle
-    /// (radians) from the centre to the pointer at drag-start.
     Rotate {
         center: FPoint,
         start_angle: f32,
@@ -4163,19 +3524,15 @@ pub(crate) enum TransformDrag {
 }
 
 pub(crate) struct WidthPopup {
-    /// Top-left, monitor-local.
     pub origin: (i32, i32),
     pub overlay_idx: usize,
-    /// True while the user holds the LMB after clicking inside the slider.
     pub dragging: bool,
-    /// `true` after a click → stays open until clicked away. `false` when
-    /// opened by hover → closes as soon as the pointer leaves both the
-    /// triggering chip and the popup's hit-area.
+    /// `true` when clicked → stays open; `false` when opened by hover.
     pub pinned: bool,
 }
 
 impl WidthPopup {
-    fn outer_rect(&self) -> (i32, i32, u32, u32) {
+    fn outer_rect(&self) -> Shape {
         (
             self.origin.0,
             self.origin.1,
@@ -4183,7 +3540,7 @@ impl WidthPopup {
             WIDTH_POPUP_H as u32,
         )
     }
-    fn track_rect(&self) -> (i32, i32, u32, u32) {
+    fn track_rect(&self) -> Shape {
         (
             self.origin.0 + 12,
             self.origin.1 + 28,
@@ -4253,17 +3610,6 @@ fn draw_width_popup(bytes: &mut [u8], w: u32, h: u32, p: &WidthPopup, value: f32
     );
 }
 
-// ============================================================================
-// Snap-step popup
-// ============================================================================
-//
-// Standalone widget — *not* a reskin of `WidthPopup`. Lives in its own
-// `State.snap_popup` slot with its own renderer, hit-test and value
-// range. The previous shared-implementation approach kept biting us:
-// the kind enum and merged geometry made every fix touch both popups,
-// and the dotted preview kept losing pixels whenever the stroke
-// slider grew or shrank. Splitting them removes the coupling entirely.
-
 const SNAP_POPUP_W: i32 = 240;
 const SNAP_POPUP_H_INNER: i32 = 110;
 const SNAP_STEP_MIN: f32 = 2.0;
@@ -4277,7 +3623,7 @@ pub(crate) struct SnapPopup {
 }
 
 impl SnapPopup {
-    fn outer_rect(&self) -> (i32, i32, u32, u32) {
+    fn outer_rect(&self) -> Shape {
         (
             self.origin.0,
             self.origin.1,
@@ -4285,7 +3631,7 @@ impl SnapPopup {
             SNAP_POPUP_H_INNER as u32,
         )
     }
-    fn track_rect(&self) -> (i32, i32, u32, u32) {
+    fn track_rect(&self) -> Shape {
         (
             self.origin.0 + 14,
             self.origin.1 + 32,
@@ -4293,7 +3639,7 @@ impl SnapPopup {
             6,
         )
     }
-    fn preview_rect(&self) -> (i32, i32, u32, u32) {
+    fn preview_rect(&self) -> Shape {
         (
             self.origin.0 + 14,
             self.origin.1 + 50,
@@ -4306,7 +3652,6 @@ impl SnapPopup {
         lx >= x - 6 && lx < x + w as i32 + 6 && ly >= y - 6 && ly < y + h as i32 + 6
     }
     fn track_hit(&self, lx: i32, ly: i32) -> bool {
-        // Generous slack so the user doesn't have to nail the 6-px track.
         let (rx, ry, rw, rh) = self.track_rect();
         lx >= rx && lx <= rx + rw as i32 && ly >= ry - 6 && ly <= ry + rh as i32 + 6
     }
@@ -4329,7 +3674,6 @@ fn draw_snap_popup(bytes: &mut [u8], w: u32, h: u32, p: &SnapPopup, value: f32) 
     outline_rect(bytes, w, h, (ox - 6, oy - 6, pw + 12, ph + 12), border);
     fill_rect_bytes(bytes, w, h, (ox - 2, oy - 2, pw + 4, ph + 4), [22, 28, 32]);
 
-    // Centred title.
     let label = format!("Snap step: {}px", value.round() as i32);
     let text_w = super::font::measure(&label, 13.0).ceil() as i32;
     let label_x = ox + (pw as i32 - text_w) / 2;
@@ -4343,7 +3687,6 @@ fn draw_snap_popup(bytes: &mut [u8], w: u32, h: u32, p: &SnapPopup, value: f32) 
         [230, 230, 230],
     );
 
-    // Slider track.
     let (tx, ty, tw, th) = p.track_rect();
     fill_rect_bytes(bytes, w, h, (tx, ty, tw, th), [60, 70, 76]);
     outline_rect(bytes, w, h, (tx, ty, tw, th), [110, 130, 140]);
@@ -4369,17 +3712,13 @@ fn draw_snap_popup(bytes: &mut [u8], w: u32, h: u32, p: &SnapPopup, value: f32) 
         [230, 230, 230],
     );
 
-    // Dotted preview — drawn at the *real* step, sized to the popup's
-    // dedicated band so we always fit at least one row even at the
-    // maximum step. 3×3 dots so they're visible on dark backgrounds.
     let preview = p.preview_rect();
     fill_rect_bytes(bytes, w, h, preview, [10, 16, 20]);
     outline_rect(bytes, w, h, preview, [60, 90, 100]);
     let step = value.round().max(SNAP_STEP_MIN) as i32;
     let dot = 3i32;
-    // First-row vertical centring keeps a dot visible even at step
-    // values bigger than the preview's height (the preview is ~48 px
-    // tall, so steps ≥ 50 only show one row).
+    // Centre the first row vertically so a dot is always visible at large
+    // steps (the preview is ~48 px tall, so step >= 50 fits only one row).
     let band_h = preview.3 as i32;
     let first_row = preview.1 + ((band_h - dot) / 2).max(0);
     let first_col = preview.0 + 4;
@@ -4399,13 +3738,10 @@ fn draw_snap_popup(bytes: &mut [u8], w: u32, h: u32, p: &SnapPopup, value: f32) 
 }
 
 impl State {
-    /// The persistent stroke width — what the chip shows on the toolbar.
     fn active_tool_width(&self) -> f32 {
         self.current_width
     }
 
-    /// Update the persistent stroke width *and* push it onto the active
-    /// tool so the next stroke uses it immediately.
     fn update_current_width(&mut self, w: f32) {
         self.current_width = w.clamp(WIDTH_MIN, WIDTH_MAX);
         set_active_tool_width(&mut self.canvas.active_tool, self.current_width);
@@ -4416,12 +3752,6 @@ impl State {
         self.update_current_width(cur + delta);
     }
 
-    /// `true` if the pointer is anywhere inside the picker's outer rect
-    /// (including the panel padding) on the overlay that owns the
-    /// picker. The click handler uses this to consume *all* clicks
-    /// inside the popup, not just the ones landing on the interactive
-    /// hue/sv regions — otherwise a click on the panel border would
-    /// fall through to the canvas and start a stroke.
     fn pointer_in_picker(&self) -> bool {
         let Some(p) = self.picker.as_ref() else {
             return false;
@@ -4498,9 +3828,6 @@ impl State {
         self.snap_step = value.clamp(SNAP_STEP_MIN, SNAP_STEP_MAX);
     }
 
-    /// True if the pointer is currently hovering over the width-button on
-    /// the toolbar. Used to scope wheel-scroll adjustments to that one
-    /// button instead of having scroll fire from anywhere.
     fn pointer_on_width_button(&self) -> bool {
         let Some(idx) = self.active_overlay else {
             return false;
@@ -4517,18 +3844,13 @@ impl State {
     }
 }
 
-/// Paint the quick-access menu — a grid of colour swatches with a row
-/// of stroke-width discs underneath. The rectangular cells make
-/// pointer hit-tests behave predictably.
-///
-/// `hover_color` / `hover_width` mark the cell the pointer is currently
-/// over so it can be rendered with a highlight outline.
 fn draw_radial_menu(
     bytes: &mut [u8],
     w: u32,
     h: u32,
     menu: &RadialMenu,
     palette: &[crate::color::Color],
+    widths: &[f32],
     hover_color: Option<usize>,
     hover_width: Option<usize>,
 ) {
@@ -4537,7 +3859,6 @@ fn draw_radial_menu(
     fill_rect_bytes(bytes, w, h, outer, [22, 22, 24]);
     outline_rect(bytes, w, h, outer, [80, 80, 84]);
 
-    // Colour cells.
     for (i, c) in palette.iter().enumerate() {
         let r = menu.color_cell_rect(palette_len, i);
         fill_rect_bytes(bytes, w, h, r, [c.0[0], c.0[1], c.0[2]]);
@@ -4549,8 +3870,7 @@ fn draw_radial_menu(
         outline_rect(bytes, w, h, r, border);
     }
 
-    // Width cells — small disc centred in each square.
-    for (i, w_val) in RADIAL_WIDTHS.iter().enumerate() {
+    for (i, w_val) in widths.iter().enumerate() {
         let r = menu.width_cell_rect(palette_len, i);
         let bg = [38, 38, 42];
         fill_rect_bytes(bytes, w, h, r, bg);
@@ -4580,15 +3900,12 @@ fn draw_radial_menu(
         }
     }
 
-    // Bottom readout — only when something is hovered.
     let readout = match (hover_color, hover_width) {
         (Some(i), _) if i < palette.len() => {
             let c = palette[i];
             Some(format!("#{:02X}{:02X}{:02X}", c.0[0], c.0[1], c.0[2]))
         }
-        (_, Some(j)) if j < RADIAL_WIDTHS.len() => {
-            Some(format!("W {}px", RADIAL_WIDTHS[j].round() as i32))
-        }
+        (_, Some(j)) if j < widths.len() => Some(format!("W {}px", widths[j].round() as i32)),
         _ => None,
     };
     if let Some(text) = readout {
@@ -4609,20 +3926,14 @@ fn draw_radial_menu(
     }
 }
 
-/// Paint a faint grid of dots clipped to `clip` (monitor-local pixels).
-/// Used to indicate where the snapper is going to pull the cursor —
-/// only drawn inside the active editing region.
-///
-/// `mon_origin` is the monitor's *global* (x, y) so the rendered grid
-/// can align to the same global step grid that `snap_point` snaps to.
-/// Without that alignment a dot drawn at local (0, 0) lives at global
-/// `mon_origin`, which is rarely a snap target.
+/// Paint a faint grid of dots clipped to `clip` (monitor-local), aligned
+/// to the global step grid via `mon_origin`.
 fn draw_snap_grid_clip(
     bytes: &mut [u8],
     w: u32,
     h: u32,
     step: f32,
-    clip: (i32, i32, u32, u32),
+    clip: Shape,
     mon_origin: (i32, i32),
 ) {
     let step = step.max(2.0) as i32;
@@ -4632,10 +3943,7 @@ fn draw_snap_grid_clip(
     let y0 = cy.max(0);
     let x1 = (cx + cw as i32).min(w as i32);
     let y1 = (cy + ch as i32).min(h as i32);
-    // First grid line ≥ x0 at a multiple of `step` in *global* coords.
-    // Local x is global x − mon_origin.x; we want
-    //   (local + mon.x) % step == 0
-    // → local ≡ (-mon.x) mod step
+    // First local grid line whose global position is a multiple of step.
     let off_x = (-mon_origin.0).rem_euclid(step);
     let off_y = (-mon_origin.1).rem_euclid(step);
     let start_x = x0 + ((off_x - x0 % step + step) % step);
@@ -4656,25 +3964,17 @@ fn draw_snap_grid_clip(
     }
 }
 
-// ============================================================================
-// Magnifier HUD
-// ============================================================================
-
 const MAGNIFIER_RADIUS: i32 = 64;
 const MAGNIFIER_ZOOM: i32 = 4;
 
 fn draw_magnifier(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &State) {
-    // Render the magnifier HUD whenever the user explicitly toggled it
-    // *or* the pipette is armed — the pipette ergonomics improve a lot
-    // with a zoomed view of the pixel about to be sampled, and the hex
-    // readout doubles as the colour the next click will pick.
+    // The pipette also opens the magnifier so the sampled pixel is visible.
     if !state.magnifier_on && !state.pipette_pending {
         return;
     }
     let mon = state.overlays[idx].monitor.bounds();
     let cx = state.pointer_pos_global.x as i32 - mon.x();
     let cy = state.pointer_pos_global.y as i32 - mon.y();
-    // Offset the magnifier so it doesn't cover the pixel being inspected.
     let off_x = MAGNIFIER_RADIUS + 16;
     let off_y = -(MAGNIFIER_RADIUS + 16);
     let ox = cx + off_x;
@@ -4701,7 +4001,6 @@ fn draw_magnifier(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &State) {
             if dist2 > r2 {
                 continue;
             }
-            // Source pixel (zoomed).
             let sx = cx + (dx as f32 / MAGNIFIER_ZOOM as f32).round() as i32;
             let sy = cy + (dy as f32 / MAGNIFIER_ZOOM as f32).round() as i32;
             let bx = sx + bg_origin.0;
@@ -4720,21 +4019,17 @@ fn draw_magnifier(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &State) {
             );
         }
     }
-    // Ring around the magnifier.
     for theta in 0..360 {
         let a = (theta as f32).to_radians();
         let mx = ox + (MAGNIFIER_RADIUS as f32 * a.cos()).round() as i32;
         let my = oy + (MAGNIFIER_RADIUS as f32 * a.sin()).round() as i32;
         paint_pixel(bytes, w, h, mx as u32, my as u32, [255, 255, 255]);
     }
-    // Crosshair on the centre pixel being inspected.
     for d in -2..=2 {
         paint_pixel(bytes, w, h, (ox + d) as u32, oy as u32, [255, 255, 255]);
         paint_pixel(bytes, w, h, ox as u32, (oy + d) as u32, [255, 255, 255]);
     }
 
-    // Hex readout — sample the central pixel and print "#RRGGBB" just
-    // below the ring so the user can read off the colour they're hovering.
     let center_bx = cx + bg_origin.0;
     let center_by = cy + bg_origin.1;
     if center_bx >= 0
@@ -4745,7 +4040,6 @@ fn draw_magnifier(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &State) {
         let p = bg.get_pixel(center_bx as u32, center_by as u32);
         let hex = format!("#{:02X}{:02X}{:02X}", p.0[0], p.0[1], p.0[2]);
         let label_y = oy + MAGNIFIER_RADIUS + 8;
-        // Backdrop so the hex is readable on any wallpaper.
         fill_rect_bytes(bytes, w, h, (ox - 40, label_y - 2, 80, 18), [16, 16, 18]);
         outline_rect(bytes, w, h, (ox - 40, label_y - 2, 80, 18), [60, 60, 64]);
         draw_text(
@@ -4760,27 +4054,16 @@ fn draw_magnifier(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &State) {
     }
 }
 
-// ============================================================================
-// Snapping helpers
-// ============================================================================
-
 const SNAP_TOL: f32 = 8.0;
 
-/// Snap `p` to the nearest grid intersection at `step` pixels. Used by
-/// the transform gizmo and by `snap_point` so every snap path agrees on
-/// where the grid is.
 fn snap_point_step(p: FPoint, step: f32) -> FPoint {
     let step = step.max(2.0);
     FPoint::new((p.x / step).round() * step, (p.y / step).round() * step)
 }
 
-/// Snap `p` to the closest grid intersection (at `step` px) or to an
-/// existing shape vertex, whichever is closer. Returns the original
-/// point when nothing's within tolerance.
 fn snap_point(canvas: &Canvas, p: FPoint, step: f32) -> FPoint {
     let mut best = snap_point_step(p, step);
     let mut best_d2 = (best.x - p.x).powi(2) + (best.y - p.y).powi(2);
-    // Snap to shape vertices when they're closer than the grid snap.
     for shape in canvas.shapes() {
         for v in shape_vertices(shape) {
             let d2 = (v.x - p.x).powi(2) + (v.y - p.y).powi(2);
@@ -4818,8 +4101,6 @@ fn shape_vertices(shape: &crate::shape::Shape) -> Vec<FPoint> {
 }
 
 impl State {
-    /// Sample the pixel under the cursor from the eager-captured
-    /// background and apply it as the active stroke colour.
     fn pipette_apply(&mut self) {
         let bg = match self.background.as_ref() {
             Some(b) => b.as_rgba(),
@@ -4843,10 +4124,8 @@ impl State {
         self.apply_pick_color(colour);
     }
 
-    /// Apply a colour pick (from the picker, pipette or radial menu).
-    /// Without Shift the stroke colour updates; if fill mode is on, the
-    /// fill colour also tracks the stroke so the user only has to pick
-    /// once. Shift+pick targets the fill colour exclusively.
+    /// Shift+pick targets fill only; without Shift the stroke updates
+    /// (and the fill colour tracks it when fill mode is on).
     fn apply_pick_color(&mut self, colour: crate::color::Color) {
         if self.mods.shift {
             self.canvas.set_fill_color(Some(colour));
@@ -4861,10 +4140,6 @@ impl State {
         }
     }
 
-    /// Hit-test the HSV picker against the active pointer position.
-    /// Returns the kind of region that was hit plus the picker-local
-    /// (lx, ly) coordinates so the caller can resolve a fresh hue or
-    /// (sat, val) value.
     fn hit_picker(&self) -> Option<(HsvHit, i32, i32)> {
         let p = self.picker.as_ref()?;
         let idx = self.active_overlay?;
@@ -4878,9 +4153,6 @@ impl State {
         Some((kind, lx, ly))
     }
 
-    /// Apply a picker click at `(lx, ly)`: hue-strip clicks update the
-    /// hue, SV-square clicks update saturation/value. Either way the
-    /// resolved RGB becomes the new stroke (or fill, with Shift).
     fn apply_picker_hit(&mut self, hit: HsvHit, lx: i32, ly: i32) {
         let rgb = if let Some(p) = self.picker.as_mut() {
             match hit {
@@ -4900,7 +4172,6 @@ impl State {
     }
 }
 
-/// Free fn so the click handler can call it without owning the borrow.
 fn sample_pipette(state: &mut State) {
     state.pipette_apply();
 }
