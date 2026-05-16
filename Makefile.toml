@@ -45,6 +45,14 @@ dependencies = ["fmt", "clippy"]
 description = "Check all issues, format and code quality"
 dependencies = ["fmt", "clippy"]
 
+[tasks.docs-config]
+description = "Regenerate docs/config.md from the Nix option modules"
+script = '''
+nix-build --no-out-link nix/gen-docs.nix \
+  | xargs -I{} install -m 644 {} docs/config.md
+'''
+workspace = false
+
 [tasks.fix-all]
 description = "Try fix all clippy and format issues"
 dependencies = ["fix-fmt", "fix-clippy"]

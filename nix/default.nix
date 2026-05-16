@@ -144,6 +144,7 @@ in
     packages = rec {
       code = sssCode.pkg;
       cli = sss.pkg;
+      docs = import ./gen-docs.nix { inherit pkgs lib; };
       default = cli;
     };
     # `nix develop`
