@@ -37,11 +37,15 @@ in
     #
     # * wayland (libwayland-client.so.0)
     #     wayland-client / wayland-protocols / wayland-protocols-wlr /
-    #     wayland-cursor all link against this dynamically via
-    #     DT_NEEDED (the dlopen feature is deliberately off — see the
-    #     comment in crates/sss_capture_ui/Cargo.toml). Required at
-    #     build time so rustc can find -lwayland-client *and* at run
-    #     time so the dynamic linker can resolve it.
+    #     wayland-cursor link against this. Required at build time so
+    #     rustc can find -lwayland-client *and* at run time so the
+    #     dynamic linker can resolve it. Note that several transitive
+    #     deps in the tree (wayland-sys, xkbcommon-dl,
+    #     yeslogic-fontconfig-sys) use `dlib`/`libloading` to dlopen
+    #     these .so files at runtime — those calls do NOT show up as
+    #     DT_NEEDED entries, so autoPatchelfHook alone can't infer the
+    #     rpath. We declare them explicitly in `runtimeDependencies`
+    #     below so the rpath gets baked into the produced binaries.
     # * libxkbcommon: used by winit / arboard fallbacks on Wayland.
     # * xorg.libxcb / xorg.libX11: x11rb (sss_capture's X11 backend)
     #     loads libxcb; arboard's X11 path needs libX11 + libXi.
@@ -73,15 +77,38 @@ in
       dbus.dev
     ];
 
+    # Libraries that the workspace loads via dlopen at runtime. These
+    # are not present as DT_NEEDED in the produced ELF (libloading
+    # resolves them by SONAME at runtime), so autoPatchelfHook has no
+    # way of inferring them — we hand them in explicitly and the hook
+    # appends each one's `/lib` to the binary's RPATH.
+    runtimeDeps = with pkgs; [
+      wayland
+      libxkbcommon
+      fontconfig.lib
+      xorg.libxcb
+      xorg.libX11
+      xorg.libXi
+      xorg.libXcursor
+      xorg.libXrandr
+      dbus.lib
+      stdenv.cc.cc.lib
+    ];
+
     # Base args, need for build all crate artifacts and caching this for late builds
     commonArgs = {
       src = ./..;
       doCheck = false;
       nativeBuildInputs =
-        [ pkgs.pkg-config pkgs.wayland-scanner ]
-        ++ lib.optionals stdenv.buildPlatform.isDarwin [
+        [] ++ lib.optionals stdenv.hostPlatform.isLinux [
+          pkgs.autoPatchelfHook
+          pkgs.pkg-config
+          pkgs.wayland-scanner
+          pkgs.stdenv.cc.cc.lib
+        ] ++ lib.optionals stdenv.buildPlatform.isDarwin [
           pkgs.libiconv
         ];
+        runtimeDependencies = lib.optionals stdenv.hostPlatform.isLinux runtimeDeps;
       inherit buildInputs;
     };
 
