@@ -26,3 +26,14 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 rayon = "1.8"
 notify-rust = { version = "4.11", features = ["images"] }
+
+# Native Wayland clipboard path so we don't leave arboard's fork-daemon
+# behind whenever the user passes `--copy`. The wlroots
+# `zwlr_data_control_manager_v1` protocol lets a clipboard manager
+# (DankMaterialShell / cliphist / clipman / …) grab the offered data
+# instantly; we then watch for our source being cancelled and exit
+# cleanly. When no manager is present we fall back to arboard.
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.2", features = ["client"] }
+rustix = { version = "0.38", features = ["event"] }

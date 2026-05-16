@@ -2,6 +2,7 @@
 use arboard::SetExtLinux;
 use image::imageops::{horizontal_gradient, resize, vertical_gradient, FilterType};
 use image::{Rgba, RgbaImage};
+use std::io::Cursor;
 
 use crate::color::ToRgba;
 use crate::components::{add_window_controls, add_window_title, round_corner};
@@ -128,20 +129,7 @@ pub fn generate_image(
     }
 
     if settings.copy {
-        let mut c = arboard::Clipboard::new()?;
-
-        #[cfg(target_os = "linux")]
-        let set = c
-            .set()
-            .clipboard(arboard::LinuxClipboardKind::Clipboard)
-            .wait();
-        #[cfg(not(target_os = "linux"))]
-        let set = c.set();
-        set.image(arboard::ImageData {
-            width: img.width() as usize,
-            height: img.height() as usize,
-            bytes: img.to_vec().into(),
-        })?;
+        copy_image_to_clipboard(&img)?;
     }
 
     make_output(
@@ -182,4 +170,57 @@ impl TryFrom<String> for Background {
         }
         Err(BackgroundError::CannotParse)
     }
+}
+
+/// Push `img` to the system clipboard as a PNG.
+///
+/// On Linux Wayland we go through `zwlr_data_control_manager_v1` directly
+/// (see [`crate::clipboard`]) so the call returns as soon as a clipboard
+/// manager has read the data — no fork-daemon left behind. The fallback
+/// is `arboard`, which keeps the surface alive itself via its own
+/// `SetExtLinux::wait()` fork (the historical behaviour). Non-Linux
+/// platforms always use `arboard`.
+fn copy_image_to_clipboard(img: &RgbaImage) -> Result<(), ImagenGeneration> {
+    #[cfg(target_os = "linux")]
+    {
+        // Try the wlroots data-control protocol first.
+        let mut png = Vec::with_capacity(img.as_raw().len() / 3);
+        image::write_buffer_with_format(
+            &mut Cursor::new(&mut png),
+            img.as_raw(),
+            img.width(),
+            img.height(),
+            image::ExtendedColorType::Rgba8,
+            image::ImageFormat::Png,
+        )
+        .map_err(|e| ImagenGeneration::Custom(format!("png encode: {e}")))?;
+
+        match crate::clipboard::copy_png(png) {
+            Ok(()) => return Ok(()),
+            Err(crate::clipboard::WlClipboardError::NotOnWayland) => {
+                tracing::debug!("not on wayland; using arboard");
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "native wayland clipboard unavailable; falling back to arboard"
+                );
+            }
+        }
+    }
+
+    let mut c = arboard::Clipboard::new()?;
+    #[cfg(target_os = "linux")]
+    let set = c
+        .set()
+        .clipboard(arboard::LinuxClipboardKind::Clipboard)
+        .wait();
+    #[cfg(not(target_os = "linux"))]
+    let set = c.set();
+    set.image(arboard::ImageData {
+        width: img.width() as usize,
+        height: img.height() as usize,
+        bytes: img.to_vec().into(),
+    })?;
+    Ok(())
 }

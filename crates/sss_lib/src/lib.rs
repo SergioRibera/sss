@@ -3,6 +3,8 @@ use font::FontCollection;
 
 mod args;
 pub mod blur;
+#[cfg(target_os = "linux")]
+mod clipboard;
 mod color;
 pub mod components;
 pub mod error;

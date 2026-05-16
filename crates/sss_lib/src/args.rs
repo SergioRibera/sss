@@ -81,10 +81,10 @@ pub struct GenerationSettingsArgs {
     #[clap(
         long,
         short,
-        help = "[values: raw or file path] If it is set then the result will be saved here"
+        help = "[values: raw or file path] If set, the result is saved here. \
+                Optional in --interactive mode (the GUI's Save button supplies a path)."
     )]
     #[serde(skip)]
-    #[clap(required = true)]
     pub output: Option<String>,
     #[clap(
         long,
