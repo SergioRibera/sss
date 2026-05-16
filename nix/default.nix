@@ -65,12 +65,12 @@ in
       fontconfig.dev
       libxkbcommon.dev
       libxkbcommon
-      xorg.libxcb
-      xorg.libX11
-      xorg.libXi
-      xorg.libXcursor
-      xorg.libXrandr
-      xorg.libxcb.dev
+      libxcb
+      libx11
+      libxi
+      libxcursor
+      libxrandr
+      libxcb.dev
       wayland
       wayland-protocols
       wayland-scanner
@@ -86,11 +86,11 @@ in
       wayland
       libxkbcommon
       fontconfig.lib
-      xorg.libxcb
-      xorg.libX11
-      xorg.libXi
-      xorg.libXcursor
-      xorg.libXrandr
+      libxcb
+      libx11
+      libxi
+      libxcursor
+      libxrandr
       dbus.lib
       stdenv.cc.cc.lib
     ];
