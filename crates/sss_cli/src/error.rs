@@ -8,8 +8,7 @@ pub enum SSScreenshot {
     #[error("Generation Image")]
     GenerationImage(#[from] sss_lib::error::ImagenGeneration),
     Directories(#[from] Configuration),
-    #[cfg(target_os = "linux")]
-    Wayshot(#[from] libwayshot::Error),
+    Capture(#[from] sss_capture::CaptureError),
 }
 
 #[derive(Debug, Error)]

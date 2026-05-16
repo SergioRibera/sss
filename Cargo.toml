@@ -9,7 +9,13 @@ homepage = "https://github.com/SergioRibera/sss"
 
 [workspace]
 resolver = "2"
-members = ["crates/sss_lib", "crates/sss_cli", "crates/sss_code"]
+members = [
+    "crates/sss_lib",
+    "crates/sss_cli",
+    "crates/sss_code",
+    "crates/sss_capture",
+    "crates/sss_capture_ui",
+]
 
 [profile.dev]
 opt-level = 1

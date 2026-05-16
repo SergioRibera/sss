@@ -1,0 +1,88 @@
+[package]
+name = "sss_capture_ui"
+description = "Interactive selection / annotation overlay for sss_capture (slurp-class binary + full editor library)"
+version = "0.1.0"
+publish = false
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords = ["screenshot", "selection", "annotation", "overlay", "slurp"]
+
+[features]
+default = ["editor"]
+# The "editor" feature pulls in the toolbar (egui + wgpu). Disabling it cuts
+# down to slurp-class region/monitor/window picking only.
+editor = ["dep:egui", "dep:egui-winit", "dep:egui-wgpu", "dep:wgpu", "dep:pollster"]
+# Optional layer-shell support for wlroots compositors. When disabled we
+# fall back to xdg-shell fullscreen-per-output, which still works everywhere.
+wayland-layer-shell = []
+
+[dependencies]
+sss_capture = { path = "../sss_capture" }
+image = "0.25"
+thiserror.workspace = true
+tracing.workspace = true
+
+# CPU pixel buffer for the layer-shell overlay path. The crate is tiny and
+# only kicks in on Linux Wayland; everything else still goes through the
+# winit/wgpu driver (gated behind the `editor` feature).
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client = "0.31"
+wayland-protocols = { version = "0.31", features = ["client", "unstable", "staging"] }
+wayland-protocols-wlr = { version = "0.2", features = ["client"] }
+wayland-cursor = "0.31"
+memmap2 = "0.9"
+rustix = { version = "0.38", features = ["fs", "mm", "shm", "event"] }
+# SVG icon loader for the layer-shell toolbar. resvg + tiny-skia raster the
+# user-supplied SVGs on the CPU; the result is cached in a `RgbaImage`.
+resvg = { version = "0.43", default-features = false }
+usvg = { version = "0.43", default-features = false }
+tiny-skia = "0.11"
+# Real text rendering for hints + tooltips. ab_glyph is a tiny pure-Rust
+# TTF rasteriser that lets us replace the embedded 5x7 bitmap font.
+ab_glyph = "0.2"
+
+# Windowing — winit handles X11 / Wayland (xdg-shell) / Win32 / Cocoa.
+#
+# Note: we do NOT enable the `wayland-dlopen` feature. The default is to
+# link against libwayland-client.so.0 via DT_NEEDED; the dynamic linker
+# resolves it the standard way. dlopen-mode breaks on setups where
+# `libloading` can't find the SONAME (e.g. nix shells with no library
+# path on LD_LIBRARY_PATH).
+winit = { version = "0.30", default-features = false, features = [
+    "rwh_06",
+    "x11",
+    "wayland",
+] }
+
+# Optional editor stack.
+egui       = { version = "0.29", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
+egui-winit = { version = "0.29", optional = true, default-features = false, features = ["clipboard"] }
+egui-wgpu  = { version = "0.29", optional = true, default-features = false }
+wgpu       = { version = "22",   optional = true }
+pollster   = { version = "0.4",  optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winit = { version = "0.30", features = ["rwh_06"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+winit = { version = "0.30", features = ["rwh_06"] }
+
+[[example]]
+name = "select_region"
+path = "examples/select_region.rs"
+
+[[example]]
+name = "annotate"
+path = "examples/annotate.rs"
+required-features = ["editor"]
+
+[[example]]
+name = "monitor_picker"
+path = "examples/monitor_picker.rs"
+
+[[bin]]
+name = "sss-select"
+path = "src/bin/sss_select.rs"

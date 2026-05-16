@@ -1,0 +1,111 @@
+[package]
+name = "sss_capture"
+description = "From-scratch cross-platform screen / window / region capture for Super ScreenShot"
+version = "0.1.0"
+publish = false
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords = ["screen", "monitor", "window", "capture", "image"]
+
+[features]
+default = []
+# Force every public symbol to be available unconditionally; if a backend
+# isn't compiled in for the current target, calls return `Unsupported`.
+unsupported-stubs = []
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+image = "0.25"
+bytemuck = "1.18"
+
+# ---------------------------- Linux: X11 ------------------------------------
+[target.'cfg(target_os = "linux")'.dependencies]
+# Pure-Rust X11 client. No libxcb runtime dependency.
+x11rb = { version = "0.13", default-features = false, features = [
+    "allow-unsafe-code",
+    "randr",
+    "xfixes",
+    "shm",
+    "composite",
+] }
+
+# ---------------------------- Linux: Wayland --------------------------------
+wayland-client = "0.31"
+wayland-protocols = { version = "0.31", features = ["unstable", "staging", "client"] }
+wayland-protocols-wlr = { version = "0.2", features = ["client"] }
+memmap2 = "0.9"
+rustix = { version = "0.38", features = ["fs", "mm", "shm", "event"] }
+nix = { version = "0.29", default-features = false, features = ["fs", "mman"] }
+
+# ---------------------------- Linux: portal fallback ------------------------
+# The `dbus` crate is a thin libdbus binding — no async runtime needed.
+dbus = { version = "0.9", features = ["vendored"] }
+url = "2"
+percent-encoding = "2"
+
+# ---------------------------- Windows ---------------------------------------
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_Xps",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_System_DataExchange",
+    "Win32_System_Ole",
+    "Win32_System_Memory",
+] }
+
+# ---------------------------- macOS -----------------------------------------
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.24"
+core-foundation = "0.10"
+objc2 = "0.5"
+objc2-foundation = "0.2"
+objc2-app-kit = { version = "0.2", features = [
+    "NSScreen",
+    "NSEvent",
+] }
+
+[[example]]
+name = "list_monitors"
+path = "examples/list_monitors.rs"
+
+[[example]]
+name = "list_windows"
+path = "examples/list_windows.rs"
+
+[[example]]
+name = "capture_all"
+path = "examples/capture_all.rs"
+
+[[example]]
+name = "capture_primary"
+path = "examples/capture_primary.rs"
+
+[[example]]
+name = "capture_at_cursor"
+path = "examples/capture_at_cursor.rs"
+
+[[example]]
+name = "capture_region"
+path = "examples/capture_region.rs"
+
+[[example]]
+name = "capture_window"
+path = "examples/capture_window.rs"
+
+[[example]]
+name = "select_backend"
+path = "examples/select_backend.rs"
