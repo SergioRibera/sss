@@ -7,7 +7,7 @@ use std::sync::{Mutex, OnceLock};
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use image::{Rgba, RgbaImage};
 
-const FONT_BYTES: &[u8] = include_bytes!("../../../assets/fonts/Hack-Regular.ttf");
+const FONT_BYTES: &[u8] = include_bytes!("../assets/fonts/Hack-Regular.ttf");
 
 fn font() -> &'static FontRef<'static> {
     static FONT: OnceLock<FontRef<'static>> = OnceLock::new();
