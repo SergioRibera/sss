@@ -18,24 +18,24 @@ fn main() -> ExitCode {
                 save = args.next().map(PathBuf::from);
             }
             "-h" | "--help" => {
-                println!("usage: sss-select [--area|--monitor|--window] [--save out.png]");
+                tracing::debug!("usage: sss-select [--area|--monitor|--window] [--save out.png]");
                 return ExitCode::SUCCESS;
             }
             other => {
-                eprintln!("sss-select: unknown argument {other:?}");
+                tracing::error!("sss-select: unknown argument {other:?}");
                 return ExitCode::from(2);
             }
         }
     }
 
-    let sel = match SelectorBuilder::new()
+    let sel = match SelectorBuilder::default()
         .mode(mode)
         .with_toolbar(false)
         .build()
     {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("sss-select: {e}");
+            tracing::error!("sss-select: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -43,7 +43,7 @@ fn main() -> ExitCode {
     let result = match sel.run() {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("sss-select: {e}");
+            tracing::error!("sss-select: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -56,13 +56,7 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    println!(
-        "{},{} {}x{}",
-        rect.x(),
-        rect.y(),
-        rect.width(),
-        rect.height()
-    );
+    println!("{rect}");
 
     if let Some(path) = save {
         let image = match &result.outcome {
@@ -73,7 +67,7 @@ fn main() -> ExitCode {
         };
         if let Some(img) = image {
             if let Err(e) = img.save(&path) {
-                eprintln!("sss-select: saving {}: {e}", path.display());
+                tracing::error!("sss-select: saving {}: {e}", path.display());
                 return ExitCode::FAILURE;
             }
         }

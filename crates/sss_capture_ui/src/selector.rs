@@ -112,10 +112,6 @@ impl Default for SelectorBuilder {
 }
 
 impl SelectorBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn mode(mut self, mode: SelectorMode) -> Self {
         self.mode = mode;
         self
@@ -181,7 +177,11 @@ impl SelectorBuilder {
     pub fn build(self) -> Result<Selector, SelectorError> {
         let capturer = match self.capturer {
             Some(c) => c,
-            None => Arc::new(Capturer::new().map_err(SelectorError::Capture)?),
+            None => Arc::new(
+                Capturer::builder()
+                    .build()
+                    .map_err(SelectorError::Capture)?,
+            ),
         };
         let palette = self
             .palette_override
@@ -228,7 +228,7 @@ pub(crate) struct Config {
 
 impl Selector {
     pub fn builder() -> SelectorBuilder {
-        SelectorBuilder::new()
+        SelectorBuilder::default()
     }
 
     /// Run the overlay, blocking until the user confirms or cancels.

@@ -39,8 +39,8 @@ pub struct Canvas {
     constrain: bool,
 }
 
-impl Canvas {
-    pub fn new() -> Self {
+impl Default for Canvas {
+    fn default() -> Self {
         let mut s = Self {
             next_id: 1,
             shapes: Vec::new(),
@@ -60,7 +60,9 @@ impl Canvas {
         s.history.snapshot(&s.shapes);
         s
     }
+}
 
+impl Canvas {
     pub fn fill_mode(&self) -> bool {
         self.fill_mode
     }
@@ -662,12 +664,6 @@ impl Canvas {
         let id = ShapeId(self.next_id);
         self.next_id += 1;
         id
-    }
-}
-
-impl Default for Canvas {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

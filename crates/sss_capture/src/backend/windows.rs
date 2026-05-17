@@ -103,19 +103,17 @@ impl Backend for WindowsBackend {
         capture_rect(bounds)
     }
 
-    fn capture_all(&self, opts: &CaptureOptions) -> Result<RgbaImage> {
+    fn capture_all(&self, _opts: &CaptureOptions) -> Result<RgbaImage> {
         let monitors = self.monitors()?;
         let bounds = Rect::bounding(&monitors.iter().map(|m| m.bounds).collect::<Vec<_>>())
             .ok_or(CaptureError::NoMonitors)?;
-        let _ = opts;
         capture_rect(bounds)
     }
 
-    fn capture_region(&self, region: Rect, opts: &CaptureOptions) -> Result<RgbaImage> {
+    fn capture_region(&self, region: Rect, _opts: &CaptureOptions) -> Result<RgbaImage> {
         if region.size.is_empty() {
             return Err(CaptureError::EmptyRegion(region));
         }
-        let _ = opts;
         capture_rect(region).or_else(|_| compose::region(self, region, opts))
     }
 

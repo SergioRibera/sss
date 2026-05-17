@@ -18,7 +18,7 @@ pub(crate) fn run(
     {
         if wayland_layer::is_available() {
             tracing::info!("platform: routing to wayland layer-shell driver");
-            eprintln!("sss_capture_ui: using wlr-layer-shell overlay driver");
+            tracing::error!("sss_capture_ui: using wlr-layer-shell overlay driver");
             return wayland_layer::run(sel);
         }
     }

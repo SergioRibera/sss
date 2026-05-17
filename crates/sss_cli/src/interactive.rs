@@ -70,7 +70,7 @@ pub fn run(
         ui_config.initial_tool = ToolKind::Brush;
     }
 
-    let mut builder = SelectorBuilder::new()
+    let mut builder = SelectorBuilder::default()
         .mode(mode)
         .with_toolbar(toolbar)
         .ui(ui_config)

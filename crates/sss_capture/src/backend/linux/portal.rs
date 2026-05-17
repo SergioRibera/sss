@@ -60,7 +60,7 @@ impl PortalBackend {
     pub fn try_new() -> Result<Self> {
         let conn = DbusConnection::new_session()
             .map_err(|e| CaptureError::backend(BACKEND, format!("dbus session: {e}")))?;
-        let _ = conn
+        _ = conn
             .with_proxy(
                 "org.freedesktop.portal.Desktop",
                 "/org/freedesktop/portal/desktop",
@@ -120,7 +120,7 @@ impl PortalBackend {
         let deadline = std::time::Instant::now() + PORTAL_TIMEOUT;
         loop {
             if std::time::Instant::now() > deadline {
-                let _ = conn.remove_match(token);
+                _ = conn.remove_match(token);
                 return Err(CaptureError::Timeout(PORTAL_TIMEOUT));
             }
             conn.process(Duration::from_millis(250)).ok();
@@ -128,7 +128,7 @@ impl PortalBackend {
                 break;
             }
         }
-        let _ = conn.remove_match(token);
+        _ = conn.remove_match(token);
 
         let status = status.lock().unwrap().unwrap_or(2);
         match status {
@@ -152,7 +152,7 @@ impl PortalBackend {
             .decode()
             .map_err(|e| CaptureError::ImageConversion(format!("decode portal png: {e}")))?
             .to_rgba8();
-        let _ = std::fs::remove_file(&path);
+        _ = std::fs::remove_file(&path);
         Ok(img)
     }
 }

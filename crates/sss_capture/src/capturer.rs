@@ -26,14 +26,15 @@ impl std::fmt::Debug for Capturer {
     }
 }
 
-impl Capturer {
-    /// Build a capturer using the best backend for the current platform.
-    pub fn new() -> Result<Self> {
-        Self::builder().build()
+impl Default for Capturer {
+    fn default() -> Self {
+        Self::builder().build().expect("Cannot create Capturer")
     }
+}
 
+impl Capturer {
     pub fn builder() -> CapturerBuilder {
-        CapturerBuilder::new()
+        CapturerBuilder::default()
     }
 
     pub fn backend_name(&self) -> &'static str {
@@ -176,10 +177,6 @@ pub struct CapturerBuilder {
 }
 
 impl CapturerBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn backend(mut self, kind: BackendKind) -> Self {
         self.backend = kind;
         self

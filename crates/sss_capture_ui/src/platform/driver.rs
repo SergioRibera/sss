@@ -30,7 +30,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
                     "initial eager capture failed; opening the selector \
                      with no background (capture will retry on confirm)",
                 );
-                eprintln!(
+                tracing::error!(
                     "sss_capture_ui: initial capture failed ({e}); the GUI \
                      will open without a background — the capture will be \
                      attempted again when you confirm a region."
@@ -59,7 +59,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
         monitors,
         initial,
         windows: Vec::new(),
-        canvas: Canvas::new(),
+        canvas: Canvas::default(),
         active_window: None,
         last_cursor: FPoint::default(),
         outcome: None,
@@ -175,7 +175,9 @@ impl ApplicationHandler for App {
                     self.windows.push(overlay);
                 }
                 Err(e) => {
-                    eprintln!("sss_capture_ui: failed to create overlay window for {monitor}: {e}");
+                    tracing::error!(
+                        "sss_capture_ui: failed to create overlay window for {monitor}: {e}"
+                    );
                     tracing::error!(error = %e, "failed to create overlay window for {monitor}");
                 }
             }
@@ -422,7 +424,7 @@ impl App {
         let first_surface = match instance.create_surface(first_window.clone()) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("sss_capture_ui: wgpu surface creation failed: {e}");
+                tracing::error!("sss_capture_ui: wgpu surface creation failed: {e}");
                 tracing::error!(error = %e, "wgpu: surface creation failed; editor disabled");
                 return;
             }
@@ -439,7 +441,7 @@ impl App {
                 Arc::new(g)
             }
             Err(e) => {
-                eprintln!("sss_capture_ui: wgpu init failed: {e}");
+                tracing::error!("sss_capture_ui: wgpu init failed: {e}");
                 tracing::error!(error = %e, "wgpu init failed; editor disabled");
                 return;
             }
@@ -455,7 +457,7 @@ impl App {
                 self.windows[0].gpu = Some(state);
             }
             Err(e) => {
-                eprintln!("sss_capture_ui: window-0 wgpu init failed: {e}");
+                tracing::error!("sss_capture_ui: window-0 wgpu init failed: {e}");
                 tracing::error!(error = %e, "wgpu: window-0 init failed");
                 return;
             }
@@ -473,7 +475,9 @@ impl App {
                     win.gpu = Some(state);
                 }
                 Err(e) => {
-                    eprintln!("sss_capture_ui: per-window wgpu init failed (window {idx}): {e}");
+                    tracing::error!(
+                        "sss_capture_ui: per-window wgpu init failed (window {idx}): {e}"
+                    );
                     tracing::warn!(error = %e, window = idx, "wgpu: per-window init failed");
                 }
             }

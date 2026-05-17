@@ -71,7 +71,7 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
         Ok(img) => Some(img),
         Err(e) => {
             tracing::warn!(error = %e, "eager capture failed; layer-shell overlay will be black");
-            eprintln!(
+            tracing::error!(
                 "sss_capture_ui[layer-shell]: eager capture failed ({e}); \
                  overlay will start blank — capture retries on confirm."
             );
@@ -109,7 +109,7 @@ pub(crate) fn run(sel: Selector) -> Result<Selection, SelectorError> {
     let current_color = config.ui.default_stroke_color;
     let current_width = config.ui.default_stroke_width;
     let current_fill = config.ui.default_fill;
-    let mut canvas = Canvas::new();
+    let mut canvas = Canvas::default();
     if current_fill.is_some() {
         canvas.set_fill_color(current_fill);
     }
@@ -945,11 +945,10 @@ impl Dispatch<WlPointer, ()> for State {
                 if let Some(i) = state.active_overlay {
                     update_pointer(state, i, surface_x, surface_y);
                     if let Some(hit) = state.picker_drag {
-                        if let Some(p) = state.picker.as_ref() {
+                        if state.picker.is_some() {
                             let mon = state.overlays[i].monitor.bounds();
                             let lx = state.pointer_pos_global.x as i32 - mon.x();
                             let ly = state.pointer_pos_global.y as i32 - mon.y();
-                            let _ = p;
                             state.apply_picker_hit(hit, lx, ly);
                             mark_all_redraw(state);
                             return;
@@ -1004,7 +1003,6 @@ impl Dispatch<WlPointer, ()> for State {
                         || state.snap_marker.is_some()
                         || state.radial.is_some()
                     {
-                        let _ = i;
                         mark_all_redraw(state);
                     }
                 }
@@ -1208,7 +1206,6 @@ impl Dispatch<WlPointer, ()> for State {
                     } else {
                         state.canvas.handle(CanvasEvent::PointerUp(click_p));
                     }
-                    let _ = i;
                     mark_all_redraw(state);
                 }
             }
@@ -2181,16 +2178,6 @@ impl State {
             }
         }
 
-        fn make_action(icon: ToolbarIcon, action: ButtonAction) -> ToolbarButton {
-            ToolbarButton {
-                rect: (0, 0, TB_BTN_W as u32, TB_BTN_H as u32),
-                action,
-                icon: Some(icon),
-                label: std::borrow::Cow::Borrowed(""),
-                tint: None,
-                active: false,
-            }
-        }
         buttons.push(ToolbarButton {
             rect: (0, 0, TB_BTN_W as u32, TB_BTN_H as u32),
             action: ButtonAction::TogglePicker,
@@ -2244,7 +2231,6 @@ impl State {
             tint: None,
             active: self.magnifier_on,
         });
-        let _ = make_action;
 
         let mut total_w: i32 = TB_PAD_X * 2;
         let mut prev_kind: Option<u8> = None;

@@ -169,14 +169,13 @@ impl Backend for X11Backend {
         Ok(out)
     }
 
-    fn capture_monitor(&self, id: MonitorId, opts: &CaptureOptions) -> Result<RgbaImage> {
+    fn capture_monitor(&self, id: MonitorId, _opts: &CaptureOptions) -> Result<RgbaImage> {
         let monitor = self
             .monitors()?
             .into_iter()
             .find(|m| m.id == id)
             .ok_or(CaptureError::MonitorNotFound(id))?;
         let bounds = monitor.bounds;
-        let _ = opts;
         self.capture_drawable(
             self.root,
             bounds.x() as i16,
@@ -194,11 +193,10 @@ impl Backend for X11Backend {
         self.capture_drawable(xid, 0, 0, geom.width, geom.height)
     }
 
-    fn capture_all(&self, opts: &CaptureOptions) -> Result<RgbaImage> {
+    fn capture_all(&self, _opts: &CaptureOptions) -> Result<RgbaImage> {
         let monitors = self.monitors()?;
         let bounds = Rect::bounding(&monitors.iter().map(|m| m.bounds).collect::<Vec<_>>())
             .ok_or(CaptureError::NoMonitors)?;
-        let _ = opts;
         self.capture_drawable(
             self.root,
             bounds.x() as i16,
@@ -212,7 +210,6 @@ impl Backend for X11Backend {
         if region.size.is_empty() {
             return Err(CaptureError::EmptyRegion(region));
         }
-        let _ = opts;
         self.capture_drawable(
             self.root,
             region.x() as i16,
