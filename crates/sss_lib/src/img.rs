@@ -4,11 +4,11 @@ use image::imageops::{horizontal_gradient, resize, vertical_gradient, FilterType
 use image::{Rgba, RgbaImage};
 use std::io::Cursor;
 
-use crate::color::ToRgba;
 use crate::components::{add_window_controls, add_window_title, round_corner};
 use crate::error::{Background as BackgroundError, ImagenGeneration};
 use crate::font::FontStyle;
 use crate::out::make_output;
+use crate::ToRgba;
 use crate::{DynImageContent, GenerationSettings};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

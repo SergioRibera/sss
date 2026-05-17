@@ -292,10 +292,16 @@ fn box_blur_horz(
             val_a += isize::from(bb[3]);
         }
         if blur_radius > width {
-            val_r += (blur_radius - height) as isize * isize::from(lv[0]);
-            val_g += (blur_radius - height) as isize * isize::from(lv[1]);
-            val_b += (blur_radius - height) as isize * isize::from(lv[2]);
-            val_a += (blur_radius - height) as isize * isize::from(lv[3]);
+            // Upstream fastblur had a copy-paste bug here that referenced
+            // `height` instead of `width`. Triggers a debug-mode underflow
+            // (or silent garbage in release) for any blur whose intersection
+            // with the current monitor is narrower than the box radius —
+            // exactly what happens when a BlurRect straddles two outputs.
+            let pad = (blur_radius - width) as isize;
+            val_r += pad * isize::from(lv[0]);
+            val_g += pad * isize::from(lv[1]);
+            val_b += pad * isize::from(lv[2]);
+            val_a += pad * isize::from(lv[3]);
         }
 
         // Process the left side where we need pixels from beyond the left edge

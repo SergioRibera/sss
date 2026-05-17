@@ -131,7 +131,7 @@ fn draw_shape(img: &mut RgbaImage, shape: &Shape, origin: (i32, i32)) {
             if r > 0 {
                 fill_disk(img, c, r, shape.style.fill.unwrap_or(shape.style.stroke));
                 draw_circle_outline(img, c, r, Color::WHITE, 1);
-                draw_number_centered(img, c, *number, Color::WHITE);
+                draw_number_centered(img, c, *number, Color::WHITE, *radius);
             }
         }
         Text {
@@ -444,187 +444,20 @@ fn apply_blur(img: &mut RgbaImage, rect: Rect, radius: f32, origin: (i32, i32)) 
     let w = (x1 - x0) as u32;
     let h = (y1 - y0) as u32;
     let cropped = imageops::crop_imm(img, x, y, w, h).to_image();
-    let blurred = imageops::blur(&cropped, radius.max(1.0));
+    let blurred = sss_core::blur::gaussian_blur(cropped, radius.max(1.0));
     imageops::replace(img, &blurred, x as i64, y as i64);
 }
 
-// 5x7 bitmap font for digits and basic ASCII.
-const GLYPH_W: usize = 5;
-const GLYPH_H: usize = 7;
-
-fn draw_number_centered(img: &mut RgbaImage, c: (i32, i32), n: u32, color: Color) {
+fn draw_number_centered(img: &mut RgbaImage, c: (i32, i32), n: u32, color: Color, radius: f32) {
     let s = n.to_string();
-    let total_w = s.len() as i32 * (GLYPH_W as i32 + 1) - 1;
-    let x0 = c.0 - total_w / 2;
-    let y0 = c.1 - GLYPH_H as i32 / 2;
-    for (i, ch) in s.chars().enumerate() {
-        draw_glyph(img, x0 + i as i32 * (GLYPH_W as i32 + 1), y0, ch, color, 1);
-    }
+    let px = (radius * 1.1).max(8.0);
+    let text_w = crate::font::measure(&s, px);
+    let ascent = crate::font::ascent(px);
+    let x0 = c.0 - (text_w / 2.0).round() as i32;
+    let y0 = c.1 - (ascent / 2.0).round() as i32;
+    crate::font::draw_text_rgba(img, x0, y0, &s, color.0, px);
 }
 
 fn draw_text(img: &mut RgbaImage, origin: (i32, i32), text: &str, style: &TextStyle) {
-    let scale = (style.size / GLYPH_H as f32).max(1.0).round() as i32;
-    let mut x = origin.0;
-    for ch in text.chars() {
-        draw_glyph(img, x, origin.1, ch, style.color, scale);
-        x += (GLYPH_W as i32 + 1) * scale;
-    }
-}
-
-fn draw_glyph(img: &mut RgbaImage, x: i32, y: i32, ch: char, color: Color, scale: i32) {
-    let bits = glyph_bits(ch);
-    for (row, b) in bits.iter().enumerate() {
-        for col in 0..GLYPH_W {
-            if b & (1 << (GLYPH_W - 1 - col)) != 0 {
-                for dy in 0..scale {
-                    for dx in 0..scale {
-                        px(
-                            img,
-                            x + col as i32 * scale + dx,
-                            y + row as i32 * scale + dy,
-                            color,
-                        );
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn glyph_bits(c: char) -> [u8; 7] {
-    match c {
-        '0' => [
-            0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110,
-        ],
-        '1' => [
-            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
-        ],
-        '2' => [
-            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111,
-        ],
-        '3' => [
-            0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110,
-        ],
-        '4' => [
-            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
-        ],
-        '5' => [
-            0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110,
-        ],
-        '6' => [
-            0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
-        ],
-        '7' => [
-            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
-        ],
-        '8' => [
-            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
-        ],
-        '9' => [
-            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100,
-        ],
-        ' ' => [0; 7],
-        'A'..='Z' => letter_bits(c),
-        'a'..='z' => letter_bits(c.to_ascii_uppercase()),
-        '.' => [0, 0, 0, 0, 0, 0b00110, 0b00110],
-        ',' => [0, 0, 0, 0, 0, 0b00110, 0b00100],
-        '!' => [
-            0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00000, 0b00100,
-        ],
-        '?' => [
-            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
-        ],
-        ':' => [0, 0b00110, 0b00110, 0, 0b00110, 0b00110, 0],
-        '-' => [0, 0, 0, 0b11111, 0, 0, 0],
-        '/' => [0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0, 0],
-        _ => [
-            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
-        ],
-    }
-}
-
-fn letter_bits(c: char) -> [u8; 7] {
-    match c {
-        'A' => [
-            0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
-        ],
-        'B' => [
-            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
-        ],
-        'C' => [
-            0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110,
-        ],
-        'D' => [
-            0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110,
-        ],
-        'E' => [
-            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
-        ],
-        'F' => [
-            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000,
-        ],
-        'G' => [
-            0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110,
-        ],
-        'H' => [
-            0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
-        ],
-        'I' => [
-            0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
-        ],
-        'J' => [
-            0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100,
-        ],
-        'K' => [
-            0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
-        ],
-        'L' => [
-            0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
-        ],
-        'M' => [
-            0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
-        ],
-        'N' => [
-            0b10001, 0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001,
-        ],
-        'O' => [
-            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
-        ],
-        'P' => [
-            0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
-        ],
-        'Q' => [
-            0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101,
-        ],
-        'R' => [
-            0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
-        ],
-        'S' => [
-            0b01110, 0b10001, 0b10000, 0b01110, 0b00001, 0b10001, 0b01110,
-        ],
-        'T' => [
-            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
-        ],
-        'U' => [
-            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
-        ],
-        'V' => [
-            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
-        ],
-        'W' => [
-            0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010,
-        ],
-        'X' => [
-            0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001,
-        ],
-        'Y' => [
-            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
-        ],
-        'Z' => [
-            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111,
-        ],
-        _ => [
-            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
-        ],
-    }
+    crate::font::draw_text_rgba(img, origin.0, origin.1, text, style.color.0, style.size);
 }

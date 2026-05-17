@@ -9,6 +9,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+sss_core = { path = "../sss_core" }
 clap.workspace = true
 serde.workspace = true
 merge2.workspace = true
@@ -24,7 +25,6 @@ image = { version = "0.25", default-features = false, features = [
     "rayon",
     "webp",
 ] }
-rayon = "1.12"
 notify-rust = { version = "4.17", features = ["images"] }
 
 # Native Wayland clipboard path so we don't leave arboard's fork-daemon

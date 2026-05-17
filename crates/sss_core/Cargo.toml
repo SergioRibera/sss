@@ -1,0 +1,21 @@
+[package]
+name = "sss_core"
+description = "Shared primitives (color, blur) used by sss_lib and sss_capture_ui"
+version = "0.1.0"
+publish = false
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["rayon"] }
+rayon = "1.12"
+thiserror.workspace = true
+tracing.workspace = true
+serde = { workspace = true, optional = true }

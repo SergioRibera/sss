@@ -1,12 +1,13 @@
 use font_kit::error::{FontLoadingError, GlyphLoadingError, SelectionError};
 use image::ImageError;
 use notify_rust::error::Error as NotificationError;
-use std::num::ParseIntError;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 use notify_rust::ImageError as NotificationImageError;
 
 use thiserror::Error;
+
+pub use sss_core::color::ParseColor;
 
 #[derive(Debug, Error)]
 #[error(transparent)]
@@ -40,19 +41,6 @@ pub enum Background {
 
 unsafe impl Send for Background {}
 unsafe impl Sync for Background {}
-
-#[derive(Debug, Error, Eq, PartialEq)]
-pub enum ParseColor {
-    #[error("Invalid length of String")]
-    InvalidLength,
-    #[error("Invalid digit")]
-    InvalidDigit,
-    #[error("Error parsing number")]
-    Parse(#[from] ParseIntError),
-}
-
-unsafe impl Send for ParseColor {}
-unsafe impl Sync for ParseColor {}
 
 #[derive(Debug, Error)]
 #[error(transparent)]

@@ -5,8 +5,6 @@ mod driver;
 #[cfg(target_os = "linux")]
 mod cursor;
 #[cfg(target_os = "linux")]
-mod font;
-#[cfg(target_os = "linux")]
 mod icons;
 #[cfg(target_os = "linux")]
 mod wayland_layer;
@@ -18,7 +16,7 @@ pub(crate) fn run(
     {
         if wayland_layer::is_available() {
             tracing::info!("platform: routing to wayland layer-shell driver");
-            tracing::error!("sss_capture_ui: using wlr-layer-shell overlay driver");
+            tracing::info!("sss_capture_ui: using wlr-layer-shell overlay driver");
             return wayland_layer::run(sel);
         }
     }

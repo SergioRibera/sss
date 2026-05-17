@@ -486,7 +486,7 @@ impl App {
     }
 
     fn render_window(&mut self, id: WinitWindowId, _event_loop: &ActiveEventLoop) {
-        use crate::render::overlay::{draw_canvas, draw_toolbar, ToolbarConfig};
+        use crate::render::overlay::{draw_canvas, draw_confirm_hint, draw_toolbar, ToolbarConfig};
 
         let gpu = match self.gpu.clone() {
             Some(g) => g,
@@ -496,9 +496,9 @@ impl App {
             Some(p) => p,
             None => return,
         };
-        let (origin_x, origin_y) = {
+        let (origin_x, origin_y, monitor_w) = {
             let m = &self.windows[pos].monitor;
-            (m.bounds().x(), m.bounds().y())
+            (m.bounds().x(), m.bounds().y(), m.bounds().width())
         };
 
         // Take and re-insert window_gpu to split the borrow against `window`.
@@ -540,12 +540,19 @@ impl App {
             egui::CentralPanel::default()
                 .frame(egui::Frame::new())
                 .show_inside(ctx, |ui| {
+                    let screen_rect = ui.max_rect();
                     let painter = ui.painter();
-                    draw_canvas(
-                        painter,
-                        &self.canvas,
-                        egui::Pos2::new(origin_x as f32, origin_y as f32),
-                    );
+                    let monitor_origin = egui::Pos2::new(origin_x as f32, origin_y as f32);
+                    draw_canvas(painter, &self.canvas, monitor_origin);
+                    if self.config.confirm_with_enter {
+                        draw_confirm_hint(
+                            painter,
+                            screen_rect,
+                            self.canvas.region(),
+                            monitor_origin,
+                            monitor_w as f32,
+                        );
+                    }
                 });
         });
 

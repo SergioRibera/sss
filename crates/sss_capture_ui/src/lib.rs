@@ -11,6 +11,7 @@ pub use sss_capture::{
 mod canvas;
 mod color;
 mod config;
+mod font;
 mod geometry;
 mod hit;
 mod mode;

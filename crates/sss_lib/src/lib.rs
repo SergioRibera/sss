@@ -2,10 +2,8 @@
 use font::FontCollection;
 
 mod args;
-pub mod blur;
 #[cfg(target_os = "linux")]
 mod clipboard;
-mod color;
 pub mod components;
 pub mod error;
 pub mod font;
@@ -15,12 +13,12 @@ mod shadow;
 pub mod utils;
 
 pub use args::*;
-pub use color::ToRgba;
 pub use image;
 use image::{Rgba, RgbaImage};
 pub use imageproc;
 pub use img::*;
 pub use shadow::Shadow;
+pub use sss_core::{blur::gaussian_blur, color::*};
 
 #[derive(Clone, Debug)]
 pub struct GenerationSettings {

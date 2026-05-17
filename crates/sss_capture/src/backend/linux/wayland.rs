@@ -184,7 +184,7 @@ impl WaylandBackend {
             // Hint when the wayland crates are in dlopen mode and the system
             // libwayland-client.so.0 isn't on the dynamic linker's path.
             if msg.to_lowercase().contains("could not be loaded") {
-                tracing::error!(
+                tracing::trace!(
                     "sss_capture[wayland]: failed to load libwayland-client.so.0 — \
                      install the system Wayland client library (e.g. \
                      `pacman -S wayland`, `apt install libwayland-client0`, or \
@@ -338,7 +338,7 @@ impl WaylandBackend {
     ) -> Result<RgbaImage> {
         state.reset_frame();
         tracing::info!("do_capture: waiting for buffer_done");
-        tracing::error!("sss_capture[wayland]: waiting for buffer_done…");
+        tracing::trace!("sss_capture[wayland]: waiting for buffer_done…");
 
         // Hold the inner lock only long enough to clone the handles we need;
         // dispatch_until below can block, which must not block other callers.
@@ -356,7 +356,7 @@ impl WaylandBackend {
                 break;
             }
             if Instant::now() >= deadline {
-                tracing::error!(
+                tracing::trace!(
                     "sss_capture[wayland]: timeout waiting for buffer_done after {FRAME_TIMEOUT:?}",
                 );
                 return Err(CaptureError::Timeout(FRAME_TIMEOUT));
@@ -364,11 +364,11 @@ impl WaylandBackend {
             dispatch_until(&conn, event_queue, state, deadline)?;
         }
         if state.frame_failed {
-            tracing::error!("sss_capture[wayland]: compositor returned `failed`");
+            tracing::trace!("sss_capture[wayland]: compositor returned `failed`");
             return Err(CaptureError::backend(BACKEND, "compositor returned failed"));
         }
         if state.advertised_formats.is_empty() {
-            tracing::error!("sss_capture[wayland]: no wl_shm formats advertised");
+            tracing::trace!("sss_capture[wayland]: no wl_shm formats advertised");
             return Err(CaptureError::backend(
                 BACKEND,
                 "compositor advertised no wl_shm formats",
@@ -418,7 +418,7 @@ impl WaylandBackend {
                 break;
             }
             if Instant::now() >= deadline {
-                tracing::error!(
+                tracing::trace!(
                     "sss_capture[wayland]: timeout waiting for `ready` after {FRAME_TIMEOUT:?}"
                 );
                 return Err(CaptureError::Timeout(FRAME_TIMEOUT));
@@ -426,7 +426,7 @@ impl WaylandBackend {
             dispatch_until(&conn, event_queue, state, deadline)?;
         }
         if state.frame_failed {
-            tracing::error!("sss_capture[wayland]: copy returned `failed`");
+            tracing::trace!("sss_capture[wayland]: copy returned `failed`");
             return Err(CaptureError::backend(BACKEND, "compositor returned failed"));
         }
         tracing::info!("do_capture: frame ready");
@@ -517,7 +517,7 @@ impl Backend for WaylandBackend {
 
     fn capture_monitor(&self, id: MonitorId, opts: &CaptureOptions) -> Result<RgbaImage> {
         tracing::info!("capture_monitor: id={id} show_cursor={}", opts.show_cursor);
-        tracing::error!("sss_capture[wayland]: capture_monitor {id}");
+        tracing::trace!("sss_capture[wayland]: capture_monitor {id}");
         // Drop the lock before do_capture, which re-acquires it briefly.
         let (frame, mut queue, mut state) = {
             let inner = self.inner.lock().unwrap();
@@ -547,15 +547,15 @@ impl Backend for WaylandBackend {
 
     fn capture_all(&self, opts: &CaptureOptions) -> Result<RgbaImage> {
         tracing::info!("capture_all: composing per-monitor captures");
-        tracing::error!("sss_capture[wayland]: capture_all start");
+        tracing::trace!("sss_capture[wayland]: capture_all start");
         let out = crate::backend::compose::all_monitors(self, opts);
         match &out {
-            Ok(img) => tracing::error!(
+            Ok(img) => tracing::trace!(
                 "sss_capture[wayland]: capture_all done ({}x{})",
                 img.width(),
                 img.height()
             ),
-            Err(e) => tracing::error!("sss_capture[wayland]: capture_all failed: {e}"),
+            Err(e) => tracing::trace!("sss_capture[wayland]: capture_all failed: {e}"),
         }
         out
     }

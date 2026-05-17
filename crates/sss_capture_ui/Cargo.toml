@@ -18,10 +18,12 @@ serde = ["dep:serde"]
 
 [dependencies]
 sss_capture = { path = "../sss_capture" }
+sss_core = { path = "../sss_core" }
 image = "0.25"
 thiserror.workspace = true
 tracing.workspace = true
 serde = { workspace = true, optional = true }
+ab_glyph = "0.2"
 
 # CPU pixel buffer for the layer-shell overlay path. The crate is tiny and
 # only kicks in on Linux Wayland; everything else still goes through the
@@ -38,9 +40,6 @@ rustix = { version = "1", features = ["fs", "mm", "shm", "event"] }
 resvg = { version = "0.47", default-features = false }
 usvg = { version = "0.47", default-features = false }
 tiny-skia = "0.12"
-# Real text rendering for hints + tooltips. ab_glyph is a tiny pure-Rust
-# TTF rasteriser that lets us replace the embedded 5x7 bitmap font.
-ab_glyph = "0.2"
 
 # Windowing — winit handles X11 / Wayland (xdg-shell) / Win32 / Cocoa.
 #

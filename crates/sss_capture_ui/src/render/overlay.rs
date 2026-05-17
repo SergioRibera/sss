@@ -1,6 +1,7 @@
 //! egui-based interactive overlay (toolbar and canvas painter).
 
 use egui::{Color32, Pos2, Rect as EguiRect, Stroke, Vec2};
+use sss_capture::Rect as CapRect;
 
 use crate::canvas::Canvas;
 use crate::color::Color;
@@ -152,6 +153,66 @@ pub fn draw_canvas(painter: &egui::Painter, canvas: &Canvas, screen_offset: Pos2
     if let Some(pending) = canvas.pending_text() {
         draw_shape(painter, &pending, screen_offset);
     }
+}
+
+/// Paint the "Press Enter to accept" hint below the active region (or at the
+/// bottom of the monitor when there is none). `screen_rect` is the panel rect
+/// in egui coords, `monitor_origin` is the monitor's global origin in the same
+/// physical-pixel space the canvas uses, and `monitor_width` is the monitor's
+/// width in that space.
+pub fn draw_confirm_hint(
+    painter: &egui::Painter,
+    screen_rect: EguiRect,
+    region: Option<CapRect>,
+    monitor_origin: Pos2,
+    monitor_width: f32,
+) {
+    let text = "Press Enter to accept";
+    let font_id = egui::FontId::proportional(16.0);
+    let text_color = Color32::from_rgb(240, 240, 240);
+    let galley = painter.layout_no_wrap(text.to_owned(), font_id, text_color);
+    let pad = Vec2::new(14.0, 8.0);
+    let panel_size = galley.size() + pad * 2.0;
+
+    let panel_pos = if let Some(region) = region.filter(|r| r.width() >= 2 && r.height() >= 2) {
+        // Single label across multi-monitor regions: only the monitor whose
+        // horizontal span covers the region centre draws the hint.
+        let center_gx = (region.x() + region.width() as i32 / 2) as f32;
+        if center_gx < monitor_origin.x || center_gx >= monitor_origin.x + monitor_width {
+            return;
+        }
+        let local_cx = center_gx - monitor_origin.x;
+        let top_local = region.y() as f32 - monitor_origin.y;
+        let bottom_local = top_local + region.height() as f32;
+        let margin = 16.0;
+        let below_y = bottom_local + margin;
+        let panel_y = if below_y + panel_size.y <= screen_rect.height() - 8.0 {
+            below_y
+        } else if top_local - panel_size.y - margin >= 8.0 {
+            top_local - panel_size.y - margin
+        } else {
+            (screen_rect.height() - panel_size.y - 8.0).max(8.0)
+        };
+        let max_x = (screen_rect.width() - panel_size.x - 8.0).max(8.0);
+        let panel_x = (local_cx - panel_size.x / 2.0).clamp(8.0, max_x);
+        Pos2::new(panel_x, panel_y)
+    } else {
+        let bottom_margin = 48.0;
+        Pos2::new(
+            ((screen_rect.width() - panel_size.x) / 2.0).max(8.0),
+            (screen_rect.height() - panel_size.y - bottom_margin).max(8.0),
+        )
+    };
+
+    let panel_rect = EguiRect::from_min_size(panel_pos, panel_size);
+    painter.rect_filled(panel_rect, 0.0, Color32::from_rgb(20, 20, 24));
+    painter.rect_stroke(
+        panel_rect,
+        0.0,
+        Stroke::new(1.0, Color32::from_rgb(90, 170, 255)),
+        egui::StrokeKind::Middle,
+    );
+    painter.galley(panel_pos + pad, galley, text_color);
 }
 
 fn draw_shape(painter: &egui::Painter, shape: &Shape, off: Pos2) {

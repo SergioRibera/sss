@@ -669,6 +669,10 @@ fn paint(idx: usize, w: u32, h: u32, mmap: &mut MmapMut, state: &State) {
 
     draw_selection_decor(bytes, w, h, idx, state);
 
+    if state.config.confirm_with_enter {
+        draw_confirm_hint(bytes, w, h, idx, state);
+    }
+
     let main_layout = state.toolbar_layout_for(idx);
     let side_layout = state.side_toolbar_layout_for(idx);
     if let Some(layout) = main_layout.as_ref() {
@@ -797,14 +801,14 @@ fn draw_text_sized(
     rgb: [u8; 3],
     px: f32,
 ) {
-    let ascent = super::font::ascent(px);
+    let ascent = crate::font::ascent(px);
     let mut pen_x = x as f32;
     let baseline = y as f32 + ascent;
     for ch in text.chars() {
-        let glyph = match super::font::glyph_for(ch, px) {
+        let glyph = match crate::font::glyph_for(ch, px) {
             Some(g) => g,
             None => {
-                pen_x += super::font::measure(&ch.to_string(), px);
+                pen_x += crate::font::measure(&ch.to_string(), px);
                 continue;
             }
         };
@@ -1710,7 +1714,7 @@ impl ToolbarLayout {
             } else if !b.label.is_empty() {
                 let label = b.label.as_ref();
                 let px = 13.0;
-                let text_w = super::font::measure(label, px).ceil() as i32;
+                let text_w = crate::font::measure(label, px).ceil() as i32;
                 let text_h = (px * 0.75) as i32;
                 let tx = rx + (rw as i32 - text_w) / 2;
                 let ty = ry + (rh as i32 - text_h) / 2;
@@ -2095,6 +2099,64 @@ fn outline_rect(bytes: &mut [u8], w: u32, h: u32, rect: Shape, rgb: [u8; 3]) {
         paint_pixel(bytes, w, h, x0 as u32, y as u32, rgb);
         paint_pixel(bytes, w, h, x1 as u32, y as u32, rgb);
     }
+}
+
+fn draw_confirm_hint(bytes: &mut [u8], w: u32, h: u32, idx: usize, state: &State) {
+    let mon = state.overlays[idx].monitor.bounds();
+    let text = "Press Enter to accept";
+    let px = 16.0_f32;
+    let text_w = crate::font::measure(text, px).ceil() as i32;
+    let pad_x = 14_i32;
+    let pad_y = 8_i32;
+    let panel_w = text_w + pad_x * 2;
+    let panel_h = px.ceil() as i32 + pad_y * 2 + 4;
+
+    let region = state
+        .canvas
+        .region()
+        .filter(|r| r.width() >= 2 && r.height() >= 2);
+
+    let (panel_x, panel_y) = if let Some(region) = region {
+        // Only the monitor whose horizontal span covers the region centre
+        // shows the hint, so a multi-monitor region gets a single label.
+        let center_gx = region.x() + region.width() as i32 / 2;
+        if center_gx < mon.x() || center_gx >= mon.x() + mon.width() as i32 {
+            return;
+        }
+        let local_center_x = center_gx - mon.x();
+        let top_local = region.y() - mon.y();
+        let bottom_local = top_local + region.height() as i32;
+        let margin = 16_i32;
+        let below_y = bottom_local + margin;
+        let panel_y = if below_y + panel_h <= h as i32 - 8 {
+            below_y
+        } else if top_local - panel_h - margin >= 8 {
+            top_local - panel_h - margin
+        } else {
+            (h as i32 - panel_h - 8).max(8)
+        };
+        let panel_x = (local_center_x - panel_w / 2).clamp(8, (w as i32 - panel_w - 8).max(8));
+        (panel_x, panel_y)
+    } else {
+        let bottom_margin = 48_i32;
+        let panel_x = ((w as i32 - panel_w) / 2).max(8);
+        let panel_y = (h as i32 - panel_h - bottom_margin).max(8);
+        (panel_x, panel_y)
+    };
+
+    let panel = (panel_x, panel_y, panel_w as u32, panel_h as u32);
+    fill_rect_bytes(bytes, w, h, panel, [20, 20, 24]);
+    outline_rect(bytes, w, h, panel, [90, 170, 255]);
+    draw_text_sized(
+        bytes,
+        w,
+        h,
+        (panel_x + pad_x) as u32,
+        (panel_y + pad_y) as u32,
+        text,
+        [240, 240, 240],
+        px,
+    );
 }
 
 impl State {
@@ -3558,7 +3620,7 @@ fn draw_width_popup(bytes: &mut [u8], w: u32, h: u32, p: &WidthPopup, value: f32
     fill_rect_bytes(bytes, w, h, (ox - 2, oy - 2, pw + 4, ph + 4), [22, 22, 24]);
 
     let label = format!("Stroke: {}px", value.round() as i32);
-    let text_w = super::font::measure(&label, 13.0).ceil() as i32;
+    let text_w = crate::font::measure(&label, 13.0).ceil() as i32;
     let label_x = ox + (pw as i32 - text_w) / 2;
     draw_text(
         bytes,
@@ -3662,7 +3724,7 @@ fn draw_snap_popup(bytes: &mut [u8], w: u32, h: u32, p: &SnapPopup, value: f32) 
     fill_rect_bytes(bytes, w, h, (ox - 2, oy - 2, pw + 4, ph + 4), [22, 28, 32]);
 
     let label = format!("Snap step: {}px", value.round() as i32);
-    let text_w = super::font::measure(&label, 13.0).ceil() as i32;
+    let text_w = crate::font::measure(&label, 13.0).ceil() as i32;
     let label_x = ox + (pw as i32 - text_w) / 2;
     draw_text(
         bytes,

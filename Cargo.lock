@@ -4231,6 +4231,7 @@ dependencies = [
  "rustix 1.1.4",
  "serde",
  "sss_capture",
+ "sss_core",
  "thiserror 2.0.18",
  "tiny-skia 0.12.0",
  "tracing",
@@ -4281,6 +4282,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sss_core"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "rayon",
+ "serde",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "sss_lib"
 version = "0.1.4"
 dependencies = [
@@ -4292,9 +4304,9 @@ dependencies = [
  "merge2",
  "notify-rust",
  "pathfinder_geometry",
- "rayon",
  "rustix 1.1.4",
  "serde",
+ "sss_core",
  "thiserror 2.0.18",
  "tracing",
  "wayland-client",

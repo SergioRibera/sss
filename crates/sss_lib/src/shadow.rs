@@ -39,7 +39,7 @@ impl Shadow {
         let mut shadow = RgbaImage::new(width, height);
         overlay(&mut shadow, &content, p_x.into(), p_y.into());
 
-        shadow = crate::blur::gaussian_blur(shadow.clone(), self.blur_radius);
+        shadow = crate::gaussian_blur(shadow.clone(), self.blur_radius);
 
         // copy the original image to the top of it
         copy_alpha(image, &mut shadow, p_x, p_y);

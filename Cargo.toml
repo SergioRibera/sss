@@ -10,6 +10,7 @@ homepage = "https://github.com/SergioRibera/sss"
 [workspace]
 resolver = "2"
 members = [
+    "crates/sss_core",
     "crates/sss_lib",
     "crates/sss_cli",
     "crates/sss_code",
