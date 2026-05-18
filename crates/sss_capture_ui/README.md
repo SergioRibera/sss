@@ -3,6 +3,8 @@
 Interactive selection / annotation overlay built on top of
 [`sss_capture`](../sss_capture).
 
+[selector_ui_preview.webm](https://github.com/user-attachments/assets/db8949c9-dc17-4690-98e7-1b9acefd004c)
+
 Three things in one crate:
 
 1. **Region / monitor / window picker** — slurp-class flow. Drag a
