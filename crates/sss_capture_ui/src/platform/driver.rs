@@ -433,6 +433,7 @@ impl Render for OverlayView {
             color_palette,
             current_color,
             current_width,
+            has_selection,
         ) = {
             let state = self.shared.read(cx);
             (
@@ -444,6 +445,7 @@ impl Render for OverlayView {
                 state.config.palette.color_palette.clone(),
                 state.canvas.active_tool.current_color(),
                 state.canvas.active_tool.current_width(),
+                state.canvas.selected().is_some(),
             )
         };
 
@@ -608,6 +610,7 @@ impl Render for OverlayView {
                     color_palette,
                     current_color,
                     current_width,
+                    has_selection,
                 ))
             })
             .child({
@@ -686,6 +689,7 @@ fn render_toolbar(
     color_palette: Vec<crate::color::Color>,
     current_color: Option<crate::color::Color>,
     current_width: Option<f32>,
+    has_selection: bool,
 ) -> impl IntoElement {
     let bar_bg = hsla(0.0, 0.0, 0.10, 0.92);
     let bar_border = hsla(0.58, 0.7, 0.5, 1.0);
@@ -806,6 +810,59 @@ fn render_toolbar(
                             shared.clone(),
                             current_width.unwrap(),
                         ))
+                })
+                .when(has_selection, |this| {
+                    this.child(toolbar_divider()).child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_1()
+                            .child(toolbar_icon_button(
+                                "layer-raise",
+                                "icons/raise.svg",
+                                false,
+                                false,
+                                {
+                                    let shared = shared.clone();
+                                    move |cx| {
+                                        shared.update(cx, |s, cx| {
+                                            s.canvas.raise_selected();
+                                            cx.notify();
+                                        });
+                                    }
+                                },
+                            ))
+                            .child(toolbar_icon_button(
+                                "layer-lower",
+                                "icons/lower.svg",
+                                false,
+                                false,
+                                {
+                                    let shared = shared.clone();
+                                    move |cx| {
+                                        shared.update(cx, |s, cx| {
+                                            s.canvas.lower_selected();
+                                            cx.notify();
+                                        });
+                                    }
+                                },
+                            ))
+                            .child(toolbar_icon_button(
+                                "layer-delete",
+                                "icons/trash.svg",
+                                false,
+                                false,
+                                {
+                                    let shared = shared.clone();
+                                    move |cx| {
+                                        shared.update(cx, |s, cx| {
+                                            s.handle_canvas(CanvasEvent::Delete);
+                                            cx.notify();
+                                        });
+                                    }
+                                },
+                            )),
+                    )
                 })
                 .child(toolbar_divider())
                 .child(
