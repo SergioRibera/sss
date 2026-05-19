@@ -5,7 +5,7 @@
 use sss_capture_ui::{Outcome, SelectorBuilder, SelectorMode};
 
 fn main() -> Result<(), sss_capture_ui::SelectorError> {
-    let result = SelectorBuilder::new()
+    let result = SelectorBuilder::default()
         .mode(SelectorMode::Monitor)
         .with_toolbar(false)
         .build()?

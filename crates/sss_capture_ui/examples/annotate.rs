@@ -1,4 +1,4 @@
-//! `cargo run -p sss_capture_ui --example annotate --features editor`
+//! `cargo run -p sss_capture_ui --example annotate`
 //!
 //! Full editor flow with toolbar. Lets the user pick a region and decorate
 //! it with brush strokes, arrows, blur rectangles, step markers and text.
@@ -6,7 +6,7 @@
 use sss_capture_ui::{CaptureTrigger, Outcome, SelectorBuilder, SelectorMode, ToolPalette};
 
 fn main() -> Result<(), sss_capture_ui::SelectorError> {
-    let result = SelectorBuilder::new()
+    let result = SelectorBuilder::default()
         .mode(SelectorMode::AnyOf)
         .with_toolbar(true)
         .palette(ToolPalette::default())

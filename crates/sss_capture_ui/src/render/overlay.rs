@@ -51,14 +51,17 @@ pub struct Xform {
     pub inv_scale: f32,
 }
 
-impl Xform {
-    pub fn new(origin: (i32, i32), scale: f32) -> Self {
+impl Default for Xform {
+    /// Identity transform: no origin offset, no scale.
+    fn default() -> Self {
         Self {
-            origin,
-            inv_scale: if scale > 0.0 { 1.0 / scale } else { 1.0 },
+            origin: (0, 0),
+            inv_scale: 1.0,
         }
     }
+}
 
+impl Xform {
     fn pt(&self, p: FPoint) -> Point<Pixels> {
         point(
             px((p.x - self.origin.0 as f32) * self.inv_scale),

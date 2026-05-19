@@ -538,7 +538,11 @@ impl Render for OverlayView {
                 gpui::canvas(
                     move |_, _, _| {},
                     move |_, _, window, cx| {
-                        let xf = Xform::new(origin, window.scale_factor());
+                        let scale = window.scale_factor().max(0.0001);
+                        let xf = Xform {
+                            origin,
+                            inv_scale: 1.0 / scale,
+                        };
                         let (snapshot, initial, initial_origin, hover) = {
                             let state = shared_for_paint.read(cx);
                             let initial_origin =

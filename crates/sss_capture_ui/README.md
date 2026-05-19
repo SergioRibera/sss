@@ -82,7 +82,7 @@ empty space defines / resizes the selection.
 ```rust
 use sss_capture_ui::{Outcome, SelectorBuilder, SelectorMode, CaptureTrigger};
 
-let result = SelectorBuilder::new()
+let result = SelectorBuilder::default()
     .mode(SelectorMode::Area)
     .with_toolbar(true)
     .capture_trigger(CaptureTrigger::Eager)
