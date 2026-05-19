@@ -295,6 +295,10 @@ impl Canvas {
                 let pending = self.pending_polygon.get_or_insert_with(Vec::new);
                 pending.push(p);
             }
+            // The colour sampler is wired in the driver before events
+            // reach the canvas — by the time we get here the tool will
+            // already have switched back, so this branch is unreachable.
+            Tool::Pipette => {}
         }
     }
 
@@ -857,7 +861,7 @@ fn current_style(tool: &Tool) -> Style {
             fill: Some(crate::color::Color::SHADOW),
         },
         Tool::Step(s) => Style::from(*s),
-        Tool::Text(_) | Tool::Pointer | Tool::Eraser { .. } => Style::default(),
+        Tool::Text(_) | Tool::Pointer | Tool::Eraser { .. } | Tool::Pipette => Style::default(),
     }
 }
 

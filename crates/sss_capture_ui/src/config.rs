@@ -19,6 +19,7 @@ pub enum ToolKind {
     Eraser,
     Step,
     Text,
+    Pipette,
 }
 
 impl ToolKind {
@@ -35,6 +36,7 @@ impl ToolKind {
             ToolKind::Eraser,
             ToolKind::Step,
             ToolKind::Text,
+            ToolKind::Pipette,
         ]
     }
 
@@ -51,6 +53,7 @@ impl ToolKind {
             ToolKind::Eraser => "Eraser",
             ToolKind::Step => "Step",
             ToolKind::Text => "Text",
+            ToolKind::Pipette => "Pick",
         }
     }
 
@@ -67,6 +70,7 @@ impl ToolKind {
             ToolKind::Eraser => "icons/eraser.svg",
             ToolKind::Step => "icons/step.svg",
             ToolKind::Text => "icons/text.svg",
+            ToolKind::Pipette => "icons/pipette.svg",
         }
     }
 
@@ -101,6 +105,7 @@ impl ToolKind {
                 size: ui.default_text_size,
                 bold: false,
             }),
+            ToolKind::Pipette => Tool::Pipette,
         }
     }
 }

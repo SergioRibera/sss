@@ -17,6 +17,7 @@ use gpui::{
 use sss_capture::{Image as CapImage, Monitor, Rect as CapRect};
 
 use crate::canvas::{Canvas, CanvasEvent};
+use crate::color::Color;
 use crate::geometry::FPoint;
 use crate::mode::SelectorMode;
 use crate::render::overlay::{
@@ -70,6 +71,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
                 monitors: monitors.clone(),
                 monitors_bb,
                 windows,
+                tool_before_pipette: None,
                 result_slot,
             });
 
@@ -175,6 +177,9 @@ struct SharedState {
     monitors: Vec<Monitor>,
     monitors_bb: CapRect,
     windows: Vec<sss_capture::Window>,
+    /// Tool the user was on before entering Pipette mode, so we can
+    /// restore it once a colour is sampled (or pipette is cancelled).
+    tool_before_pipette: Option<crate::tool::Tool>,
     result_slot: Arc<Mutex<Option<Selection>>>,
 }
 
@@ -193,6 +198,21 @@ impl SharedState {
             self.last_cursor.y as i32,
         );
         self.monitors.iter().find(|m| m.bounds().contains(p))
+    }
+
+    /// Sample the colour at the global pixel `p` from the eager capture,
+    /// or `None` if there is no capture or the point is outside it.
+    fn sample_color_at(&self, p: FPoint) -> Option<Color> {
+        let img = self.initial.as_deref()?;
+        let buf = img.as_rgba();
+        let (w, h) = buf.dimensions();
+        let x = (p.x as i32 - self.monitors_bb.x()).max(0) as u32;
+        let y = (p.y as i32 - self.monitors_bb.y()).max(0) as u32;
+        if x >= w || y >= h {
+            return None;
+        }
+        let px = buf.get_pixel(x, y).0;
+        Some(Color(px))
     }
 }
 
@@ -365,13 +385,16 @@ impl Render for OverlayView {
             )
         };
 
+        let picking = matches!(active_tool, crate::config::ToolKind::Pipette);
+
         div()
             .id("sss-overlay")
             .key_context("SssOverlay")
             .track_focus(&self.focus_handle)
             .size_full()
             .relative()
-            .cursor_crosshair()
+            .when(picking, |this| this.cursor_pointer())
+            .when(!picking, |this| this.cursor_crosshair())
             .bg(hsla(0.0, 0.0, 0.0, 0.18))
             .on_mouse_down(MouseButton::Left, {
                 let shared = shared.clone();
@@ -379,6 +402,20 @@ impl Render for OverlayView {
                     let pos = translate(ev.position, window.scale_factor());
                     let should_quit = shared.update(cx, |s, cx| {
                         s.last_cursor = pos;
+                        if matches!(s.canvas.active_tool, crate::tool::Tool::Pipette) {
+                            if let Some(c) = s.sample_color_at(pos) {
+                                let mut prev = s
+                                    .tool_before_pipette
+                                    .take()
+                                    .unwrap_or(crate::tool::Tool::Pointer);
+                                prev.apply_color(c);
+                                s.canvas.set_tool(prev);
+                            } else if let Some(prev) = s.tool_before_pipette.take() {
+                                s.canvas.set_tool(prev);
+                            }
+                            cx.notify();
+                            return false;
+                        }
                         match s.runtime_mode {
                             SelectorMode::Monitor | SelectorMode::Window => {
                                 s.confirm();
@@ -429,10 +466,17 @@ impl Render for OverlayView {
                     let confirm_with_enter = shared.read(cx).config.confirm_with_enter;
                     let should_quit = shared.update(cx, |s, cx| {
                         let typing = s.canvas.pending_text().is_some();
+                        let picking =
+                            matches!(s.canvas.active_tool, crate::tool::Tool::Pipette);
                         let mut quit = false;
                         match key {
                             "escape" if typing => {
                                 s.handle_canvas(CanvasEvent::TextCancel);
+                            }
+                            "escape" if picking => {
+                                if let Some(prev) = s.tool_before_pipette.take() {
+                                    s.canvas.set_tool(prev);
+                                }
                             }
                             "escape" => {
                                 s.cancel();
@@ -593,6 +637,16 @@ fn render_toolbar(
                     // tools doesn't leave it stuck in the editor.
                     if matches!(&s.canvas.active_tool, crate::tool::Tool::Text(_)) {
                         s.handle_canvas(CanvasEvent::TextCommit);
+                    }
+                    if matches!(built, crate::tool::Tool::Pipette) {
+                        // Remember where to return after the sample. Don't
+                        // overwrite a previous stash if the user mashes the
+                        // button twice without sampling.
+                        if !matches!(s.canvas.active_tool, crate::tool::Tool::Pipette) {
+                            s.tool_before_pipette = Some(s.canvas.active_tool.clone());
+                        }
+                    } else {
+                        s.tool_before_pipette = None;
                     }
                     s.canvas.set_tool(built);
                     cx.notify();

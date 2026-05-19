@@ -22,6 +22,9 @@ pub enum Tool {
     Step(StepSettings),
     Text(crate::shape::TextStyle),
     Polygon(BrushSettings),
+    /// Samples the colour under the next pointer-down from the captured
+    /// frame and applies it to the previously-active tool, then exits.
+    Pipette,
 }
 
 impl Tool {
@@ -38,6 +41,7 @@ impl Tool {
             Tool::Step(_) => "Step",
             Tool::Text(_) => "Text",
             Tool::Polygon(_) => "Polygon",
+            Tool::Pipette => "Pipette",
         }
     }
 
@@ -55,6 +59,7 @@ impl Tool {
             Tool::Step(_) => ToolKind::Step,
             Tool::Text(_) => ToolKind::Text,
             Tool::Polygon(_) => ToolKind::Polygon,
+            Tool::Pipette => ToolKind::Pipette,
         }
     }
 
@@ -69,7 +74,7 @@ impl Tool {
             | Tool::Polygon(b) => Some(b.color),
             Tool::Step(s) => Some(s.fill),
             Tool::Text(t) => Some(t.color),
-            Tool::Pointer | Tool::Eraser { .. } | Tool::BlurRect { .. } => None,
+            Tool::Pointer | Tool::Eraser { .. } | Tool::BlurRect { .. } | Tool::Pipette => None,
         }
     }
 
@@ -86,7 +91,7 @@ impl Tool {
             }
             Tool::Step(s) => s.fill = c,
             Tool::Text(t) => t.color = c,
-            Tool::Pointer | Tool::Eraser { .. } | Tool::BlurRect { .. } => {}
+            Tool::Pointer | Tool::Eraser { .. } | Tool::BlurRect { .. } | Tool::Pipette => {}
         }
     }
 
@@ -103,7 +108,7 @@ impl Tool {
             Tool::BlurRect { radius } | Tool::Eraser { radius } => Some(*radius),
             Tool::Step(s) => Some(s.radius),
             Tool::Text(t) => Some(t.size),
-            Tool::Pointer => None,
+            Tool::Pointer | Tool::Pipette => None,
         }
     }
 
@@ -119,7 +124,7 @@ impl Tool {
             Tool::BlurRect { radius } | Tool::Eraser { radius } => *radius = w,
             Tool::Step(s) => s.radius = w,
             Tool::Text(t) => t.size = w,
-            Tool::Pointer => {}
+            Tool::Pointer | Tool::Pipette => {}
         }
     }
 
@@ -158,6 +163,7 @@ impl Tool {
             Tool::Step(_) => "①",
             Tool::Text(_) => "T",
             Tool::Polygon(_) => "⬠",
+            Tool::Pipette => "🎨",
         }
     }
 }
@@ -233,6 +239,7 @@ impl Default for ToolPalette {
                 Tool::Eraser { radius: 18.0 },
                 Tool::Step(StepSettings::default()),
                 Tool::Text(crate::shape::TextStyle::default()),
+                Tool::Pipette,
             ],
             color_palette: Color::palette().to_vec(),
             initial: Tool::Pointer,

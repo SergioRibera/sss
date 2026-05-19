@@ -26,6 +26,7 @@ const ICONS: &[(&str, &[u8])] = &[
     icon!("eraser"),
     icon!("step"),
     icon!("text"),
+    icon!("pipette"),
     icon!("undo"),
     icon!("redo"),
     icon!("cancel"),
