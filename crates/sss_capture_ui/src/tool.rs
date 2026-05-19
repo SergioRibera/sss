@@ -58,6 +58,68 @@ impl Tool {
         }
     }
 
+    /// Stroke / fill / text color the tool will use, if applicable.
+    pub fn current_color(&self) -> Option<Color> {
+        match self {
+            Tool::Brush(b)
+            | Tool::Line(b)
+            | Tool::Arrow(b)
+            | Tool::Rectangle(b)
+            | Tool::Ellipse(b)
+            | Tool::Polygon(b) => Some(b.color),
+            Tool::Step(s) => Some(s.fill),
+            Tool::Text(t) => Some(t.color),
+            Tool::Pointer | Tool::Eraser { .. } | Tool::BlurRect { .. } => None,
+        }
+    }
+
+    pub fn apply_color(&mut self, c: Color) {
+        match self {
+            Tool::Brush(b)
+            | Tool::Line(b)
+            | Tool::Arrow(b)
+            | Tool::Rectangle(b)
+            | Tool::Ellipse(b)
+            | Tool::Polygon(b) => b.color = c,
+            Tool::Step(s) => s.fill = c,
+            Tool::Text(t) => t.color = c,
+            Tool::Pointer | Tool::Eraser { .. } | Tool::BlurRect { .. } => {}
+        }
+    }
+
+    /// Stroke width (Brush family), blur radius, eraser radius, step radius
+    /// or text height — whichever scalar parameter the tool exposes.
+    pub fn current_width(&self) -> Option<f32> {
+        match self {
+            Tool::Brush(b)
+            | Tool::Line(b)
+            | Tool::Arrow(b)
+            | Tool::Rectangle(b)
+            | Tool::Ellipse(b)
+            | Tool::Polygon(b) => Some(b.width),
+            Tool::BlurRect { radius } | Tool::Eraser { radius } => Some(*radius),
+            Tool::Step(s) => Some(s.radius),
+            Tool::Text(t) => Some(t.size),
+            Tool::Pointer => None,
+        }
+    }
+
+    pub fn apply_width(&mut self, w: f32) {
+        let w = w.max(0.5);
+        match self {
+            Tool::Brush(b)
+            | Tool::Line(b)
+            | Tool::Arrow(b)
+            | Tool::Rectangle(b)
+            | Tool::Ellipse(b)
+            | Tool::Polygon(b) => b.width = w,
+            Tool::BlurRect { radius } | Tool::Eraser { radius } => *radius = w,
+            Tool::Step(s) => s.radius = w,
+            Tool::Text(t) => t.size = w,
+            Tool::Pointer => {}
+        }
+    }
+
     pub fn icon(&self) -> &'static str {
         match self {
             Tool::Pointer => "↖",

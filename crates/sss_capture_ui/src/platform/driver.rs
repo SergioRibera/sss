@@ -306,7 +306,7 @@ impl Render for OverlayView {
         let monitor = self.monitor.clone();
         let origin = (monitor.bounds().x(), monitor.bounds().y());
 
-        let (show_toolbar, runtime_mode, active_tool, palette, ui_cfg) = {
+        let (show_toolbar, runtime_mode, active_tool, palette, ui_cfg, color_palette, current_color, current_width) = {
             let state = self.shared.read(cx);
             (
                 state.config.toolbar,
@@ -314,6 +314,9 @@ impl Render for OverlayView {
                 state.canvas.active_tool.kind(),
                 state.config.palette.kinds(),
                 Arc::new(state.config.ui.clone()),
+                state.config.palette.color_palette.clone(),
+                state.canvas.active_tool.current_color(),
+                state.canvas.active_tool.current_width(),
             )
         };
 
@@ -440,6 +443,9 @@ impl Render for OverlayView {
                     active_tool,
                     palette,
                     ui_cfg,
+                    color_palette,
+                    current_color,
+                    current_width,
                 ))
             })
             .child({
@@ -467,6 +473,9 @@ fn render_toolbar(
     active_tool: crate::config::ToolKind,
     palette: Vec<crate::config::ToolKind>,
     ui: Arc<crate::config::UiConfig>,
+    color_palette: Vec<crate::color::Color>,
+    current_color: Option<crate::color::Color>,
+    current_width: Option<f32>,
 ) -> impl IntoElement {
     let bar_bg = hsla(0.0, 0.0, 0.10, 0.92);
     let bar_border = hsla(0.58, 0.7, 0.5, 1.0);
@@ -557,6 +566,21 @@ fn render_toolbar(
                 )
                 .child(toolbar_divider())
                 .child(tool_row)
+                .when(current_color.is_some() && !color_palette.is_empty(), |this| {
+                    this.child(toolbar_divider())
+                        .child(render_color_row(
+                            shared.clone(),
+                            color_palette.clone(),
+                            current_color,
+                        ))
+                })
+                .when(current_width.is_some(), |this| {
+                    this.child(toolbar_divider())
+                        .child(render_width_controls(
+                            shared.clone(),
+                            current_width.unwrap(),
+                        ))
+                })
                 .child(toolbar_divider())
                 .child(
                     div()
@@ -626,6 +650,138 @@ fn render_toolbar(
 
 fn toolbar_divider() -> impl IntoElement {
     div().w(px(1.)).h(px(20.)).bg(hsla(0., 0., 1., 0.18))
+}
+
+fn render_color_row(
+    shared: Entity<SharedState>,
+    palette: Vec<crate::color::Color>,
+    current: Option<crate::color::Color>,
+) -> impl IntoElement {
+    let mut row = div().flex().flex_row().gap_1().items_center();
+    for color in palette {
+        let selected = current == Some(color);
+        let shared_clone = shared.clone();
+        row = row.child(color_swatch(color, selected, move |cx| {
+            shared_clone.update(cx, |s, cx| {
+                s.canvas.active_tool.apply_color(color);
+                cx.notify();
+            });
+        }));
+    }
+    row
+}
+
+fn color_swatch(
+    color: crate::color::Color,
+    selected: bool,
+    on_click: impl Fn(&mut App) + 'static,
+) -> impl IntoElement {
+    let [r, g, b, a] = color.0;
+    let bg = gpui::Rgba {
+        r: r as f32 / 255.,
+        g: g as f32 / 255.,
+        b: b as f32 / 255.,
+        a: a as f32 / 255.,
+    };
+    let id: gpui::SharedString = format!("swatch-{r}-{g}-{b}-{a}").into();
+    let ring_color = if selected {
+        hsla(0.58, 0.7, 0.7, 1.0)
+    } else {
+        hsla(0., 0., 1., 0.25)
+    };
+    div()
+        .id(gpui::ElementId::Name(id))
+        .w(px(22.))
+        .h(px(22.))
+        .rounded_full()
+        .bg(bg)
+        .border_2()
+        .border_color(ring_color)
+        .hover(|s| s.opacity(0.85))
+        .cursor_pointer()
+        .on_click(move |_, _, cx| on_click(cx))
+}
+
+fn render_width_controls(
+    shared: Entity<SharedState>,
+    current: f32,
+) -> impl IntoElement {
+    let step = if current < 4.0 {
+        0.5
+    } else if current < 12.0 {
+        1.0
+    } else {
+        2.0
+    };
+    let value = if current.fract().abs() < 0.05 {
+        format!("{:.0}", current)
+    } else {
+        format!("{:.1}", current)
+    };
+
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_1()
+        .child(toolbar_text_button("width-dec", "−", false, {
+            let shared = shared.clone();
+            move |cx| {
+                shared.update(cx, |s, cx| {
+                    if let Some(w) = s.canvas.active_tool.current_width() {
+                        s.canvas.active_tool.apply_width((w - step).max(0.5));
+                        cx.notify();
+                    }
+                });
+            }
+        }))
+        .child(
+            div()
+                .w(px(36.))
+                .text_color(white())
+                .text_size(px(12.))
+                .child(value),
+        )
+        .child(toolbar_text_button("width-inc", "+", false, {
+            let shared = shared.clone();
+            move |cx| {
+                shared.update(cx, |s, cx| {
+                    if let Some(w) = s.canvas.active_tool.current_width() {
+                        s.canvas.active_tool.apply_width((w + step).min(120.0));
+                        cx.notify();
+                    }
+                });
+            }
+        }))
+}
+
+fn toolbar_text_button(
+    id: &'static str,
+    label: &'static str,
+    primary: bool,
+    on_click: impl Fn(&mut App) + 'static,
+) -> impl IntoElement {
+    let bg = if primary {
+        hsla(0.36, 0.7, 0.45, 1.0)
+    } else {
+        hsla(0.0, 0.0, 0.20, 1.0)
+    };
+    div()
+        .id(gpui::ElementId::Name(id.into()))
+        .w(px(24.))
+        .h(px(24.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_md()
+        .bg(bg)
+        .text_color(white())
+        .text_size(px(14.))
+        .hover(|s| s.opacity(0.85))
+        .active(|s| s.opacity(0.7))
+        .cursor_pointer()
+        .child(label)
+        .on_click(move |_, _, cx| on_click(cx))
 }
 
 fn toolbar_icon_button(
