@@ -418,7 +418,8 @@ impl Focusable for OverlayView {
 }
 
 impl Render for OverlayView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let scale = window.scale_factor().max(0.0001);
         let shared = self.shared.clone();
         let shared_for_paint = self.shared.clone();
         let monitor = self.monitor.clone();
@@ -434,6 +435,7 @@ impl Render for OverlayView {
             current_color,
             current_width,
             has_selection,
+            region,
         ) = {
             let state = self.shared.read(cx);
             (
@@ -446,7 +448,24 @@ impl Render for OverlayView {
                 state.canvas.active_tool.current_color(),
                 state.canvas.active_tool.current_width(),
                 state.canvas.selected().is_some(),
+                state.canvas.region(),
             )
+        };
+
+        // Multi-monitor toolbar policy:
+        //   * No region yet: only the first monitor in `monitors` shows the
+        //     bar, so the user sees exactly one.
+        //   * Region drawn: only the monitor that contains the region's
+        //     centroid renders the bar; we anchor it below (or above) the
+        //     rect so it follows the selection.
+        let toolbar_anchor = if show_toolbar {
+            compute_toolbar_anchor(
+                monitor.bounds(),
+                region,
+                self.shared.read(cx).monitors.first().map(|m| m.id()) == Some(monitor.id()),
+            )
+        } else {
+            None
         };
 
         // Mouse events arrive in logical pixels (DIPs) relative to the
@@ -600,7 +619,7 @@ impl Render for OverlayView {
                     }
                 }
             })
-            .when(show_toolbar, |this| {
+            .when(toolbar_anchor.is_some(), |this| {
                 this.child(render_toolbar(
                     shared.clone(),
                     runtime_mode,
@@ -611,6 +630,8 @@ impl Render for OverlayView {
                     current_color,
                     current_width,
                     has_selection,
+                    // physical px → logical (DIP) for GPUI's layout
+                    toolbar_anchor.unwrap() / scale,
                 ))
             })
             .child({
@@ -690,6 +711,7 @@ fn render_toolbar(
     current_color: Option<crate::color::Color>,
     current_width: Option<f32>,
     has_selection: bool,
+    anchor_top_physical: f32,
 ) -> impl IntoElement {
     let bar_bg = hsla(0.0, 0.0, 0.10, 0.92);
     let bar_border = hsla(0.58, 0.7, 0.5, 1.0);
@@ -745,7 +767,7 @@ fn render_toolbar(
     div()
         .id("sss-toolbar")
         .absolute()
-        .top(px(12.))
+        .top(px(anchor_top_physical))
         .left_0()
         .right_0()
         .flex()
@@ -933,6 +955,49 @@ fn render_toolbar(
 
 fn toolbar_divider() -> impl IntoElement {
     div().w(px(1.)).h(px(20.)).bg(hsla(0., 0., 1., 0.18))
+}
+
+/// Decide where (and whether) to paint the floating toolbar for the
+/// monitor whose `monitor_bounds` we're rendering. Returns `Some(top_y)`
+/// in monitor-local physical pixels (divide by scale_factor in the
+/// caller's `Xform`), or `None` when this monitor shouldn't draw it.
+fn compute_toolbar_anchor(
+    monitor_bounds: CapRect,
+    region: Option<CapRect>,
+    is_primary: bool,
+) -> Option<f32> {
+    const TOOLBAR_H: f32 = 56.0;
+    const GAP: f32 = 12.0;
+
+    let mb = monitor_bounds;
+    let monitor_h = mb.height() as f32;
+    match region {
+        Some(r) if r.width() >= 2 && r.height() >= 2 => {
+            // Only the monitor containing the region's centroid paints
+            // the bar — avoids duplicated toolbars on multi-monitor
+            // selections.
+            let cx_g = r.x() + r.width() as i32 / 2;
+            let cy_g = r.y() + r.height() as i32 / 2;
+            let inside = cx_g >= mb.x()
+                && cx_g < mb.x() + mb.width() as i32
+                && cy_g >= mb.y()
+                && cy_g < mb.y() + mb.height() as i32;
+            if !inside {
+                return None;
+            }
+            let local_bottom = (r.y() + r.height() as i32 - mb.y()) as f32;
+            let local_top = (r.y() - mb.y()) as f32;
+            let below_y = local_bottom + GAP;
+            if below_y + TOOLBAR_H + 8.0 <= monitor_h {
+                Some(below_y)
+            } else if local_top - TOOLBAR_H - GAP >= 8.0 {
+                Some(local_top - TOOLBAR_H - GAP)
+            } else {
+                Some((monitor_h - TOOLBAR_H - 8.0).max(8.0))
+            }
+        }
+        _ => is_primary.then_some(12.0),
+    }
 }
 
 fn apply_tool_cursor(
