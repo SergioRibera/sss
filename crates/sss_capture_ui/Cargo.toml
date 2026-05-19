@@ -10,9 +10,7 @@ license.workspace = true
 keywords = ["screenshot", "selection", "annotation", "overlay", "slurp"]
 
 [features]
-default = ["editor", "serde"]
-editor = ["dep:egui", "dep:egui-winit", "dep:egui-wgpu", "dep:wgpu", "dep:pollster"]
-wayland-layer-shell = []
+default = ["serde"]
 serde = ["dep:serde"]
 
 [dependencies]
@@ -24,47 +22,17 @@ tracing.workspace = true
 serde = { workspace = true, optional = true }
 ab_glyph = "0.2"
 
-# CPU pixel buffer for the layer-shell overlay path. The crate is tiny and
-# only kicks in on Linux Wayland; everything else still goes through the
-# winit/wgpu driver (gated behind the `editor` feature).
-[target.'cfg(target_os = "linux")'.dependencies]
-wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
-wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-wayland-cursor = "0.31"
-memmap2 = "0.9"
-rustix = { version = "1", features = ["fs", "mm", "shm", "event"] }
-# SVG icon loader for the layer-shell toolbar. resvg + tiny-skia raster the
-# user-supplied SVGs on the CPU; the result is cached in a `RgbaImage`.
-resvg = { version = "0.47", default-features = false }
-usvg = { version = "0.47", default-features = false }
-tiny-skia = "0.12"
-
-# Windowing — winit handles X11 / Wayland (xdg-shell) / Win32 / Cocoa.
+# Windowing + rendering. GPUI handles X11 / Wayland (xdg-shell + wlr-layer-shell)
+# / Cocoa; it owns the GPU device (Blade on Linux, Metal on macOS) and the
+# event loop. Pinned to a Zed commit because the published 0.2.2 doesn't yet
+# expose `WindowKind::LayerShell` — the API lives on `main` until Zed cuts a
+# new release.
 #
-# Note: we do NOT enable the `wayland-dlopen` feature. The default is to
-# link against libwayland-client.so.0 via DT_NEEDED; the dynamic linker
-# resolves it the standard way. dlopen-mode breaks on setups where
-# `libloading` can't find the SONAME (e.g. nix shells with no library
-# path on LD_LIBRARY_PATH).
-winit = { version = "0.30", default-features = false, features = [
-    "rwh_06",
-    "x11",
-    "wayland",
-] }
-
-# Optional editor stack.
-egui       = { version = "0.34", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
-egui-winit = { version = "0.34", optional = true, default-features = false, features = ["clipboard"] }
-egui-wgpu  = { version = "0.34", optional = true, default-features = false }
-wgpu       = { version = "29",   optional = true }
-pollster   = { version = "0.4",  optional = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-winit = { version = "0.30", features = ["rwh_06"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-winit = { version = "0.30", features = ["rwh_06"] }
+# Windows is intentionally unsupported: GPUI itself targets only macOS and
+# Linux.
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "9abb73ee326118a7bf8afcd524acbb660e97bd50", default-features = false, features = ["wayland", "x11"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "9abb73ee326118a7bf8afcd524acbb660e97bd50", default-features = false, features = ["wayland", "x11"] }
 
 [[example]]
 name = "select_region"
@@ -73,7 +41,6 @@ path = "examples/select_region.rs"
 [[example]]
 name = "annotate"
 path = "examples/annotate.rs"
-required-features = ["editor"]
 
 [[example]]
 name = "monitor_picker"

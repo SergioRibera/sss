@@ -1,337 +1,186 @@
-//! Top-level winit-based driver, with optional egui editor toolbar.
+//! GPUI-backed driver: one root view per output, with a shared canvas
+//! state observed by every window. On Linux Wayland the windows are
+//! `WindowKind::LayerShell` surfaces; everywhere else they fall back to a
+//! borderless fullscreen window.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use sss_capture::Image as CapImage;
-use sss_capture::Monitor;
-use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowId as WinitWindowId};
+use gpui::{
+    App, AppContext, Application, Bounds, Context, Entity, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, hsla, point,
+    prelude::FluentBuilder, px, size, white,
+};
+use sss_capture::{Image as CapImage, Monitor, Rect as CapRect};
 
 use crate::canvas::{Canvas, CanvasEvent};
 use crate::geometry::FPoint;
 use crate::mode::SelectorMode;
-use crate::selector::{Outcome, PostAction, Selection, Selector, SelectorError};
-use crate::trigger::CaptureTrigger;
+use crate::render::overlay::paint_canvas;
+use crate::selector::{Config, Outcome, PostAction, Selection, Selector, SelectorError};
 
-/// Entry point invoked by `Selector::run`.
+// ─── Public entry point ─────────────────────────────────────────────────
+
 pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
     let Selector { config, capturer } = sel;
-    // Eager mode captures up front; failure is non-fatal so the user can still
-    // pick a region and the capture is retried on confirm.
-    let initial = if matches!(config.trigger, CaptureTrigger::Eager) {
-        match capturer.capture_all_with(config.capture_opts) {
-            Ok(img) => Some(img),
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "initial eager capture failed; opening the selector \
-                     with no background (capture will retry on confirm)",
-                );
-                tracing::error!(
-                    "sss_capture_ui: initial capture failed ({e}); the GUI \
-                     will open without a background — the capture will be \
-                     attempted again when you confirm a region."
-                );
-                None
-            }
+
+    let initial = match capturer.capture_all_with(config.capture_opts) {
+        Ok(img) => Some(img),
+        Err(e) => {
+            tracing::warn!(error = %e, "eager capture failed; overlay opens blank");
+            None
         }
-    } else {
-        None
     };
-
     let monitors = capturer.monitors().map_err(SelectorError::Capture)?;
-
-    let event_loop =
-        EventLoop::new().map_err(|e| SelectorError::Backend(format!("winit event loop: {e}")))?;
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    let monitors_bb = CapRect::bounding(&monitors.iter().map(|m| m.bounds()).collect::<Vec<_>>())
+        .unwrap_or_default();
 
     let save_path_hint = config.save_path_hint.clone();
     let initial_mode = match config.mode {
         SelectorMode::AnyOf => SelectorMode::Area,
         m => m,
     };
-    let mut app = App {
-        config,
-        capturer,
-        monitors,
-        initial,
-        windows: Vec::new(),
+
+    let result_slot: Arc<Mutex<Option<Selection>>> = Arc::new(Mutex::new(None));
+
+    let app: Application = gpui_platform::application();
+    {
+        let monitors = monitors.clone();
+        let result_slot = result_slot.clone();
+        app.run(move |cx| {
+            let shared = cx.new(|_| SharedState {
+                canvas: Canvas::default(),
+                runtime_mode: initial_mode,
+                action: PostAction {
+                    copy: false,
+                    save: false,
+                    save_path_hint,
+                },
+                last_cursor: FPoint::default(),
+                outcome: None,
+                config: Arc::new(config),
+                capturer,
+                initial,
+                monitors_bb,
+                result_slot,
+            });
+
+            // Match each sss_capture monitor to a GPUI display by origin.
+            // On Wayland the display_id pins the layer-shell surface to the
+            // right output; on macOS/X11 it picks the fullscreen target.
+            let displays = cx.displays();
+            for monitor in monitors.iter() {
+                let m_bounds = monitor.bounds();
+                let display_id = displays
+                    .iter()
+                    .find(|d| {
+                        let b = d.bounds();
+                        (b.origin.x.as_f32() as i32 - m_bounds.x()).abs() < 4
+                            && (b.origin.y.as_f32() as i32 - m_bounds.y()).abs() < 4
+                    })
+                    .map(|d| d.id());
+
+                let opts = window_options_for(monitor, display_id);
+                let shared_for_window = shared.clone();
+                let monitor_clone = monitor.clone();
+                let _ = cx.open_window(opts, move |window, cx| {
+                    cx.new(|cx| OverlayView::new(window, cx, shared_for_window, monitor_clone))
+                });
+            }
+
+            cx.on_window_closed(|cx, _id| {
+                if cx.windows().is_empty() {
+                    cx.quit();
+                }
+            })
+            .detach();
+        });
+    }
+
+    let mut slot = result_slot.lock().unwrap();
+    Ok(slot.take().unwrap_or_else(|| Selection {
+        outcome: Outcome::Cancelled,
         canvas: Canvas::default(),
-        active_window: None,
-        last_cursor: FPoint::default(),
-        outcome: None,
-        action: PostAction {
-            copy: false,
-            save: false,
-            save_path_hint,
-        },
-        mods: ModState::default(),
-        #[cfg(feature = "editor")]
-        gpu: None,
-        runtime_mode: initial_mode,
+        action: PostAction::default(),
+    }))
+}
+
+fn window_options_for(monitor: &Monitor, display_id: Option<gpui::DisplayId>) -> WindowOptions {
+    let m = monitor.bounds();
+    let bounds = Bounds {
+        origin: point(px(m.x() as f32), px(m.y() as f32)),
+        size: size(px(m.width() as f32), px(m.height() as f32)),
     };
 
-    event_loop
-        .run_app(&mut app)
-        .map_err(|e| SelectorError::Backend(format!("event loop: {e}")))?;
+    let kind = layer_shell_kind();
 
-    let outcome = app.outcome.unwrap_or(Outcome::Cancelled);
-    Ok(Selection {
-        outcome,
-        canvas: app.canvas,
-        action: app.action,
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Fullscreen(bounds)),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        display_id,
+        window_background: WindowBackgroundAppearance::Transparent,
+        app_id: Some("sss_capture_ui".into()),
+        window_min_size: None,
+        window_decorations: Some(gpui::WindowDecorations::Client),
+        icon: None,
+        tabbing_identifier: None,
+    }
+}
+
+// `gpui::layer_shell` is gated to `cfg(all(target_os = "linux", feature =
+// "wayland"))` inside gpui itself; we always enable the wayland feature on
+// our Linux/macOS-only build, so on Linux we can address it unconditionally.
+#[cfg(target_os = "linux")]
+fn layer_shell_kind() -> WindowKind {
+    use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
+    WindowKind::LayerShell(LayerShellOptions {
+        namespace: "sss_capture_ui".into(),
+        layer: Layer::Overlay,
+        anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+        ..Default::default()
     })
 }
 
-#[derive(Default, Clone, Copy, Debug)]
-struct ModState {
-    ctrl: bool,
-    shift: bool,
-    alt: bool,
-    meta: bool,
+#[cfg(not(target_os = "linux"))]
+fn layer_shell_kind() -> WindowKind {
+    WindowKind::Normal
 }
 
-struct App {
-    config: crate::selector::Config,
-    capturer: Arc<sss_capture::Capturer>,
-    monitors: Vec<Monitor>,
-    initial: Option<CapImage>,
-    windows: Vec<OverlayWindow>,
+// ─── Shared canvas state ────────────────────────────────────────────────
+
+struct SharedState {
     canvas: Canvas,
-    active_window: Option<WinitWindowId>,
+    runtime_mode: SelectorMode,
+    action: PostAction,
     last_cursor: FPoint,
     outcome: Option<Outcome>,
-    action: PostAction,
-    mods: ModState,
-    #[cfg(feature = "editor")]
-    gpu: Option<Arc<crate::render::gpu::Gpu>>,
-    runtime_mode: SelectorMode,
+    config: Arc<Config>,
+    capturer: Arc<sss_capture::Capturer>,
+    initial: Option<CapImage>,
+    monitors_bb: CapRect,
+    result_slot: Arc<Mutex<Option<Selection>>>,
 }
 
-struct OverlayWindow {
-    window: Arc<Window>,
-    monitor: Monitor,
-    #[cfg(feature = "editor")]
-    gpu: Option<crate::render::gpu::WindowGpu>,
-}
-
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        tracing::info!("App::resumed — creating overlay windows");
-        if !self.windows.is_empty() {
-            tracing::debug!("resume after suspend; reusing existing windows");
-            return;
-        }
-        let winit_monitors: Vec<_> = event_loop.available_monitors().collect();
-        tracing::info!(
-            "winit reports {} available monitor(s); sss_capture reports {}",
-            winit_monitors.len(),
-            self.monitors.len()
-        );
-        for (i, monitor) in self.monitors.iter().enumerate() {
-            let target = winit_monitors.iter().find(|m| {
-                let pos = m.position();
-                pos.x == monitor.bounds().x() && pos.y == monitor.bounds().y()
-            });
-            // `Borderless(None)` lets the compositor pick the current output
-            // when winit can't enumerate (some Wayland setups).
-            let fullscreen = Some(winit::window::Fullscreen::Borderless(target.cloned()));
-            tracing::info!(
-                monitor = %monitor.name(),
-                index = i,
-                handle_matched = target.is_some(),
-                bounds = %monitor.bounds(),
-                "creating overlay window",
-            );
-            let attrs = Window::default_attributes()
-                .with_title("sss_capture_ui overlay")
-                .with_decorations(false)
-                .with_resizable(false)
-                .with_visible(true)
-                .with_active(true)
-                // Without an explicit inner_size winit-Wayland can open a 0x0
-                // window that the compositor then hides.
-                .with_inner_size(winit::dpi::PhysicalSize::new(
-                    monitor.bounds().width().max(640),
-                    monitor.bounds().height().max(480),
-                ))
-                .with_transparent(matches!(self.config.trigger, CaptureTrigger::Lazy { .. }))
-                .with_fullscreen(fullscreen);
-            match event_loop.create_window(attrs) {
-                Ok(window) => {
-                    let window = Arc::new(window);
-                    let id = window.id();
-                    window.request_redraw();
-                    tracing::info!(?id, "overlay window created and redraw requested");
-                    let overlay = OverlayWindow {
-                        window,
-                        monitor: monitor.clone(),
-                        #[cfg(feature = "editor")]
-                        gpu: None,
-                    };
-                    self.windows.push(overlay);
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "sss_capture_ui: failed to create overlay window for {monitor}: {e}"
-                    );
-                    tracing::error!(error = %e, "failed to create overlay window for {monitor}");
-                }
-            }
-        }
-        tracing::info!("opened {} overlay window(s)", self.windows.len());
-
-        #[cfg(feature = "editor")]
-        if self.config.toolbar {
-            tracing::info!("initialising wgpu device for the editor toolbar");
-            self.init_gpu();
-            tracing::info!(
-                "wgpu init complete (per-window state ready for {} window(s))",
-                self.windows.iter().filter(|w| w.gpu.is_some()).count()
-            );
-        }
+impl SharedState {
+    fn handle_canvas(&mut self, ev: CanvasEvent) {
+        self.canvas.handle(ev);
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        id: WinitWindowId,
-        event: WindowEvent,
-    ) {
-        let (origin, _monitor) = match self.windows.iter().find(|w| w.window.id() == id) {
-            Some(w) => (
-                (w.monitor.bounds().x(), w.monitor.bounds().y()),
-                w.monitor.clone(),
-            ),
-            None => return,
-        };
-        self.active_window = Some(id);
-
-        match event {
-            WindowEvent::CloseRequested => {
-                self.outcome = Some(Outcome::Cancelled);
-                event_loop.exit();
-            }
-            WindowEvent::ModifiersChanged(state) => {
-                let m = state.state();
-                self.mods.ctrl = m.control_key();
-                self.mods.shift = m.shift_key();
-                self.mods.alt = m.alt_key();
-                self.mods.meta = m.super_key();
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if event.state != ElementState::Pressed {
-                    return;
-                }
-                match event.logical_key.as_ref() {
-                    Key::Named(NamedKey::Escape) => {
-                        self.outcome = Some(Outcome::Cancelled);
-                        event_loop.exit();
-                    }
-                    Key::Named(NamedKey::Enter) if self.config.confirm_with_enter => {
-                        self.confirm(event_loop);
-                    }
-                    Key::Named(NamedKey::Backspace) => {
-                        self.canvas.handle(CanvasEvent::TextBackspace);
-                    }
-                    Key::Character("z") | Key::Character("Z") if self.mods.ctrl => {
-                        if self.mods.shift {
-                            self.canvas.handle(CanvasEvent::Redo);
-                        } else {
-                            self.canvas.handle(CanvasEvent::Undo);
-                        }
-                    }
-                    Key::Character("y") | Key::Character("Y") if self.mods.ctrl => {
-                        self.canvas.handle(CanvasEvent::Redo);
-                    }
-                    Key::Character("c") | Key::Character("C") if self.mods.ctrl => {
-                        self.action.copy = true;
-                        self.confirm(event_loop);
-                    }
-                    Key::Character("s") | Key::Character("S") if self.mods.ctrl => {
-                        self.action.save = true;
-                        self.confirm(event_loop);
-                    }
-                    Key::Named(NamedKey::Delete) => {
-                        self.canvas.handle(CanvasEvent::Delete);
-                    }
-                    Key::Character(s) => {
-                        if let Some(ch) = s.chars().next() {
-                            if !self.mods.ctrl && !self.mods.alt && !self.mods.meta {
-                                self.canvas.handle(CanvasEvent::TextInput(ch));
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let p = FPoint::new(
-                    position.x as f32 + origin.0 as f32,
-                    position.y as f32 + origin.1 as f32,
-                );
-                self.last_cursor = p;
-                self.canvas.handle(CanvasEvent::PointerMove(p));
-                if let Some(win) = self.windows.iter().find(|w| w.window.id() == id) {
-                    win.window.request_redraw();
-                }
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if button != MouseButton::Left {
-                    return;
-                }
-                match state {
-                    ElementState::Pressed => {
-                        self.canvas
-                            .handle(CanvasEvent::PointerDown(self.last_cursor));
-                    }
-                    ElementState::Released => {
-                        self.canvas.handle(CanvasEvent::PointerUp(self.last_cursor));
-                    }
-                }
-            }
-            WindowEvent::RedrawRequested => {
-                tracing::trace!(?id, "redraw requested");
-                #[cfg(feature = "editor")]
-                self.render_window(id, event_loop);
-            }
-            WindowEvent::Occluded(occluded) => {
-                tracing::debug!(?id, occluded, "window occlusion changed");
-            }
-            WindowEvent::Focused(focused) => {
-                tracing::debug!(?id, focused, "window focus changed");
-                if focused {
-                    if let Some(win) = self.windows.iter().find(|w| w.window.id() == id) {
-                        win.window.request_redraw();
-                    }
-                }
-            }
-            WindowEvent::Resized(new_size) => {
-                #[cfg(feature = "editor")]
-                if let (Some(gpu), Some(win)) = (
-                    self.gpu.clone(),
-                    self.windows.iter_mut().find(|w| w.window.id() == id),
-                ) {
-                    if let Some(wg) = win.gpu.as_mut() {
-                        wg.resize(&gpu, (new_size.width.max(1), new_size.height.max(1)));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-impl App {
-    fn confirm(&mut self, event_loop: &ActiveEventLoop) {
-        let region = self.canvas.region();
+    fn confirm(&mut self) {
         let outcome = match self.runtime_mode {
             SelectorMode::Monitor => {
-                let p =
-                    sss_capture::Point::new(self.last_cursor.x as i32, self.last_cursor.y as i32);
+                let p = sss_capture::Point::new(
+                    self.last_cursor.x as i32,
+                    self.last_cursor.y as i32,
+                );
                 if let Ok(m) = self.capturer.monitor_at(p) {
                     let image = self.capture_region(m.bounds());
                     Outcome::Monitor {
@@ -344,13 +193,15 @@ impl App {
                 }
             }
             SelectorMode::Window => {
-                let cursor_point =
-                    sss_capture::Point::new(self.last_cursor.x as i32, self.last_cursor.y as i32);
+                let cursor = sss_capture::Point::new(
+                    self.last_cursor.x as i32,
+                    self.last_cursor.y as i32,
+                );
                 let win = self
                     .capturer
                     .windows()
                     .ok()
-                    .and_then(|ws| ws.into_iter().find(|w| w.bounds().contains(cursor_point)));
+                    .and_then(|ws| ws.into_iter().find(|w| w.bounds().contains(cursor)));
                 if let Some(w) = win {
                     let image = self.capture_region(w.bounds());
                     Outcome::Window {
@@ -362,7 +213,7 @@ impl App {
                     Outcome::Cancelled
                 }
             }
-            SelectorMode::Area | SelectorMode::AnyOf => match region {
+            SelectorMode::Area | SelectorMode::AnyOf => match self.canvas.region() {
                 Some(r) if r.width() >= 2 && r.height() >= 2 => {
                     let image = self.capture_region(r);
                     Outcome::Region { rect: r, image }
@@ -371,19 +222,28 @@ impl App {
             },
         };
         self.outcome = Some(outcome);
-        event_loop.exit();
+        self.store_result();
     }
 
-    /// Materialise the captured image for `rect`.
-    fn capture_region(&self, rect: sss_capture::Rect) -> Option<CapImage> {
-        let raw = match self.initial.clone() {
+    fn cancel(&mut self) {
+        self.outcome = Some(Outcome::Cancelled);
+        self.store_result();
+    }
+
+    fn store_result(&mut self) {
+        let outcome = self.outcome.clone().unwrap_or(Outcome::Cancelled);
+        *self.result_slot.lock().unwrap() = Some(Selection {
+            outcome,
+            canvas: self.canvas.clone(),
+            action: self.action.clone(),
+        });
+    }
+
+    fn capture_region(&self, rect: CapRect) -> Option<CapImage> {
+        let raw = match self.initial.as_ref() {
             Some(img) => {
-                let monitors_bb = sss_capture::Rect::bounding(
-                    &self.monitors.iter().map(|m| m.bounds()).collect::<Vec<_>>(),
-                )
-                .unwrap_or_default();
-                let local_x = (rect.x() - monitors_bb.x()).max(0) as u32;
-                let local_y = (rect.y() - monitors_bb.y()).max(0) as u32;
+                let local_x = (rect.x() - self.monitors_bb.x()).max(0) as u32;
+                let local_y = (rect.y() - self.monitors_bb.y()).max(0) as u32;
                 let cropped = image::imageops::crop_imm(
                     img.as_rgba(),
                     local_x,
@@ -406,249 +266,267 @@ impl App {
     }
 }
 
-#[cfg(feature = "editor")]
-impl App {
-    fn init_gpu(&mut self) {
-        // wgpu 22 keeps an internal reference to the surface used to create
-        // the adapter for as long as the adapter lives, so the first window's
-        // surface must outlive everything else.
-        if self.windows.is_empty() {
-            tracing::warn!("init_gpu: no overlay windows; skipping");
-            return;
+// ─── Per-window root view ───────────────────────────────────────────────
+
+struct OverlayView {
+    shared: Entity<SharedState>,
+    monitor: Monitor,
+    focus_handle: FocusHandle,
+    _sub: gpui::Subscription,
+}
+
+impl OverlayView {
+    fn new(
+        _window: &mut Window,
+        cx: &mut Context<'_, Self>,
+        shared: Entity<SharedState>,
+        monitor: Monitor,
+    ) -> Self {
+        let focus_handle = cx.focus_handle();
+        let sub = cx.observe(&shared, |_, _, cx| cx.notify());
+        Self {
+            shared,
+            monitor,
+            focus_handle,
+            _sub: sub,
         }
-        tracing::info!("init_gpu: creating wgpu instance");
-        let instance = crate::render::gpu::Gpu::new_instance();
-
-        tracing::info!("init_gpu: creating surface for the first window");
-        let first_window = self.windows[0].window.clone();
-        let first_surface = match instance.create_surface(first_window.clone()) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("sss_capture_ui: wgpu surface creation failed: {e}");
-                tracing::error!(error = %e, "wgpu: surface creation failed; editor disabled");
-                return;
-            }
-        };
-
-        tracing::info!("init_gpu: probing adapter / device");
-        let gpu = match crate::render::gpu::Gpu::new_with_surface(instance, &first_surface) {
-            Ok(g) => {
-                tracing::info!(
-                    adapter = ?g.adapter.get_info().name,
-                    backend = ?g.adapter.get_info().backend,
-                    "wgpu adapter selected",
-                );
-                Arc::new(g)
-            }
-            Err(e) => {
-                tracing::error!("sss_capture_ui: wgpu init failed: {e}");
-                tracing::error!(error = %e, "wgpu init failed; editor disabled");
-                return;
-            }
-        };
-
-        match crate::render::gpu::WindowGpu::from_surface(first_window, first_surface, &gpu) {
-            Ok(state) => {
-                tracing::info!(
-                    size = ?state.size,
-                    format = ?state.surface_format,
-                    "wgpu per-window state ready (window 0; reused probe surface)",
-                );
-                self.windows[0].gpu = Some(state);
-            }
-            Err(e) => {
-                tracing::error!("sss_capture_ui: window-0 wgpu init failed: {e}");
-                tracing::error!(error = %e, "wgpu: window-0 init failed");
-                return;
-            }
-        }
-
-        for (idx, win) in self.windows.iter_mut().enumerate().skip(1) {
-            match crate::render::gpu::WindowGpu::new(win.window.clone(), &gpu) {
-                Ok(state) => {
-                    tracing::info!(
-                        size = ?state.size,
-                        format = ?state.surface_format,
-                        window = idx,
-                        "wgpu per-window state ready",
-                    );
-                    win.gpu = Some(state);
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "sss_capture_ui: per-window wgpu init failed (window {idx}): {e}"
-                    );
-                    tracing::warn!(error = %e, window = idx, "wgpu: per-window init failed");
-                }
-            }
-        }
-        self.gpu = Some(gpu);
     }
+}
 
-    fn render_window(&mut self, id: WinitWindowId, _event_loop: &ActiveEventLoop) {
-        use crate::render::overlay::{draw_canvas, draw_confirm_hint, draw_toolbar, ToolbarConfig};
+impl Focusable for OverlayView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
 
-        let gpu = match self.gpu.clone() {
-            Some(g) => g,
-            None => return,
-        };
-        let pos = match self.windows.iter().position(|w| w.window.id() == id) {
-            Some(p) => p,
-            None => return,
-        };
-        let (origin_x, origin_y, monitor_w) = {
-            let m = &self.windows[pos].monitor;
-            (m.bounds().x(), m.bounds().y(), m.bounds().width())
-        };
+impl Render for OverlayView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let shared = self.shared.clone();
+        let shared_for_paint = self.shared.clone();
+        let monitor = self.monitor.clone();
+        let origin = (monitor.bounds().x(), monitor.bounds().y());
 
-        // Take and re-insert window_gpu to split the borrow against `window`.
-        let mut window_gpu = match self.windows[pos].gpu.take() {
-            Some(g) => g,
-            None => return,
-        };
-        let window_arc = self.windows[pos].window.clone();
-
-        let raw_input = window_gpu.egui_winit.take_egui_input(&window_arc);
-
-        let mut confirm = false;
-        let mut cancel = false;
-        let full_output = window_gpu.egui_ctx.clone().run_ui(raw_input, |ctx| {
-            if self.config.toolbar {
-                let out = draw_toolbar(
-                    ctx,
-                    &mut self.canvas,
-                    &self.config.palette,
-                    &mut self.runtime_mode,
-                    ToolbarConfig {
-                        show_copy: self.config.show_copy,
-                        show_save: self.config.show_save,
-                    },
-                );
-                if out.copy {
-                    self.action.copy = true;
-                }
-                if out.save {
-                    self.action.save = true;
-                }
-                if out.confirm {
-                    confirm = true;
-                }
-                if out.cancel {
-                    cancel = true;
-                }
-            }
-            egui::CentralPanel::default()
-                .frame(egui::Frame::new())
-                .show_inside(ctx, |ui| {
-                    let screen_rect = ui.max_rect();
-                    let painter = ui.painter();
-                    let monitor_origin = egui::Pos2::new(origin_x as f32, origin_y as f32);
-                    draw_canvas(painter, &self.canvas, monitor_origin);
-                    if self.config.confirm_with_enter {
-                        draw_confirm_hint(
-                            painter,
-                            screen_rect,
-                            self.canvas.region(),
-                            monitor_origin,
-                            monitor_w as f32,
-                        );
-                    }
-                });
-        });
-
-        window_gpu
-            .egui_winit
-            .handle_platform_output(&window_arc, full_output.platform_output.clone());
-
-        let primitives = window_gpu
-            .egui_ctx
-            .tessellate(full_output.shapes, full_output.pixels_per_point);
-        let screen_desc = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [window_gpu.size.0, window_gpu.size.1],
-            pixels_per_point: full_output.pixels_per_point,
+        let (show_toolbar, runtime_mode) = {
+            let state = self.shared.read(cx);
+            (state.config.toolbar, state.runtime_mode)
         };
 
-        for (id, image_delta) in &full_output.textures_delta.set {
-            window_gpu
-                .renderer
-                .update_texture(&gpu.device, &gpu.queue, *id, image_delta);
-        }
-
-        let output = match window_gpu.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(surface_texture)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => surface_texture,
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                window_gpu
-                    .surface
-                    .configure(&gpu.device, &window_gpu.config);
-                self.windows[pos].gpu = Some(window_gpu);
-                return;
-            }
-            e => {
-                let e = format!("{e:?}");
-                tracing::warn!(error = %e, "wgpu: get_current_texture failed");
-                self.windows[pos].gpu = Some(window_gpu);
-                return;
-            }
-        };
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("sss_capture_ui encoder"),
-            });
-        window_gpu.renderer.update_buffers(
-            &gpu.device,
-            &gpu.queue,
-            &mut encoder,
-            &primitives,
-            &screen_desc,
+        // Build mouse listeners that translate window-local positions to
+        // global canvas coordinates by adding the monitor's origin. The
+        // overlay window covers exactly one output, so this is a constant
+        // offset for the window's lifetime.
+        let monitor_origin = (
+            monitor.bounds().x() as f32,
+            monitor.bounds().y() as f32,
         );
-        {
-            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("sss_capture_ui pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        // Opaque (alpha=1.0): per-pixel compositor blending
-                        // against the desktop is expensive on multi-monitor
-                        // setups and has triggered GPU-driver kernel crashes
-                        // on niri with 4 outputs.
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
+        let translate = move |pos: Point<Pixels>| -> FPoint {
+            FPoint::new(pos.x.as_f32() + monitor_origin.0, pos.y.as_f32() + monitor_origin.1)
+        };
+
+        div()
+            .id("sss-overlay")
+            .key_context("SssOverlay")
+            .track_focus(&self.focus_handle)
+            .size_full()
+            .relative()
+            .bg(hsla(0.0, 0.0, 0.0, 0.18))
+            .on_mouse_down(MouseButton::Left, {
+                let shared = shared.clone();
+                let translate = translate;
+                move |ev: &MouseDownEvent, _, cx| {
+                    let pos = translate(ev.position);
+                    shared.update(cx, |s, cx| {
+                        s.last_cursor = pos;
+                        s.handle_canvas(CanvasEvent::PointerDown(pos));
+                        cx.notify();
+                    });
+                }
+            })
+            .on_mouse_move({
+                let shared = shared.clone();
+                move |ev: &MouseMoveEvent, _, cx| {
+                    let pos = translate(ev.position);
+                    shared.update(cx, |s, cx| {
+                        s.last_cursor = pos;
+                        s.handle_canvas(CanvasEvent::PointerMove(pos));
+                        cx.notify();
+                    });
+                }
+            })
+            .on_mouse_up(MouseButton::Left, {
+                let shared = shared.clone();
+                move |ev: &MouseUpEvent, _, cx| {
+                    let pos = translate(ev.position);
+                    shared.update(cx, |s, cx| {
+                        s.last_cursor = pos;
+                        s.handle_canvas(CanvasEvent::PointerUp(pos));
+                        cx.notify();
+                    });
+                }
+            })
+            .on_key_down({
+                let shared = shared.clone();
+                move |ev: &KeyDownEvent, _, cx| {
+                    let key = ev.keystroke.key.as_str();
+                    let modifiers = &ev.keystroke.modifiers;
+                    let ctrl = modifiers.control;
+                    let shift = modifiers.shift;
+                    let confirm_with_enter = shared.read(cx).config.confirm_with_enter;
+                    let should_quit = shared.update(cx, |s, cx| {
+                        let mut quit = false;
+                        match key {
+                            "escape" => {
+                                s.cancel();
+                                quit = true;
+                            }
+                            "enter" if confirm_with_enter => {
+                                s.confirm();
+                                quit = true;
+                            }
+                            "backspace" => s.handle_canvas(CanvasEvent::TextBackspace),
+                            "delete" => s.handle_canvas(CanvasEvent::Delete),
+                            "z" if ctrl && shift => s.handle_canvas(CanvasEvent::Redo),
+                            "z" if ctrl => s.handle_canvas(CanvasEvent::Undo),
+                            "y" if ctrl => s.handle_canvas(CanvasEvent::Redo),
+                            "c" if ctrl => {
+                                s.action.copy = true;
+                                s.confirm();
+                                quit = true;
+                            }
+                            "s" if ctrl => {
+                                s.action.save = true;
+                                s.confirm();
+                                quit = true;
+                            }
+                            single if single.chars().count() == 1 && !ctrl => {
+                                if let Some(ch) = single.chars().next() {
+                                    s.handle_canvas(CanvasEvent::TextInput(ch));
+                                }
+                            }
+                            _ => {}
+                        }
+                        cx.notify();
+                        quit
+                    });
+                    if should_quit {
+                        cx.quit();
+                    }
+                }
+            })
+            .when(show_toolbar, |this| {
+                this.child(render_toolbar(shared.clone(), runtime_mode))
+            })
+            .child(
+                gpui::canvas(
+                    move |_, _, _| {},
+                    move |_, _, window, cx| {
+                        let snapshot = shared_for_paint.read(cx).canvas.clone();
+                        paint_canvas(window, cx, &snapshot, origin);
                     },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            let pass = &mut pass.forget_lifetime();
-            window_gpu.renderer.render(pass, &primitives, &screen_desc);
-        }
-        gpu.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-
-        for id in &full_output.textures_delta.free {
-            window_gpu.renderer.free_texture(id);
-        }
-
-        self.windows[pos].gpu = Some(window_gpu);
-
-        if confirm {
-            self.confirm(_event_loop);
-        } else if cancel {
-            self.outcome = Some(Outcome::Cancelled);
-            _event_loop.exit();
-        }
+                )
+                .size_full(),
+            )
     }
+}
+
+// ─── Toolbar ────────────────────────────────────────────────────────────
+
+fn render_toolbar(shared: Entity<SharedState>, active_mode: SelectorMode) -> impl IntoElement {
+    let bar_bg = hsla(0.0, 0.0, 0.10, 0.92);
+    let bar_border = hsla(0.58, 0.7, 0.5, 1.0);
+
+    let mode_btn = |label: &'static str, mode: SelectorMode, shared: Entity<SharedState>| {
+        let selected = mode == active_mode;
+        toolbar_button(label.into(), selected, false, move |cx| {
+            shared.update(cx, |s, cx| {
+                s.runtime_mode = mode;
+                cx.notify();
+            });
+        })
+    };
+
+    div()
+        .id("sss-toolbar")
+        .absolute()
+        .top(px(12.))
+        .left_0()
+        .right_0()
+        .flex()
+        .justify_center()
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .gap_2()
+                .px_3()
+                .py_2()
+                .rounded_lg()
+                .bg(bar_bg)
+                .border_1()
+                .border_color(bar_border)
+                .text_color(white())
+                .text_size(px(13.))
+                .child(mode_btn("Area", SelectorMode::Area, shared.clone()))
+                .child(mode_btn("Monitor", SelectorMode::Monitor, shared.clone()))
+                .child(mode_btn("Window", SelectorMode::Window, shared.clone()))
+                .child(toolbar_button("Undo".into(), false, false, {
+                    let shared = shared.clone();
+                    move |cx| {
+                        shared.update(cx, |s, cx| {
+                            s.handle_canvas(CanvasEvent::Undo);
+                            cx.notify();
+                        });
+                    }
+                }))
+                .child(toolbar_button("Redo".into(), false, false, {
+                    let shared = shared.clone();
+                    move |cx| {
+                        shared.update(cx, |s, cx| {
+                            s.handle_canvas(CanvasEvent::Redo);
+                            cx.notify();
+                        });
+                    }
+                }))
+                .child(toolbar_button("Cancel".into(), false, false, {
+                    let shared = shared.clone();
+                    move |cx| {
+                        shared.update(cx, |s, _| s.cancel());
+                        cx.quit();
+                    }
+                }))
+                .child(toolbar_button("Capture".into(), false, true, {
+                    let shared = shared.clone();
+                    move |cx| {
+                        shared.update(cx, |s, _| s.confirm());
+                        cx.quit();
+                    }
+                })),
+        )
+}
+
+fn toolbar_button(
+    label: String,
+    selected: bool,
+    primary: bool,
+    on_click: impl Fn(&mut App) + 'static,
+) -> impl IntoElement {
+    let bg = if selected {
+        hsla(0.58, 0.7, 0.4, 1.0)
+    } else if primary {
+        hsla(0.36, 0.7, 0.45, 1.0)
+    } else {
+        hsla(0.0, 0.0, 0.20, 1.0)
+    };
+    div()
+        .id(gpui::ElementId::Name(label.clone().into()))
+        .px_3()
+        .py_1()
+        .rounded_md()
+        .bg(bg)
+        .text_color(white())
+        .hover(|s| s.opacity(0.85))
+        .active(|s| s.opacity(0.7))
+        .cursor_pointer()
+        .child(label)
+        .on_click(move |_, _, cx| on_click(cx))
 }

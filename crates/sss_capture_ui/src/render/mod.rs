@@ -1,9 +1,6 @@
-//! CPU `composite` finaliser and (feature-gated) GPU `overlay` preview.
+//! `composite` bakes the canvas into the captured RGBA image (CPU, output to
+//! PNG/clipboard). `overlay` paints the live editor on top of the desktop
+//! through GPUI's `PathBuilder` API.
 
 pub mod composite;
-
-#[cfg(feature = "editor")]
-pub mod gpu;
-
-#[cfg(feature = "editor")]
 pub mod overlay;

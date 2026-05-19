@@ -59,11 +59,13 @@ cargo-dist-version = "0.22.1"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
-installers = ["shell", "powershell", "homebrew", "msi"]
+installers = ["shell", "homebrew"]
 # A GitHub repo to push Homebrew formulas to
 tap = "SergioRibera/homebrew-tap"
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# Target platforms to build apps for (Rust target-triple syntax). Windows
+# is unsupported because `sss_capture_ui` depends on GPUI, which targets
+# only macOS and Linux.
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
 # Which actions to run on pull requests

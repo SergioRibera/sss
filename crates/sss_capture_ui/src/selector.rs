@@ -112,6 +112,10 @@ impl Default for SelectorBuilder {
 }
 
 impl SelectorBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn mode(mut self, mode: SelectorMode) -> Self {
         self.mode = mode;
         self

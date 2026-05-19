@@ -1,354 +1,294 @@
-//! egui-based interactive overlay (toolbar and canvas painter).
+//! GPUI-based painter for the editor canvas.
+//!
+//! The toolbar lives in `platform::driver` (composed from regular GPUI
+//! elements). This module is the low-level half: free functions that turn
+//! the canvas state into `paint_path` / `paint_quad` calls on a [`Window`].
+//! It carries no state of its own.
 
-use egui::{Color32, Pos2, Rect as EguiRect, Stroke, Vec2};
+use gpui::{
+    App, Background, Bounds, Hsla, PathBuilder, PathStyle, Pixels, Point, StrokeOptions, Window,
+    hsla, point, px, quad, size, transparent_black,
+};
 use sss_capture::Rect as CapRect;
 
 use crate::canvas::Canvas;
 use crate::color::Color;
-use crate::mode::SelectorMode;
+use crate::geometry::FPoint;
 use crate::shape::{Shape, ShapeKind};
-use crate::tool::{BrushSettings, StepSettings, Tool, ToolPalette};
 
-/// Toolbar request flags; reset to false each frame.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ToolbarOutput {
-    pub confirm: bool,
-    pub copy: bool,
-    pub save: bool,
-    pub cancel: bool,
-}
+/// Highlight blue used for the rubber-band.
+const ACCENT: Hsla = Hsla {
+    h: 0.58,
+    s: 0.78,
+    l: 0.66,
+    a: 1.0,
+};
 
-/// Which action buttons the toolbar should show.
-#[derive(Clone, Copy, Debug)]
-pub struct ToolbarConfig {
-    pub show_copy: bool,
-    pub show_save: bool,
-}
-
-impl Default for ToolbarConfig {
-    fn default() -> Self {
-        Self {
-            show_copy: true,
-            show_save: true,
-        }
-    }
-}
-
-/// Paints the toolbar at the top of the active output.
-pub fn draw_toolbar(
-    ctx: &mut egui::Ui,
-    canvas: &mut Canvas,
-    palette: &ToolPalette,
-    mode: &mut SelectorMode,
-    cfg: ToolbarConfig,
-) -> ToolbarOutput {
-    let mut out = ToolbarOutput::default();
-    egui::Panel::top("sss_capture_ui::toolbar")
-        .resizable(false)
-        .show_inside(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Mode");
-                for m in [
-                    SelectorMode::Area,
-                    SelectorMode::Monitor,
-                    SelectorMode::Window,
-                ] {
-                    if ui.selectable_label(*mode == m, m.label()).clicked() {
-                        *mode = m;
-                    }
-                }
-                ui.separator();
-
-                for tool in &palette.tools {
-                    let selected =
-                        std::mem::discriminant(&canvas.active_tool) == std::mem::discriminant(tool);
-                    if ui
-                        .selectable_label(selected, format!("{} {}", tool.icon(), tool.name()))
-                        .clicked()
-                    {
-                        canvas.set_tool(tool.clone());
-                    }
-                }
-                ui.separator();
-
-                for color in &palette.color_palette {
-                    let c32 = to_color32(*color);
-                    let (rect, resp) =
-                        ui.allocate_exact_size(Vec2::splat(22.0), egui::Sense::click());
-                    ui.painter().rect_filled(rect, 3.0, c32);
-                    if resp.clicked() {
-                        apply_color(&mut canvas.active_tool, *color);
-                    }
-                }
-                ui.separator();
-
-                if ui.button("Undo").clicked() {
-                    canvas.handle(crate::canvas::CanvasEvent::Undo);
-                }
-                if ui.button("Redo").clicked() {
-                    canvas.handle(crate::canvas::CanvasEvent::Redo);
-                }
-                ui.separator();
-
-                if ui
-                    .button("✕  Cancel")
-                    .on_hover_text("Discard the selection (Esc)")
-                    .clicked()
-                {
-                    out.cancel = true;
-                }
-                if ui
-                    .button("✓  Capture")
-                    .on_hover_text("Finish editing (Enter)")
-                    .clicked()
-                {
-                    out.confirm = true;
-                }
-                if cfg.show_copy
-                    && ui
-                        .button("📋 Copy")
-                        .on_hover_text("Copy the edited image to the clipboard (Ctrl+C)")
-                        .clicked()
-                {
-                    out.copy = true;
-                    out.confirm = true;
-                }
-                if cfg.show_save
-                    && ui
-                        .button("💾 Save")
-                        .on_hover_text("Save the edited image to disk (Ctrl+S)")
-                        .clicked()
-                {
-                    out.save = true;
-                    out.confirm = true;
-                }
-            });
-        });
-    out
-}
-
-/// Paint the region rubber-band and every shape onto an egui painter.
-pub fn draw_canvas(painter: &egui::Painter, canvas: &Canvas, screen_offset: Pos2) {
+/// Paint the region rubber-band and every shape onto `window`.
+///
+/// `origin` is the monitor's global top-left in canvas coordinates; we
+/// subtract it from every point so the same canvas state renders correctly
+/// on every per-output overlay.
+pub fn paint_canvas(window: &mut Window, _cx: &mut App, canvas: &Canvas, origin: (i32, i32)) {
     if let Some(rect) = canvas.region() {
-        let r = EguiRect::from_min_size(
-            Pos2::new(
-                rect.x() as f32 - screen_offset.x,
-                rect.y() as f32 - screen_offset.y,
-            ),
-            Vec2::new(rect.width() as f32, rect.height() as f32),
-        );
-        painter.rect_stroke(
-            r,
-            0.0,
-            Stroke::new(2.0, Color32::from_rgb(90, 170, 255)),
-            egui::StrokeKind::Middle,
-        );
+        paint_rect_stroke(window, rect, origin, 2.0, ACCENT);
     }
     for shape in canvas.shapes() {
-        draw_shape(painter, shape, screen_offset);
+        paint_shape(window, shape, origin);
     }
     if let Some(preview) = canvas.preview_shape() {
-        draw_shape(painter, &preview, screen_offset);
+        paint_shape(window, &preview, origin);
     }
     if let Some(pending) = canvas.pending_text() {
-        draw_shape(painter, &pending, screen_offset);
+        paint_shape(window, &pending, origin);
+    }
+    if let Some(verts) = canvas.polygon_vertices() {
+        if verts.len() >= 2 {
+            let style = canvas.current_polygon_style();
+            let pts: Vec<FPoint> = verts.to_vec();
+            paint_polyline(
+                window,
+                &pts,
+                origin,
+                style.stroke_width.max(1.0),
+                color_to_hsla(style.stroke),
+                false,
+            );
+        }
     }
 }
 
-/// Paint the "Press Enter to accept" hint below the active region (or at the
-/// bottom of the monitor when there is none). `screen_rect` is the panel rect
-/// in egui coords, `monitor_origin` is the monitor's global origin in the same
-/// physical-pixel space the canvas uses, and `monitor_width` is the monitor's
-/// width in that space.
-pub fn draw_confirm_hint(
-    painter: &egui::Painter,
-    screen_rect: EguiRect,
-    region: Option<CapRect>,
-    monitor_origin: Pos2,
-    monitor_width: f32,
-) {
-    let text = "Press Enter to accept";
-    let font_id = egui::FontId::proportional(16.0);
-    let text_color = Color32::from_rgb(240, 240, 240);
-    let galley = painter.layout_no_wrap(text.to_owned(), font_id, text_color);
-    let pad = Vec2::new(14.0, 8.0);
-    let panel_size = galley.size() + pad * 2.0;
+fn paint_shape(window: &mut Window, shape: &Shape, origin: (i32, i32)) {
+    let stroke = color_to_hsla(shape.style.stroke);
+    let width = shape.style.stroke_width.max(1.0);
+    let fill = shape.style.fill.map(color_to_hsla);
 
-    let panel_pos = if let Some(region) = region.filter(|r| r.width() >= 2 && r.height() >= 2) {
-        // Single label across multi-monitor regions: only the monitor whose
-        // horizontal span covers the region centre draws the hint.
-        let center_gx = (region.x() + region.width() as i32 / 2) as f32;
-        if center_gx < monitor_origin.x || center_gx >= monitor_origin.x + monitor_width {
-            return;
-        }
-        let local_cx = center_gx - monitor_origin.x;
-        let top_local = region.y() as f32 - monitor_origin.y;
-        let bottom_local = top_local + region.height() as f32;
-        let margin = 16.0;
-        let below_y = bottom_local + margin;
-        let panel_y = if below_y + panel_size.y <= screen_rect.height() - 8.0 {
-            below_y
-        } else if top_local - panel_size.y - margin >= 8.0 {
-            top_local - panel_size.y - margin
-        } else {
-            (screen_rect.height() - panel_size.y - 8.0).max(8.0)
-        };
-        let max_x = (screen_rect.width() - panel_size.x - 8.0).max(8.0);
-        let panel_x = (local_cx - panel_size.x / 2.0).clamp(8.0, max_x);
-        Pos2::new(panel_x, panel_y)
-    } else {
-        let bottom_margin = 48.0;
-        Pos2::new(
-            ((screen_rect.width() - panel_size.x) / 2.0).max(8.0),
-            (screen_rect.height() - panel_size.y - bottom_margin).max(8.0),
-        )
-    };
-
-    let panel_rect = EguiRect::from_min_size(panel_pos, panel_size);
-    painter.rect_filled(panel_rect, 0.0, Color32::from_rgb(20, 20, 24));
-    painter.rect_stroke(
-        panel_rect,
-        0.0,
-        Stroke::new(1.0, Color32::from_rgb(90, 170, 255)),
-        egui::StrokeKind::Middle,
-    );
-    painter.galley(panel_pos + pad, galley, text_color);
-}
-
-fn draw_shape(painter: &egui::Painter, shape: &Shape, off: Pos2) {
-    let stroke = Stroke::new(shape.style.stroke_width, to_color32(shape.style.stroke));
-    let fill = shape.style.fill.map(to_color32);
     match &shape.kind {
         ShapeKind::FreehandStroke { points } => {
-            let pts: Vec<Pos2> = points
-                .iter()
-                .map(|p| Pos2::new(p.x - off.x, p.y - off.y))
-                .collect();
-            painter.add(egui::Shape::line(pts, stroke));
+            paint_polyline(window, points, origin, width, stroke, false);
         }
         ShapeKind::Line { from, to } => {
-            painter.line_segment(
-                [
-                    Pos2::new(from.x - off.x, from.y - off.y),
-                    Pos2::new(to.x - off.x, to.y - off.y),
-                ],
-                stroke,
-            );
+            paint_polyline(window, &[*from, *to], origin, width, stroke, false);
         }
         ShapeKind::Arrow { from, to } => {
-            let a = Pos2::new(from.x - off.x, from.y - off.y);
-            let b = Pos2::new(to.x - off.x, to.y - off.y);
-            painter.line_segment([a, b], stroke);
-            let dx = b.x - a.x;
-            let dy = b.y - a.y;
+            paint_polyline(window, &[*from, *to], origin, width, stroke, false);
+            let a = local_pt(*from, origin);
+            let b = local_pt(*to, origin);
+            let dx = (b.x - a.x).as_f32();
+            let dy = (b.y - a.y).as_f32();
             let len = (dx * dx + dy * dy).sqrt().max(1.0);
             let ux = dx / len;
             let uy = dy / len;
-            let head = (stroke.width * 3.0).max(10.0);
-            let p1 = Pos2::new(
-                b.x - (ux * head + uy * head * 0.5),
-                b.y - (uy * head - ux * head * 0.5),
+            let head = (width * 3.0).max(10.0);
+            let p1 = point(
+                px(b.x.as_f32() - (ux * head + uy * head * 0.5)),
+                px(b.y.as_f32() - (uy * head - ux * head * 0.5)),
             );
-            let p2 = Pos2::new(
-                b.x - (ux * head - uy * head * 0.5),
-                b.y - (uy * head + ux * head * 0.5),
+            let p2 = point(
+                px(b.x.as_f32() - (ux * head - uy * head * 0.5)),
+                px(b.y.as_f32() - (uy * head + ux * head * 0.5)),
             );
-            painter.line_segment([b, p1], stroke);
-            painter.line_segment([b, p2], stroke);
+            stroke_segments(window, &[(b, p1), (b, p2)], width, stroke);
         }
-        ShapeKind::Rectangle { rect } | ShapeKind::BlurRect { rect, .. } => {
-            let r = EguiRect::from_min_size(
-                Pos2::new(rect.x() as f32 - off.x, rect.y() as f32 - off.y),
-                Vec2::new(rect.width() as f32, rect.height() as f32),
-            );
+        ShapeKind::Rectangle { rect } => {
+            let r = cap_rect_local(*rect, origin);
             if let Some(f) = fill {
-                painter.rect_filled(r, 0.0, f);
+                window.paint_quad(quad(
+                    r,
+                    px(0.),
+                    Background::from(f),
+                    px(0.),
+                    transparent_black(),
+                    Default::default(),
+                ));
             }
-            painter.rect_stroke(r, 0.0, stroke, egui::StrokeKind::Middle);
+            paint_rect_stroke(window, *rect, origin, width, stroke);
+        }
+        ShapeKind::BlurRect { rect, .. } => {
+            // GPU live blur preview is follow-up work; show the rectangle
+            // outline so the user can see what region they've selected.
+            paint_rect_stroke(window, *rect, origin, width.max(1.5), stroke);
         }
         ShapeKind::Ellipse { rect } => {
-            let r = EguiRect::from_min_size(
-                Pos2::new(rect.x() as f32 - off.x, rect.y() as f32 - off.y),
-                Vec2::new(rect.width() as f32, rect.height() as f32),
-            );
-            painter.add(egui::Shape::ellipse_stroke(
-                r.center(),
-                r.size() / 2.0,
-                stroke,
-            ));
+            let r = cap_rect_local(*rect, origin);
+            let cx = r.origin.x + r.size.width / 2.;
+            let cy = r.origin.y + r.size.height / 2.;
+            let rx = r.size.width / 2.;
+            let ry = r.size.height / 2.;
+            paint_ellipse(window, point(cx, cy), rx, ry, width, stroke, fill);
         }
         ShapeKind::Step {
-            center,
-            number,
-            radius,
+            center, radius, ..
         } => {
-            let c = Pos2::new(center.x - off.x, center.y - off.y);
-            painter.circle_filled(c, *radius, fill.unwrap_or(stroke.color));
-            painter.circle_stroke(c, *radius, Stroke::new(1.0, Color32::WHITE));
-            painter.text(
+            // The numbered label is rendered by composite.rs when the
+            // screenshot is baked. The interactive preview shows just the
+            // circle; wiring shape_line into the canvas paint pass is
+            // follow-up work.
+            let c = local_pt(*center, origin);
+            paint_ellipse(
+                window,
                 c,
-                egui::Align2::CENTER_CENTER,
-                number.to_string(),
-                egui::FontId::proportional(radius * 1.1),
-                Color32::WHITE,
+                px(*radius),
+                px(*radius),
+                1.0,
+                hsla(0.0, 0.0, 1.0, 1.0),
+                fill.or(Some(stroke)),
             );
         }
-        ShapeKind::Text {
-            origin,
-            content,
-            style,
-        } => {
-            painter.text(
-                Pos2::new(origin.x - off.x, origin.y - off.y),
-                egui::Align2::LEFT_TOP,
-                content,
-                egui::FontId::proportional(style.size),
-                to_color32(style.color),
-            );
+        ShapeKind::Text { .. } => {
+            // Same as Step: text is baked at export time by composite.rs.
         }
         ShapeKind::Polygon { points, closed } => {
             if points.is_empty() {
                 return;
             }
-            let pts: Vec<Pos2> = points
-                .iter()
-                .map(|p| Pos2::new(p.x - off.x, p.y - off.y))
-                .collect();
-            if let Some(fill) = fill {
-                if *closed && pts.len() >= 3 {
-                    painter.add(egui::Shape::convex_polygon(pts.clone(), fill, stroke));
-                    return;
-                }
-            }
-            painter.add(egui::Shape::line(pts, stroke));
-            if *closed && points.len() >= 3 {
-                let first = Pos2::new(points[0].x - off.x, points[0].y - off.y);
-                let last = points[points.len() - 1];
-                let last = Pos2::new(last.x - off.x, last.y - off.y);
-                painter.line_segment([last, first], stroke);
-            }
+            paint_polyline(window, points, origin, width, stroke, *closed);
         }
     }
 }
 
-fn to_color32(c: Color) -> Color32 {
-    let [r, g, b, a] = c.0;
-    Color32::from_rgba_unmultiplied(r, g, b, a)
-}
-
-fn apply_color(tool: &mut Tool, color: Color) {
-    match tool {
-        Tool::Brush(b)
-        | Tool::Line(b)
-        | Tool::Arrow(b)
-        | Tool::Rectangle(b)
-        | Tool::Ellipse(b)
-        | Tool::Polygon(b) => b.color = color,
-        Tool::Step(s) => s.fill = color,
-        Tool::Text(t) => t.color = color,
-        Tool::Pointer | Tool::Eraser { .. } | Tool::BlurRect { .. } => {}
+fn paint_polyline(
+    window: &mut Window,
+    points: &[FPoint],
+    origin: (i32, i32),
+    width: f32,
+    color: Hsla,
+    closed: bool,
+) {
+    if points.len() < 2 {
+        return;
+    }
+    let mut builder = PathBuilder::stroke(px(width));
+    let first = local_pt(points[0], origin);
+    builder.move_to(first);
+    for p in &points[1..] {
+        builder.line_to(local_pt(*p, origin));
+    }
+    if closed {
+        builder.line_to(first);
+    }
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, color);
     }
 }
 
-#[allow(dead_code)]
-fn _silence_settings(_: BrushSettings, _: StepSettings) {}
+fn stroke_segments(
+    window: &mut Window,
+    segments: &[(Point<Pixels>, Point<Pixels>)],
+    width: f32,
+    color: Hsla,
+) {
+    for (a, b) in segments {
+        let mut builder = PathBuilder::stroke(px(width));
+        builder.move_to(*a);
+        builder.line_to(*b);
+        if let Ok(path) = builder.build() {
+            window.paint_path(path, color);
+        }
+    }
+}
+
+fn paint_rect_stroke(
+    window: &mut Window,
+    rect: CapRect,
+    origin: (i32, i32),
+    width: f32,
+    color: Hsla,
+) {
+    let r = cap_rect_local(rect, origin);
+    let tl = r.origin;
+    let tr = point(tl.x + r.size.width, tl.y);
+    let br = point(tl.x + r.size.width, tl.y + r.size.height);
+    let bl = point(tl.x, tl.y + r.size.height);
+    let mut builder = PathBuilder::stroke(px(width));
+    builder.move_to(tl);
+    builder.line_to(tr);
+    builder.line_to(br);
+    builder.line_to(bl);
+    builder.line_to(tl);
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, color);
+    }
+}
+
+fn paint_ellipse(
+    window: &mut Window,
+    center: Point<Pixels>,
+    rx: Pixels,
+    ry: Pixels,
+    stroke_width: f32,
+    stroke: Hsla,
+    fill: Option<Hsla>,
+) {
+    let radii = point(rx, ry);
+    let start = point(center.x + rx, center.y);
+    let opposite = point(center.x - rx, center.y);
+
+    if let Some(f) = fill {
+        let mut filled = PathBuilder::fill();
+        filled.move_to(start);
+        filled.arc_to(radii, px(0.), false, false, opposite);
+        filled.arc_to(radii, px(0.), false, false, start);
+        filled.close();
+        if let Ok(path) = filled.build() {
+            window.paint_path(path, f);
+        }
+    }
+
+    let mut outline = PathBuilder::stroke(px(stroke_width))
+        .with_style(PathStyle::Stroke(StrokeOptions::default()));
+    outline.move_to(start);
+    outline.arc_to(radii, px(0.), false, false, opposite);
+    outline.arc_to(radii, px(0.), false, false, start);
+    if let Ok(path) = outline.build() {
+        window.paint_path(path, stroke);
+    }
+}
+
+fn local_pt(p: FPoint, origin: (i32, i32)) -> Point<Pixels> {
+    point(px(p.x - origin.0 as f32), px(p.y - origin.1 as f32))
+}
+
+fn cap_rect_local(rect: CapRect, origin: (i32, i32)) -> Bounds<Pixels> {
+    Bounds {
+        origin: point(
+            px((rect.x() - origin.0) as f32),
+            px((rect.y() - origin.1) as f32),
+        ),
+        size: size(px(rect.width() as f32), px(rect.height() as f32)),
+    }
+}
+
+fn color_to_hsla(c: Color) -> Hsla {
+    let [r, g, b, a] = c.0;
+    let rf = r as f32 / 255.0;
+    let gf = g as f32 / 255.0;
+    let bf = b as f32 / 255.0;
+    let max = rf.max(gf.max(bf));
+    let min = rf.min(gf.min(bf));
+    let l = (max + min) * 0.5;
+    let (h, s) = if (max - min).abs() < f32::EPSILON {
+        (0.0, 0.0)
+    } else {
+        let d = max - min;
+        let s = if l > 0.5 {
+            d / (2.0 - max - min)
+        } else {
+            d / (max + min)
+        };
+        let h = if max == rf {
+            ((gf - bf) / d + if gf < bf { 6.0 } else { 0.0 }) / 6.0
+        } else if max == gf {
+            ((bf - rf) / d + 2.0) / 6.0
+        } else {
+            ((rf - gf) / d + 4.0) / 6.0
+        };
+        (h, s)
+    };
+    Hsla {
+        h,
+        s,
+        l,
+        a: a as f32 / 255.0,
+    }
+}
