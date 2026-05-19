@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use gpui::{
-    App, AppContext, Application, Bounds, Context, Entity, FocusHandle, Focusable,
+    App, AppContext, Application, Background, Bounds, Context, Entity, FocusHandle, Focusable,
     InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled,
     Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, hsla, point,
@@ -324,7 +324,17 @@ impl Render for OverlayView {
         let monitor = self.monitor.clone();
         let origin = (monitor.bounds().x(), monitor.bounds().y());
 
-        let (show_toolbar, runtime_mode, active_tool, palette, ui_cfg, color_palette, current_color, current_width) = {
+        let (
+            show_toolbar,
+            runtime_mode,
+            active_tool,
+            palette,
+            ui_cfg,
+            color_palette,
+            current_color,
+            current_width,
+            current_fill,
+        ) = {
             let state = self.shared.read(cx);
             (
                 state.config.toolbar,
@@ -335,6 +345,7 @@ impl Render for OverlayView {
                 state.config.palette.color_palette.clone(),
                 state.canvas.active_tool.current_color(),
                 state.canvas.active_tool.current_width(),
+                state.canvas.active_tool.current_fill(),
             )
         };
 
@@ -477,6 +488,7 @@ impl Render for OverlayView {
                     color_palette,
                     current_color,
                     current_width,
+                    current_fill,
                 ))
             })
             .child({
@@ -546,6 +558,7 @@ fn render_toolbar(
     color_palette: Vec<crate::color::Color>,
     current_color: Option<crate::color::Color>,
     current_width: Option<f32>,
+    current_fill: Option<Option<crate::color::Color>>,
 ) -> impl IntoElement {
     let bar_bg = hsla(0.0, 0.0, 0.10, 0.92);
     let bar_border = hsla(0.58, 0.7, 0.5, 1.0);
@@ -643,6 +656,9 @@ fn render_toolbar(
                             color_palette.clone(),
                             current_color,
                         ))
+                })
+                .when(current_fill.is_some(), |this| {
+                    this.child(toolbar_fill_toggle(shared.clone(), current_fill.unwrap()))
                 })
                 .when(current_width.is_some(), |this| {
                     this.child(toolbar_divider())
@@ -834,6 +850,51 @@ fn render_width_controls(
                 });
             }
         }))
+}
+
+fn toolbar_fill_toggle(
+    shared: Entity<SharedState>,
+    current: Option<crate::color::Color>,
+) -> impl IntoElement {
+    let (label, bg, fg) = match current {
+        Some(c) => {
+            let [r, g, b, a] = c.0;
+            let rgba = gpui::Rgba {
+                r: r as f32 / 255.,
+                g: g as f32 / 255.,
+                b: b as f32 / 255.,
+                a: a as f32 / 255.,
+            };
+            ("Fill", Background::from(rgba), white())
+        }
+        None => (
+            "No fill",
+            Background::from(hsla(0.0, 0.0, 0.20, 1.0)),
+            hsla(0.0, 0.0, 0.9, 1.0),
+        ),
+    };
+    div()
+        .id("fill-toggle")
+        .px_2()
+        .h(px(28.))
+        .flex()
+        .items_center()
+        .rounded_md()
+        .bg(bg)
+        .text_color(fg)
+        .text_size(px(12.))
+        .border_1()
+        .border_color(hsla(0.0, 0.0, 1.0, 0.25))
+        .hover(|s| s.opacity(0.85))
+        .active(|s| s.opacity(0.7))
+        .cursor_pointer()
+        .child(label)
+        .on_click(move |_, _, cx| {
+            shared.update(cx, |s, cx| {
+                s.canvas.active_tool.toggle_fill();
+                cx.notify();
+            });
+        })
 }
 
 fn toolbar_text_button(

@@ -75,12 +75,15 @@ impl Tool {
 
     pub fn apply_color(&mut self, c: Color) {
         match self {
-            Tool::Brush(b)
-            | Tool::Line(b)
-            | Tool::Arrow(b)
-            | Tool::Rectangle(b)
-            | Tool::Ellipse(b)
-            | Tool::Polygon(b) => b.color = c,
+            Tool::Brush(b) | Tool::Line(b) | Tool::Arrow(b) => b.color = c,
+            // When fill is enabled, lock it to the stroke color so the user
+            // can recolour both with a single click.
+            Tool::Rectangle(b) | Tool::Ellipse(b) | Tool::Polygon(b) => {
+                b.color = c;
+                if b.fill.is_some() {
+                    b.fill = Some(c);
+                }
+            }
             Tool::Step(s) => s.fill = c,
             Tool::Text(t) => t.color = c,
             Tool::Pointer | Tool::Eraser { .. } | Tool::BlurRect { .. } => {}
@@ -117,6 +120,28 @@ impl Tool {
             Tool::Step(s) => s.radius = w,
             Tool::Text(t) => t.size = w,
             Tool::Pointer => {}
+        }
+    }
+
+    /// `Some(_)` when the tool supports a fill (rect / ellipse / polygon).
+    /// The inner `Option<Color>` is the current fill, or `None` for an
+    /// unfilled / outline-only shape.
+    pub fn current_fill(&self) -> Option<Option<Color>> {
+        match self {
+            Tool::Rectangle(b) | Tool::Ellipse(b) | Tool::Polygon(b) => Some(b.fill),
+            _ => None,
+        }
+    }
+
+    /// Toggle whether the next closed shape is filled. Locks the fill
+    /// color to the current stroke color when turning fill on, so the
+    /// stroke swatches drive both at once.
+    pub fn toggle_fill(&mut self) {
+        match self {
+            Tool::Rectangle(b) | Tool::Ellipse(b) | Tool::Polygon(b) => {
+                b.fill = if b.fill.is_some() { None } else { Some(b.color) };
+            }
+            _ => {}
         }
     }
 

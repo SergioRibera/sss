@@ -346,6 +346,19 @@ fn paint_shape(window: &mut Window, cx: &mut App, shape: &Shape, xf: Xform, edit
             if points.is_empty() {
                 return;
             }
+            if *closed && points.len() >= 3 {
+                if let Some(f) = fill {
+                    let mut filled = PathBuilder::fill();
+                    filled.move_to(xf.pt(points[0]));
+                    for p in &points[1..] {
+                        filled.line_to(xf.pt(*p));
+                    }
+                    filled.close();
+                    if let Ok(path) = filled.build() {
+                        window.paint_path(path, f);
+                    }
+                }
+            }
             paint_polyline(window, points, xf, width, stroke, *closed);
         }
     }
