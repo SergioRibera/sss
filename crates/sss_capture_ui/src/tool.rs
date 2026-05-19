@@ -41,6 +41,23 @@ impl Tool {
         }
     }
 
+    pub fn kind(&self) -> crate::config::ToolKind {
+        use crate::config::ToolKind;
+        match self {
+            Tool::Pointer => ToolKind::Pointer,
+            Tool::Brush(_) => ToolKind::Brush,
+            Tool::Line(_) => ToolKind::Line,
+            Tool::Arrow(_) => ToolKind::Arrow,
+            Tool::Rectangle(_) => ToolKind::Rectangle,
+            Tool::Ellipse(_) => ToolKind::Ellipse,
+            Tool::BlurRect { .. } => ToolKind::BlurRect,
+            Tool::Eraser { .. } => ToolKind::Eraser,
+            Tool::Step(_) => ToolKind::Step,
+            Tool::Text(_) => ToolKind::Text,
+            Tool::Polygon(_) => ToolKind::Polygon,
+        }
+    }
+
     pub fn icon(&self) -> &'static str {
         match self {
             Tool::Pointer => "↖",
@@ -128,6 +145,7 @@ impl Default for ToolPalette {
                 Tool::BlurRect { radius: 12.0 },
                 Tool::Eraser { radius: 18.0 },
                 Tool::Step(StepSettings::default()),
+                Tool::Text(crate::shape::TextStyle::default()),
             ],
             color_palette: Color::palette().to_vec(),
             initial: Tool::Pointer,
@@ -143,5 +161,9 @@ impl ToolPalette {
             color_palette: Vec::new(),
             initial: Tool::Pointer,
         }
+    }
+
+    pub fn kinds(&self) -> Vec<crate::config::ToolKind> {
+        self.tools.iter().map(|t| t.kind()).collect()
     }
 }

@@ -306,9 +306,15 @@ impl Render for OverlayView {
         let monitor = self.monitor.clone();
         let origin = (monitor.bounds().x(), monitor.bounds().y());
 
-        let (show_toolbar, runtime_mode) = {
+        let (show_toolbar, runtime_mode, active_tool, palette, ui_cfg) = {
             let state = self.shared.read(cx);
-            (state.config.toolbar, state.runtime_mode)
+            (
+                state.config.toolbar,
+                state.runtime_mode,
+                state.canvas.active_tool.kind(),
+                state.config.palette.kinds(),
+                Arc::new(state.config.ui.clone()),
+            )
         };
 
         // Mouse events arrive in logical pixels (DIPs) relative to the
@@ -377,11 +383,18 @@ impl Render for OverlayView {
                     let shift = modifiers.shift;
                     let confirm_with_enter = shared.read(cx).config.confirm_with_enter;
                     let should_quit = shared.update(cx, |s, cx| {
+                        let typing = s.canvas.pending_text().is_some();
                         let mut quit = false;
                         match key {
+                            "escape" if typing => {
+                                s.handle_canvas(CanvasEvent::TextCancel);
+                            }
                             "escape" => {
                                 s.cancel();
                                 quit = true;
+                            }
+                            "enter" if typing => {
+                                s.handle_canvas(CanvasEvent::TextCommit);
                             }
                             "enter" if confirm_with_enter => {
                                 s.confirm();
@@ -402,6 +415,9 @@ impl Render for OverlayView {
                                 s.confirm();
                                 quit = true;
                             }
+                            "space" => {
+                                s.handle_canvas(CanvasEvent::TextInput(' '));
+                            }
                             single if single.chars().count() == 1 && !ctrl => {
                                 if let Some(ch) = single.chars().next() {
                                     s.handle_canvas(CanvasEvent::TextInput(ch));
@@ -418,7 +434,13 @@ impl Render for OverlayView {
                 }
             })
             .when(show_toolbar, |this| {
-                this.child(render_toolbar(shared.clone(), runtime_mode))
+                this.child(render_toolbar(
+                    shared.clone(),
+                    runtime_mode,
+                    active_tool,
+                    palette,
+                    ui_cfg,
+                ))
             })
             .child({
                 let monitor_bounds = monitor.bounds();
@@ -439,7 +461,13 @@ impl Render for OverlayView {
 
 // ─── Toolbar ────────────────────────────────────────────────────────────
 
-fn render_toolbar(shared: Entity<SharedState>, active_mode: SelectorMode) -> impl IntoElement {
+fn render_toolbar(
+    shared: Entity<SharedState>,
+    active_mode: SelectorMode,
+    active_tool: crate::config::ToolKind,
+    palette: Vec<crate::config::ToolKind>,
+    ui: Arc<crate::config::UiConfig>,
+) -> impl IntoElement {
     let bar_bg = hsla(0.0, 0.0, 0.10, 0.92);
     let bar_border = hsla(0.58, 0.7, 0.5, 1.0);
 
@@ -453,6 +481,30 @@ fn render_toolbar(shared: Entity<SharedState>, active_mode: SelectorMode) -> imp
         })
     };
 
+    let mut tool_row = div().flex().flex_row().gap_1();
+    for kind in palette {
+        let selected = kind == active_tool;
+        let shared = shared.clone();
+        let ui = ui.clone();
+        tool_row = tool_row.child(toolbar_button(
+            kind.label().into(),
+            selected,
+            false,
+            move |cx| {
+                let built = kind.build(&ui);
+                shared.update(cx, |s, cx| {
+                    // Committing a half-typed Text shape so switching
+                    // tools doesn't leave it stuck in the editor.
+                    if matches!(&s.canvas.active_tool, crate::tool::Tool::Text(_)) {
+                        s.handle_canvas(CanvasEvent::TextCommit);
+                    }
+                    s.canvas.set_tool(built);
+                    cx.notify();
+                });
+            },
+        ));
+    }
+
     div()
         .id("sss-toolbar")
         .absolute()
@@ -465,7 +517,7 @@ fn render_toolbar(shared: Entity<SharedState>, active_mode: SelectorMode) -> imp
             div()
                 .flex()
                 .flex_row()
-                .gap_2()
+                .gap_3()
                 .px_3()
                 .py_2()
                 .rounded_lg()
@@ -474,27 +526,40 @@ fn render_toolbar(shared: Entity<SharedState>, active_mode: SelectorMode) -> imp
                 .border_color(bar_border)
                 .text_color(white())
                 .text_size(px(13.))
-                .child(mode_btn("Area", SelectorMode::Area, shared.clone()))
-                .child(mode_btn("Monitor", SelectorMode::Monitor, shared.clone()))
-                .child(mode_btn("Window", SelectorMode::Window, shared.clone()))
-                .child(toolbar_button("Undo".into(), false, false, {
-                    let shared = shared.clone();
-                    move |cx| {
-                        shared.update(cx, |s, cx| {
-                            s.handle_canvas(CanvasEvent::Undo);
-                            cx.notify();
-                        });
-                    }
-                }))
-                .child(toolbar_button("Redo".into(), false, false, {
-                    let shared = shared.clone();
-                    move |cx| {
-                        shared.update(cx, |s, cx| {
-                            s.handle_canvas(CanvasEvent::Redo);
-                            cx.notify();
-                        });
-                    }
-                }))
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap_1()
+                        .child(mode_btn("Area", SelectorMode::Area, shared.clone()))
+                        .child(mode_btn("Monitor", SelectorMode::Monitor, shared.clone()))
+                        .child(mode_btn("Window", SelectorMode::Window, shared.clone())),
+                )
+                .child(tool_row)
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap_1()
+                        .child(toolbar_button("Undo".into(), false, false, {
+                            let shared = shared.clone();
+                            move |cx| {
+                                shared.update(cx, |s, cx| {
+                                    s.handle_canvas(CanvasEvent::Undo);
+                                    cx.notify();
+                                });
+                            }
+                        }))
+                        .child(toolbar_button("Redo".into(), false, false, {
+                            let shared = shared.clone();
+                            move |cx| {
+                                shared.update(cx, |s, cx| {
+                                    s.handle_canvas(CanvasEvent::Redo);
+                                    cx.notify();
+                                });
+                            }
+                        })),
+                )
                 .child(toolbar_button("Cancel".into(), false, false, {
                     let shared = shared.clone();
                     move |cx| {

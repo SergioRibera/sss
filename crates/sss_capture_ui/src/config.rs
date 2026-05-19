@@ -34,7 +34,24 @@ impl ToolKind {
             ToolKind::BlurRect,
             ToolKind::Eraser,
             ToolKind::Step,
+            ToolKind::Text,
         ]
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ToolKind::Pointer => "Move",
+            ToolKind::Brush => "Brush",
+            ToolKind::Line => "Line",
+            ToolKind::Arrow => "Arrow",
+            ToolKind::Rectangle => "Rect",
+            ToolKind::Ellipse => "Ellipse",
+            ToolKind::Polygon => "Poly",
+            ToolKind::BlurRect => "Blur",
+            ToolKind::Eraser => "Eraser",
+            ToolKind::Step => "Step",
+            ToolKind::Text => "Text",
+        }
     }
 
     pub fn build(self, ui: &UiConfig) -> Tool {
