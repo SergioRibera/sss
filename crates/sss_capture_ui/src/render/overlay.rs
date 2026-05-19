@@ -194,14 +194,90 @@ fn build_blurred(
     Arc::new(RenderImage::new(vec![frame]))
 }
 
+/// Paint the 8 resize anchors of the region rectangle.
+fn paint_region_handles(window: &mut Window, rect: CapRect, xf: Xform) {
+    let half = 5.0_f32; // half-side of the handle quad, in physical px
+    let r = xf.rect(rect);
+    let cx = r.origin.x + r.size.width / 2.;
+    let cy = r.origin.y + r.size.height / 2.;
+    let right = r.origin.x + r.size.width;
+    let bottom = r.origin.y + r.size.height;
+    let h = px(xf.len(half));
+    let anchors = [
+        r.origin,
+        point(cx, r.origin.y),
+        point(right, r.origin.y),
+        point(right, cy),
+        point(right, bottom),
+        point(cx, bottom),
+        point(r.origin.x, bottom),
+        point(r.origin.x, cy),
+    ];
+    let fill = ACCENT;
+    let border = hsla(0.0, 0.0, 1.0, 0.9);
+    for a in anchors {
+        let bounds = Bounds {
+            origin: point(a.x - h, a.y - h),
+            size: gpui::size(h * 2.0, h * 2.0),
+        };
+        window.paint_quad(quad(
+            bounds,
+            px(2.0),
+            Background::from(fill),
+            px(xf.len(1.5)),
+            border,
+            Default::default(),
+        ));
+    }
+}
+
+/// Dashed bounding box around the currently selected shape.
+fn paint_selected_shape_outline(window: &mut Window, canvas: &Canvas, xf: Xform) {
+    let Some(sel) = canvas.selected() else { return };
+    let Some(shape) = canvas.shapes().iter().find(|s| s.id == sel) else {
+        return;
+    };
+    let bounds = shape.kind.bounds();
+    // 4-pixel inset so the outline is visible OUTSIDE the shape strokes.
+    let pad = 4_i32;
+    let outline_rect = CapRect::from_xywh(
+        bounds.x() - pad,
+        bounds.y() - pad,
+        bounds.width() + (pad * 2) as u32,
+        bounds.height() + (pad * 2) as u32,
+    );
+    let r = xf.rect(outline_rect);
+    let tl = r.origin;
+    let tr = point(tl.x + r.size.width, tl.y);
+    let br = point(tl.x + r.size.width, tl.y + r.size.height);
+    let bl = point(tl.x, tl.y + r.size.height);
+    let mut builder = PathBuilder::stroke(px(xf.len(1.5)))
+        .dash_array(&[px(xf.len(6.0)), px(xf.len(4.0))]);
+    builder.move_to(tl);
+    builder.line_to(tr);
+    builder.line_to(br);
+    builder.line_to(bl);
+    builder.line_to(tl);
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, hsla(0.58, 0.85, 0.7, 1.0));
+    }
+}
+
 /// Paint the region rubber-band and every shape onto `window`.
 pub fn paint_canvas(window: &mut Window, cx: &mut App, canvas: &Canvas, xf: Xform) {
     if let Some(rect) = canvas.region() {
         paint_rect_stroke(window, rect, xf, 2.0, ACCENT);
+        // The Pointer tool's drag-anchor logic in `Canvas::on_down` keys
+        // off the same hitbox, so the visual feedback matches the
+        // resize behaviour 1:1.
+        if rect.width() >= 16 && rect.height() >= 16 {
+            paint_region_handles(window, rect, xf);
+        }
     }
     for shape in canvas.shapes() {
         paint_shape(window, cx, shape, xf, false);
     }
+    paint_selected_shape_outline(window, canvas, xf);
     if let Some(preview) = canvas.preview_shape() {
         paint_shape(window, cx, &preview, xf, false);
     }
