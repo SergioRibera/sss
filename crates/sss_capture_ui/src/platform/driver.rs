@@ -79,6 +79,12 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
             // On Wayland the display_id pins the layer-shell surface to the
             // right output; on macOS/X11 it picks the fullscreen target.
             let displays = cx.displays();
+            tracing::debug!(
+                monitors = monitors.len(),
+                displays = displays.len(),
+                "opening overlay windows"
+            );
+            let mut opened = 0usize;
             for monitor in monitors.iter() {
                 let m_bounds = monitor.bounds();
                 let display_id = displays
@@ -90,13 +96,58 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
                     })
                     .map(|d| d.id());
 
-                let opts = window_options_for(monitor, display_id);
                 let shared_for_window = shared.clone();
                 let monitor_clone = monitor.clone();
-                let _ = cx.open_window(opts, move |window, cx| {
-                    cx.new(|cx| OverlayView::new(window, cx, shared_for_window, monitor_clone))
+                let opts = window_options_for(monitor, display_id, true);
+
+                let attempt = cx.open_window(opts, {
+                    let shared_for_window = shared_for_window.clone();
+                    let monitor_clone = monitor_clone.clone();
+                    move |window, cx| {
+                        cx.new(|cx| {
+                            OverlayView::new(window, cx, shared_for_window, monitor_clone)
+                        })
+                    }
                 });
+                match attempt {
+                    Ok(_) => {
+                        opened += 1;
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            monitor = %m_bounds,
+                            "layer-shell open failed; retrying with a fullscreen xdg window"
+                        );
+                    }
+                }
+
+                // Compositor likely doesn't expose wlr-layer-shell (e.g.
+                // GNOME Mutter, KDE without the protocol). Retry with a
+                // regular fullscreen surface so the editor still works.
+                let opts = window_options_for(monitor, display_id, false);
+                match cx.open_window(opts, move |window, cx| {
+                    cx.new(|cx| OverlayView::new(window, cx, shared_for_window, monitor_clone))
+                }) {
+                    Ok(_) => opened += 1,
+                    Err(e) => tracing::error!(
+                        error = %e,
+                        monitor = %m_bounds,
+                        "fullscreen overlay open failed"
+                    ),
+                }
             }
+
+            if opened == 0 {
+                tracing::error!(
+                    "no overlay window could be opened on any monitor; closing"
+                );
+                shared.update(cx, |s, _| s.cancel());
+                cx.quit();
+                return;
+            }
+            tracing::info!(opened, "overlay ready");
 
             cx.on_window_closed(|cx, _id| {
                 if cx.windows().is_empty() {
@@ -115,14 +166,22 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
     }))
 }
 
-fn window_options_for(monitor: &Monitor, display_id: Option<gpui::DisplayId>) -> WindowOptions {
+fn window_options_for(
+    monitor: &Monitor,
+    display_id: Option<gpui::DisplayId>,
+    use_layer_shell: bool,
+) -> WindowOptions {
     let m = monitor.bounds();
     let bounds = Bounds {
         origin: point(px(m.x() as f32), px(m.y() as f32)),
         size: size(px(m.width() as f32), px(m.height() as f32)),
     };
 
-    let kind = layer_shell_kind();
+    let kind = if use_layer_shell {
+        layer_shell_kind()
+    } else {
+        WindowKind::Normal
+    };
 
     WindowOptions {
         window_bounds: Some(WindowBounds::Fullscreen(bounds)),
