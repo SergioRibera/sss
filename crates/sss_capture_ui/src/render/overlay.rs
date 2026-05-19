@@ -80,18 +80,19 @@ impl Xform {
 }
 
 /// Paint the region rubber-band and every shape onto `window`.
-pub fn paint_canvas(window: &mut Window, _cx: &mut App, canvas: &Canvas, xf: Xform) {
+pub fn paint_canvas(window: &mut Window, cx: &mut App, canvas: &Canvas, xf: Xform) {
     if let Some(rect) = canvas.region() {
         paint_rect_stroke(window, rect, xf, 2.0, ACCENT);
     }
     for shape in canvas.shapes() {
-        paint_shape(window, shape, xf);
+        paint_shape(window, cx, shape, xf, false);
     }
     if let Some(preview) = canvas.preview_shape() {
-        paint_shape(window, &preview, xf);
+        paint_shape(window, cx, &preview, xf, false);
     }
     if let Some(pending) = canvas.pending_text() {
-        paint_shape(window, &pending, xf);
+        // Editing-in-progress text: draw a blinking caret hint at the end.
+        paint_shape(window, cx, &pending, xf, true);
     }
     if let Some(verts) = canvas.polygon_vertices() {
         if verts.len() >= 2 {
@@ -109,7 +110,7 @@ pub fn paint_canvas(window: &mut Window, _cx: &mut App, canvas: &Canvas, xf: Xfo
     }
 }
 
-fn paint_shape(window: &mut Window, shape: &Shape, xf: Xform) {
+fn paint_shape(window: &mut Window, cx: &mut App, shape: &Shape, xf: Xform, editing: bool) {
     let stroke = color_to_hsla(shape.style.stroke);
     let width = shape.style.stroke_width.max(1.0);
     let fill = shape.style.fill.map(color_to_hsla);
@@ -167,7 +168,9 @@ fn paint_shape(window: &mut Window, shape: &Shape, xf: Xform) {
             paint_ellipse(window, point(cx, cy), rx, ry, xf.len(width), stroke, fill);
         }
         ShapeKind::Step {
-            center, radius, ..
+            center,
+            number,
+            radius,
         } => {
             let c = xf.pt(*center);
             let r_logical = px(xf.len(*radius));
@@ -180,11 +183,52 @@ fn paint_shape(window: &mut Window, shape: &Shape, xf: Xform) {
                 hsla(0.0, 0.0, 1.0, 1.0),
                 fill.or(Some(stroke)),
             );
+            // Step number, centered. Matches composite.rs which uses
+            // `radius * 1.1` to size the label.
+            let label = number.to_string();
+            let font_size = px(xf.len(*radius * 1.1));
+            paint_centered_label(
+                window,
+                cx,
+                &label,
+                c,
+                font_size,
+                hsla(0.0, 0.0, 1.0, 1.0),
+                false,
+            );
         }
-        ShapeKind::Text { .. } => {
-            // Live text is rendered via `paint_step_label` / `paint_text` in
-            // a separate pass that has access to the text system. See the
-            // companion helpers in `platform::driver`.
+        ShapeKind::Text {
+            origin: text_origin,
+            content,
+            style,
+        } => {
+            let color = color_to_hsla(style.color);
+            let font_size = px(xf.len(style.size));
+            let origin = xf.pt(*text_origin);
+            let line_h = paint_text_run(
+                window,
+                cx,
+                content,
+                origin,
+                font_size,
+                color,
+                style.bold,
+            );
+            if editing {
+                // Vertical caret bar right after the typed string, same
+                // height as the line. Compositors will repaint each frame
+                // so a future "blink" is just a `cx.spawn` away — not
+                // wired in this pass.
+                let advance = measure_text_advance(window, content, font_size, style.bold);
+                let caret_top = origin;
+                let caret_x = origin.x + advance;
+                let mut builder = PathBuilder::stroke(px(1.5_f32 * xf.inv_scale));
+                builder.move_to(point(caret_x, caret_top.y));
+                builder.line_to(point(caret_x, caret_top.y + line_h));
+                if let Ok(path) = builder.build() {
+                    window.paint_path(path, color);
+                }
+            }
         }
         ShapeKind::Polygon { points, closed } => {
             if points.is_empty() {
@@ -291,6 +335,100 @@ fn paint_ellipse(
     if let Ok(path) = outline.build() {
         window.paint_path(path, stroke);
     }
+}
+
+fn paint_text_run(
+    window: &mut Window,
+    cx: &mut App,
+    text: &str,
+    origin: Point<Pixels>,
+    font_size: Pixels,
+    color: Hsla,
+    bold: bool,
+) -> Pixels {
+    if text.is_empty() {
+        return font_size * 1.3;
+    }
+    let mut font = window.text_style().font();
+    if bold {
+        font.weight = FontWeight::BOLD;
+    }
+    let runs = [TextRun {
+        len: text.len(),
+        font,
+        color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    }];
+    let line = window
+        .text_system()
+        .shape_line(text.into(), font_size, &runs, None);
+    let line_h = px(font_size.as_f32() * 1.3);
+    let _ = line.paint(origin, line_h, TextAlign::Left, None, window, cx);
+    line_h
+}
+
+fn paint_centered_label(
+    window: &mut Window,
+    cx: &mut App,
+    text: &str,
+    center: Point<Pixels>,
+    font_size: Pixels,
+    color: Hsla,
+    bold: bool,
+) {
+    if text.is_empty() {
+        return;
+    }
+    let mut font = window.text_style().font();
+    if bold {
+        font.weight = FontWeight::BOLD;
+    }
+    let runs = [TextRun {
+        len: text.len(),
+        font,
+        color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    }];
+    let line = window
+        .text_system()
+        .shape_line(text.into(), font_size, &runs, None);
+    let line_h = px(font_size.as_f32() * 1.3);
+    let origin = point(
+        center.x - line.width() / 2.,
+        center.y - line_h / 2.,
+    );
+    let _ = line.paint(origin, line_h, TextAlign::Left, None, window, cx);
+}
+
+fn measure_text_advance(
+    window: &mut Window,
+    text: &str,
+    font_size: Pixels,
+    bold: bool,
+) -> Pixels {
+    if text.is_empty() {
+        return px(0.);
+    }
+    let mut font = window.text_style().font();
+    if bold {
+        font.weight = FontWeight::BOLD;
+    }
+    let runs = [TextRun {
+        len: text.len(),
+        font,
+        color: hsla(0., 0., 0., 1.),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    }];
+    window
+        .text_system()
+        .shape_line(text.into(), font_size, &runs, None)
+        .width()
 }
 
 /// Paint the "Press Enter to accept" pill underneath the active region.
