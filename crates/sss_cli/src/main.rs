@@ -30,6 +30,12 @@ fn main() -> Result<(), Report> {
 
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
+    // wgpu / wgpu-hal / blade-graphics emit through the `log` crate, not
+    // `tracing`. Bridging them lets `RUST_LOG=wgpu_hal=info` show backend
+    // init failures (missing libvulkan, EGL probe errors, etc.) that
+    // otherwise vanish.
+    let _ = tracing_log::LogTracer::init();
+
     // install color eyre
     color_eyre::config::HookBuilder::default()
         .issue_url(concat!(env!("CARGO_PKG_REPOSITORY"), "/issues/new"))

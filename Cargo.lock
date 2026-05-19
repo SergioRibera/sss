@@ -5852,6 +5852,7 @@ dependencies = [
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
+ "tracing-log",
  "tracing-subscriber",
 ]
 
