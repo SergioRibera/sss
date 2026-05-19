@@ -19,7 +19,9 @@ use sss_capture::{Image as CapImage, Monitor, Rect as CapRect};
 use crate::canvas::{Canvas, CanvasEvent};
 use crate::geometry::FPoint;
 use crate::mode::SelectorMode;
-use crate::render::overlay::{BlurCache, Xform, paint_blurs, paint_canvas, paint_confirm_hint};
+use crate::render::overlay::{
+    BlurCache, Xform, paint_blurs, paint_canvas, paint_confirm_hint, paint_hover_target,
+};
 use crate::selector::{Config, Outcome, PostAction, Selection, Selector, SelectorError};
 
 // ─── Public entry point ─────────────────────────────────────────────────
@@ -51,6 +53,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
         let monitors = monitors.clone();
         let result_slot = result_slot.clone();
         app.run(move |cx| {
+            let windows = capturer.windows().unwrap_or_default();
             let shared = cx.new(|_| SharedState {
                 canvas: Canvas::default(),
                 runtime_mode: initial_mode,
@@ -64,7 +67,9 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
                 config: Arc::new(config),
                 capturer,
                 initial,
+                monitors: monitors.clone(),
                 monitors_bb,
+                windows,
                 result_slot,
             });
 
@@ -167,8 +172,28 @@ struct SharedState {
     config: Arc<Config>,
     capturer: Arc<sss_capture::Capturer>,
     initial: Option<Arc<CapImage>>,
+    monitors: Vec<Monitor>,
     monitors_bb: CapRect,
+    windows: Vec<sss_capture::Window>,
     result_slot: Arc<Mutex<Option<Selection>>>,
+}
+
+impl SharedState {
+    fn hovered_window(&self) -> Option<&sss_capture::Window> {
+        let p = sss_capture::Point::new(
+            self.last_cursor.x as i32,
+            self.last_cursor.y as i32,
+        );
+        self.windows.iter().find(|w| w.bounds().contains(p))
+    }
+
+    fn hovered_monitor(&self) -> Option<&Monitor> {
+        let p = sss_capture::Point::new(
+            self.last_cursor.x as i32,
+            self.last_cursor.y as i32,
+        );
+        self.monitors.iter().find(|m| m.bounds().contains(p))
+    }
 }
 
 impl SharedState {
@@ -179,15 +204,12 @@ impl SharedState {
     fn confirm(&mut self) {
         let outcome = match self.runtime_mode {
             SelectorMode::Monitor => {
-                let p = sss_capture::Point::new(
-                    self.last_cursor.x as i32,
-                    self.last_cursor.y as i32,
-                );
-                if let Ok(m) = self.capturer.monitor_at(p) {
-                    let image = self.capture_region(m.bounds());
+                if let Some(m) = self.hovered_monitor().cloned() {
+                    let bounds = m.bounds();
+                    let image = self.capture_region(bounds);
                     Outcome::Monitor {
                         monitor: m.id(),
-                        rect: m.bounds(),
+                        rect: bounds,
                         image,
                     }
                 } else {
@@ -195,20 +217,12 @@ impl SharedState {
                 }
             }
             SelectorMode::Window => {
-                let cursor = sss_capture::Point::new(
-                    self.last_cursor.x as i32,
-                    self.last_cursor.y as i32,
-                );
-                let win = self
-                    .capturer
-                    .windows()
-                    .ok()
-                    .and_then(|ws| ws.into_iter().find(|w| w.bounds().contains(cursor)));
-                if let Some(w) = win {
-                    let image = self.capture_region(w.bounds());
+                if let Some(w) = self.hovered_window().cloned() {
+                    let bounds = w.bounds();
+                    let image = self.capture_region(bounds);
                     Outcome::Window {
                         window: w.id(),
-                        rect: w.bounds(),
+                        rect: bounds,
                         image,
                     }
                 } else {
@@ -352,11 +366,24 @@ impl Render for OverlayView {
                 let shared = shared.clone();
                 move |ev: &MouseDownEvent, window, cx| {
                     let pos = translate(ev.position, window.scale_factor());
-                    shared.update(cx, |s, cx| {
+                    let should_quit = shared.update(cx, |s, cx| {
                         s.last_cursor = pos;
-                        s.handle_canvas(CanvasEvent::PointerDown(pos));
-                        cx.notify();
+                        match s.runtime_mode {
+                            SelectorMode::Monitor | SelectorMode::Window => {
+                                s.confirm();
+                                cx.notify();
+                                true
+                            }
+                            _ => {
+                                s.handle_canvas(CanvasEvent::PointerDown(pos));
+                                cx.notify();
+                                false
+                            }
+                        }
                     });
+                    if should_quit {
+                        cx.quit();
+                    }
                 }
             })
             .on_mouse_move({
@@ -459,14 +486,24 @@ impl Render for OverlayView {
                     move |_, _, _| {},
                     move |_, _, window, cx| {
                         let xf = Xform::new(origin, window.scale_factor());
-                        let (snapshot, initial, initial_origin) = {
+                        let (snapshot, initial, initial_origin, hover) = {
                             let state = shared_for_paint.read(cx);
                             let initial_origin =
                                 (state.monitors_bb.x(), state.monitors_bb.y());
+                            let hover = match state.runtime_mode {
+                                SelectorMode::Monitor => state
+                                    .hovered_monitor()
+                                    .map(|m| (m.bounds(), None::<String>)),
+                                SelectorMode::Window => state
+                                    .hovered_window()
+                                    .map(|w| (w.bounds(), Some(window_label(w)))),
+                                _ => None,
+                            };
                             (
                                 state.canvas.clone(),
                                 state.initial.clone(),
                                 initial_origin,
+                                hover,
                             )
                         };
                         let mut cache = blur_cache.borrow_mut();
@@ -479,6 +516,16 @@ impl Render for OverlayView {
                             &mut cache,
                         );
                         paint_canvas(window, cx, &snapshot, xf);
+                        if let Some((rect, label)) = hover {
+                            paint_hover_target(
+                                window,
+                                cx,
+                                rect,
+                                label.as_deref(),
+                                monitor_bounds,
+                                xf,
+                            );
+                        }
                         let region = snapshot.region();
                         paint_confirm_hint(window, cx, monitor_bounds, region, xf);
                     },
@@ -673,6 +720,17 @@ fn render_toolbar(
 
 fn toolbar_divider() -> impl IntoElement {
     div().w(px(1.)).h(px(20.)).bg(hsla(0., 0., 1., 0.18))
+}
+
+fn window_label(w: &sss_capture::Window) -> String {
+    let app = w.app_name();
+    let title = w.title();
+    match (app.is_empty(), title.is_empty()) {
+        (false, false) => format!("{app} — {title}"),
+        (false, true) => app.into(),
+        (true, false) => title.into(),
+        (true, true) => format!("Window {}", w.id()),
+    }
 }
 
 fn render_color_row(

@@ -543,6 +543,91 @@ fn measure_text_advance(
         .width()
 }
 
+/// Paint a hover highlight over a rect for Monitor/Window selector modes.
+/// `label` is rendered centered inside the rect (clipped to the monitor's
+/// viewport so multi-output overlays don't draw duplicates).
+pub fn paint_hover_target(
+    window: &mut Window,
+    cx: &mut App,
+    target: CapRect,
+    label: Option<&str>,
+    monitor_bounds: CapRect,
+    xf: Xform,
+) {
+    // Only the monitor that contains the target's centre draws it, so a
+    // window that straddles two outputs doesn't double-highlight.
+    let cx_g = target.x() + target.width() as i32 / 2;
+    let cy_g = target.y() + target.height() as i32 / 2;
+    if cx_g < monitor_bounds.x()
+        || cx_g >= monitor_bounds.x() + monitor_bounds.width() as i32
+        || cy_g < monitor_bounds.y()
+        || cy_g >= monitor_bounds.y() + monitor_bounds.height() as i32
+    {
+        return;
+    }
+    let r = xf.rect(target);
+    // Semi-transparent fill so the underlying screenshot stays visible.
+    window.paint_quad(quad(
+        r,
+        px(0.),
+        Background::from(hsla(0.58, 0.7, 0.55, 0.18)),
+        px(0.),
+        transparent_black(),
+        Default::default(),
+    ));
+    paint_rect_stroke(window, target, xf, 3.0, ACCENT);
+
+    let Some(text) = label.filter(|t| !t.is_empty()) else {
+        return;
+    };
+    let font_size = px(14.);
+    let mut font = window.text_style().font();
+    font.weight = FontWeight::SEMIBOLD;
+    let runs = [TextRun {
+        len: text.len(),
+        font,
+        color: HINT_FG,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    }];
+    let line = window
+        .text_system()
+        .shape_line(text.into(), font_size, &runs, None);
+    let text_w = line.width().as_f32();
+    let line_h = window.line_height().as_f32().max(font_size.as_f32() * 1.3);
+    let pad_x = 12.0;
+    let pad_y = 5.0;
+    let panel_w = text_w + pad_x * 2.0;
+    let panel_h = line_h + pad_y * 2.0;
+    let center_local_x = (r.origin.x + r.size.width / 2.0).as_f32();
+    let center_local_y = (r.origin.y + r.size.height / 2.0).as_f32();
+    let panel_x = center_local_x - panel_w / 2.0;
+    let panel_y = center_local_y - panel_h / 2.0;
+    let origin = point(px(panel_x), px(panel_y));
+    let panel_bounds = Bounds {
+        origin,
+        size: size(px(panel_w), px(panel_h)),
+    };
+    window.paint_quad(quad(
+        panel_bounds,
+        px(6.),
+        Background::from(HINT_BG),
+        px(1.),
+        ACCENT,
+        Default::default(),
+    ));
+    let text_origin = point(px(panel_x + pad_x), px(panel_y + pad_y));
+    let _ = line.paint(
+        text_origin,
+        px(line_h),
+        TextAlign::Left,
+        None,
+        window,
+        cx,
+    );
+}
+
 /// Paint the "Press Enter to accept" pill underneath the active region.
 ///
 /// `monitor_bounds` and `region` are in canvas-space (physical px). Only
