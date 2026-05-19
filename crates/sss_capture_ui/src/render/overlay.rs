@@ -5,16 +5,21 @@
 //! the canvas state into `paint_path` / `paint_quad` calls on a [`Window`].
 //! It carries no state of its own.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use gpui::{
-    App, Background, Bounds, FontWeight, Hsla, PathBuilder, PathStyle, Pixels, Point,
-    StrokeOptions, TextAlign, TextRun, Window, hsla, point, px, quad, size, transparent_black,
+    App, Background, Bounds, Corners, FontWeight, Hsla, PathBuilder, PathStyle, Pixels, Point,
+    RenderImage, StrokeOptions, TextAlign, TextRun, Window, hsla, point, px, quad, size,
+    transparent_black,
 };
-use sss_capture::Rect as CapRect;
+use image::{Frame, ImageBuffer, Rgba};
+use sss_capture::{Image as CapImage, Rect as CapRect};
 
 use crate::canvas::Canvas;
 use crate::color::Color;
 use crate::geometry::FPoint;
-use crate::shape::{Shape, ShapeKind};
+use crate::shape::{Shape, ShapeId, ShapeKind};
 
 /// Highlight blue used for the rubber-band.
 const ACCENT: Hsla = Hsla {
@@ -77,6 +82,113 @@ impl Xform {
             ),
         }
     }
+}
+
+/// Cache of CPU-blurred image tiles keyed by shape geometry, so the
+/// expensive `gaussian_blur` only runs when the user actually changes
+/// the rectangle / radius. Lives on the per-window `OverlayView`.
+#[derive(Default)]
+pub struct BlurCache {
+    entries: HashMap<BlurKey, Arc<RenderImage>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct BlurKey {
+    shape: Option<ShapeId>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    radius_thousandths: i32,
+}
+
+impl BlurCache {
+    fn key(shape: Option<ShapeId>, rect: CapRect, radius: f32) -> BlurKey {
+        BlurKey {
+            shape,
+            x: rect.x(),
+            y: rect.y(),
+            w: rect.width(),
+            h: rect.height(),
+            radius_thousandths: (radius * 1000.0).round() as i32,
+        }
+    }
+
+    /// Evict everything except the entries still referenced by a current
+    /// shape. Called once per paint pass so deleted blurs are cleaned up.
+    fn retain_used(&mut self, used: &std::collections::HashSet<BlurKey>) {
+        self.entries.retain(|k, _| used.contains(k));
+    }
+}
+
+/// Paint the blurred underlay for every `BlurRect` shape (committed and
+/// preview), using `initial` as the source frame. Call this **before**
+/// `paint_canvas` so the rubber-band / outline draws on top.
+pub fn paint_blurs(
+    window: &mut Window,
+    canvas: &Canvas,
+    initial: Option<&CapImage>,
+    initial_origin: (i32, i32),
+    xf: Xform,
+    cache: &mut BlurCache,
+) {
+    let Some(initial) = initial else { return };
+    let buffer = initial.as_rgba();
+    let (iw, ih) = buffer.dimensions();
+    let mut used = std::collections::HashSet::new();
+
+    let paint_one = |window: &mut Window,
+                         cache: &mut BlurCache,
+                         used: &mut std::collections::HashSet<BlurKey>,
+                         shape_id: Option<ShapeId>,
+                         rect: CapRect,
+                         radius: f32| {
+        let key = BlurCache::key(shape_id, rect, radius);
+        used.insert(key);
+        let image = cache
+            .entries
+            .entry(key)
+            .or_insert_with(|| build_blurred(buffer, initial_origin, rect, radius, iw, ih));
+        let bounds = xf.rect(rect);
+        let _ = window.paint_image(bounds, Corners::all(px(0.)), image.clone(), 0, false);
+    };
+
+    for shape in canvas.shapes() {
+        if let ShapeKind::BlurRect { rect, radius } = &shape.kind {
+            paint_one(window, cache, &mut used, Some(shape.id), *rect, *radius);
+        }
+    }
+    if let Some(preview) = canvas.preview_shape() {
+        if let ShapeKind::BlurRect { rect, radius } = &preview.kind {
+            paint_one(window, cache, &mut used, None, *rect, *radius);
+        }
+    }
+
+    cache.retain_used(&used);
+}
+
+fn build_blurred(
+    source: &ImageBuffer<Rgba<u8>, Vec<u8>>,
+    source_origin: (i32, i32),
+    rect: CapRect,
+    radius: f32,
+    iw: u32,
+    ih: u32,
+) -> Arc<RenderImage> {
+    // Intersect with the source buffer; if the rect spills outside (e.g.
+    // off-screen during a drag) we clip rather than panic.
+    let x0 = (rect.x() - source_origin.0).max(0) as u32;
+    let y0 = (rect.y() - source_origin.1).max(0) as u32;
+    let w = rect.width().min(iw.saturating_sub(x0)).max(1);
+    let h = rect.height().min(ih.saturating_sub(y0)).max(1);
+    let cropped = image::imageops::crop_imm(source, x0, y0, w, h).to_image();
+    let mut blurred = sss_core::blur::gaussian_blur(cropped, radius.max(1.0));
+    // GPUI sprites use BGRA premultiplied; the source is RGBA premultiplied.
+    for px in blurred.chunks_exact_mut(4) {
+        px.swap(0, 2);
+    }
+    let frame = Frame::new(blurred);
+    Arc::new(RenderImage::new(vec![frame]))
 }
 
 /// Paint the region rubber-band and every shape onto `window`.

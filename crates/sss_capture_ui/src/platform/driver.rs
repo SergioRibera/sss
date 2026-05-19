@@ -3,6 +3,8 @@
 //! `WindowKind::LayerShell` surfaces; everywhere else they fall back to a
 //! borderless fullscreen window.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use gpui::{
@@ -17,7 +19,7 @@ use sss_capture::{Image as CapImage, Monitor, Rect as CapRect};
 use crate::canvas::{Canvas, CanvasEvent};
 use crate::geometry::FPoint;
 use crate::mode::SelectorMode;
-use crate::render::overlay::{Xform, paint_canvas, paint_confirm_hint};
+use crate::render::overlay::{BlurCache, Xform, paint_blurs, paint_canvas, paint_confirm_hint};
 use crate::selector::{Config, Outcome, PostAction, Selection, Selector, SelectorError};
 
 // ─── Public entry point ─────────────────────────────────────────────────
@@ -26,7 +28,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
     let Selector { config, capturer } = sel;
 
     let initial = match capturer.capture_all_with(config.capture_opts) {
-        Ok(img) => Some(img),
+        Ok(img) => Some(Arc::new(img)),
         Err(e) => {
             tracing::warn!(error = %e, "eager capture failed; overlay opens blank");
             None
@@ -164,7 +166,7 @@ struct SharedState {
     outcome: Option<Outcome>,
     config: Arc<Config>,
     capturer: Arc<sss_capture::Capturer>,
-    initial: Option<CapImage>,
+    initial: Option<Arc<CapImage>>,
     monitors_bb: CapRect,
     result_slot: Arc<Mutex<Option<Selection>>>,
 }
@@ -240,7 +242,7 @@ impl SharedState {
     }
 
     fn capture_region(&self, rect: CapRect) -> Option<CapImage> {
-        let raw = match self.initial.as_ref() {
+        let raw = match self.initial.as_deref() {
             Some(img) => {
                 let local_x = (rect.x() - self.monitors_bb.x()).max(0) as u32;
                 let local_y = (rect.y() - self.monitors_bb.y()).max(0) as u32;
@@ -272,6 +274,7 @@ struct OverlayView {
     shared: Entity<SharedState>,
     monitor: Monitor,
     focus_handle: FocusHandle,
+    blur_cache: Rc<RefCell<BlurCache>>,
     _sub: gpui::Subscription,
 }
 
@@ -288,6 +291,7 @@ impl OverlayView {
             shared,
             monitor,
             focus_handle,
+            blur_cache: Rc::new(RefCell::new(BlurCache::default())),
             _sub: sub,
         }
     }
@@ -450,11 +454,30 @@ impl Render for OverlayView {
             })
             .child({
                 let monitor_bounds = monitor.bounds();
+                let blur_cache = self.blur_cache.clone();
                 gpui::canvas(
                     move |_, _, _| {},
                     move |_, _, window, cx| {
-                        let snapshot = shared_for_paint.read(cx).canvas.clone();
                         let xf = Xform::new(origin, window.scale_factor());
+                        let (snapshot, initial, initial_origin) = {
+                            let state = shared_for_paint.read(cx);
+                            let initial_origin =
+                                (state.monitors_bb.x(), state.monitors_bb.y());
+                            (
+                                state.canvas.clone(),
+                                state.initial.clone(),
+                                initial_origin,
+                            )
+                        };
+                        let mut cache = blur_cache.borrow_mut();
+                        paint_blurs(
+                            window,
+                            &snapshot,
+                            initial.as_deref(),
+                            initial_origin,
+                            xf,
+                            &mut cache,
+                        );
                         paint_canvas(window, cx, &snapshot, xf);
                         let region = snapshot.region();
                         paint_confirm_hint(window, cx, monitor_bounds, region, xf);
