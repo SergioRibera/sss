@@ -52,13 +52,16 @@ impl Tool {
             Tool::Brush(_) => ToolKind::Brush,
             Tool::Line(_) => ToolKind::Line,
             Tool::Arrow(_) => ToolKind::Arrow,
+            Tool::Rectangle(b) if b.fill.is_some() => ToolKind::RectangleFilled,
             Tool::Rectangle(_) => ToolKind::Rectangle,
+            Tool::Ellipse(b) if b.fill.is_some() => ToolKind::EllipseFilled,
             Tool::Ellipse(_) => ToolKind::Ellipse,
+            Tool::Polygon(b) if b.fill.is_some() => ToolKind::PolygonFilled,
+            Tool::Polygon(_) => ToolKind::Polygon,
             Tool::BlurRect { .. } => ToolKind::BlurRect,
             Tool::Eraser { .. } => ToolKind::Eraser,
             Tool::Step(_) => ToolKind::Step,
             Tool::Text(_) => ToolKind::Text,
-            Tool::Polygon(_) => ToolKind::Polygon,
             Tool::Pipette => ToolKind::Pipette,
         }
     }
@@ -128,27 +131,6 @@ impl Tool {
         }
     }
 
-    /// `Some(_)` when the tool supports a fill (rect / ellipse / polygon).
-    /// The inner `Option<Color>` is the current fill, or `None` for an
-    /// unfilled / outline-only shape.
-    pub fn current_fill(&self) -> Option<Option<Color>> {
-        match self {
-            Tool::Rectangle(b) | Tool::Ellipse(b) | Tool::Polygon(b) => Some(b.fill),
-            _ => None,
-        }
-    }
-
-    /// Toggle whether the next closed shape is filled. Locks the fill
-    /// color to the current stroke color when turning fill on, so the
-    /// stroke swatches drive both at once.
-    pub fn toggle_fill(&mut self) {
-        match self {
-            Tool::Rectangle(b) | Tool::Ellipse(b) | Tool::Polygon(b) => {
-                b.fill = if b.fill.is_some() { None } else { Some(b.color) };
-            }
-            _ => {}
-        }
-    }
 
     pub fn icon(&self) -> &'static str {
         match self {
@@ -240,7 +222,28 @@ impl Default for ToolPalette {
                 Tool::Step(StepSettings::default()),
                 Tool::Text(crate::shape::TextStyle::default()),
                 Tool::Pipette,
-            ],
+            ]
+            .into_iter()
+            // Insert the filled variants directly after their outline twin.
+            .flat_map(|t| match t.kind() {
+                crate::config::ToolKind::Rectangle => {
+                    let mut filled = BrushSettings::default();
+                    filled.fill = Some(filled.color);
+                    vec![t, Tool::Rectangle(filled)]
+                }
+                crate::config::ToolKind::Ellipse => {
+                    let mut filled = BrushSettings::default();
+                    filled.fill = Some(filled.color);
+                    vec![t, Tool::Ellipse(filled)]
+                }
+                crate::config::ToolKind::Polygon => {
+                    let mut filled = BrushSettings::default();
+                    filled.fill = Some(filled.color);
+                    vec![t, Tool::Polygon(filled)]
+                }
+                _ => vec![t],
+            })
+            .collect(),
             color_palette: Color::palette().to_vec(),
             initial: Tool::Pointer,
         }

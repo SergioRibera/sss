@@ -13,8 +13,11 @@ pub enum ToolKind {
     Line,
     Arrow,
     Rectangle,
+    RectangleFilled,
     Ellipse,
+    EllipseFilled,
     Polygon,
+    PolygonFilled,
     BlurRect,
     Eraser,
     Step,
@@ -30,8 +33,11 @@ impl ToolKind {
             ToolKind::Line,
             ToolKind::Arrow,
             ToolKind::Rectangle,
+            ToolKind::RectangleFilled,
             ToolKind::Ellipse,
+            ToolKind::EllipseFilled,
             ToolKind::Polygon,
+            ToolKind::PolygonFilled,
             ToolKind::BlurRect,
             ToolKind::Eraser,
             ToolKind::Step,
@@ -47,8 +53,11 @@ impl ToolKind {
             ToolKind::Line => "Line",
             ToolKind::Arrow => "Arrow",
             ToolKind::Rectangle => "Rect",
+            ToolKind::RectangleFilled => "Rect (filled)",
             ToolKind::Ellipse => "Ellipse",
+            ToolKind::EllipseFilled => "Ellipse (filled)",
             ToolKind::Polygon => "Poly",
+            ToolKind::PolygonFilled => "Poly (filled)",
             ToolKind::BlurRect => "Blur",
             ToolKind::Eraser => "Eraser",
             ToolKind::Step => "Step",
@@ -64,8 +73,11 @@ impl ToolKind {
             ToolKind::Line => "icons/line.svg",
             ToolKind::Arrow => "icons/arrow.svg",
             ToolKind::Rectangle => "icons/rectangle.svg",
+            ToolKind::RectangleFilled => "icons/rectangle_filled.svg",
             ToolKind::Ellipse => "icons/ellipse.svg",
+            ToolKind::EllipseFilled => "icons/ellipse_filled.svg",
             ToolKind::Polygon => "icons/polygon.svg",
+            ToolKind::PolygonFilled => "icons/polygon_filled.svg",
             ToolKind::BlurRect => "icons/blur.svg",
             ToolKind::Eraser => "icons/eraser.svg",
             ToolKind::Step => "icons/step.svg",
@@ -75,19 +87,26 @@ impl ToolKind {
     }
 
     pub fn build(self, ui: &UiConfig) -> Tool {
-        let brush = BrushSettings {
+        let outline = BrushSettings {
             color: ui.default_stroke_color,
             width: ui.default_stroke_width.max(0.5),
-            fill: ui.default_fill,
+            fill: None,
+        };
+        let filled = BrushSettings {
+            fill: Some(ui.default_fill.unwrap_or(ui.default_stroke_color)),
+            ..outline
         };
         match self {
             ToolKind::Pointer => Tool::Pointer,
-            ToolKind::Brush => Tool::Brush(brush),
-            ToolKind::Line => Tool::Line(brush),
-            ToolKind::Arrow => Tool::Arrow(brush),
-            ToolKind::Rectangle => Tool::Rectangle(brush),
-            ToolKind::Ellipse => Tool::Ellipse(brush),
-            ToolKind::Polygon => Tool::Polygon(brush),
+            ToolKind::Brush => Tool::Brush(outline),
+            ToolKind::Line => Tool::Line(outline),
+            ToolKind::Arrow => Tool::Arrow(outline),
+            ToolKind::Rectangle => Tool::Rectangle(outline),
+            ToolKind::RectangleFilled => Tool::Rectangle(filled),
+            ToolKind::Ellipse => Tool::Ellipse(outline),
+            ToolKind::EllipseFilled => Tool::Ellipse(filled),
+            ToolKind::Polygon => Tool::Polygon(outline),
+            ToolKind::PolygonFilled => Tool::Polygon(filled),
             ToolKind::BlurRect => Tool::BlurRect {
                 radius: ui.default_blur_radius,
             },
