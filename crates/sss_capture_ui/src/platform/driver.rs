@@ -78,14 +78,27 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
             // Match each sss_capture monitor to a GPUI display by origin.
             // On Wayland the display_id pins the layer-shell surface to the
             // right output; on macOS/X11 it picks the fullscreen target.
+            //
+            // `cx.displays()` is in logical pixels (DIPs); sss_capture is in
+            // physical pixels. With scale = 1.0 they match; if not, the
+            // origin tolerance below should still catch them. As a last
+            // resort we fall back to matching by index (compositors
+            // typically enumerate outputs in the same DRM order as
+            // sss_capture's backend).
             let displays = cx.displays();
-            tracing::debug!(
-                monitors = monitors.len(),
-                displays = displays.len(),
-                "opening overlay windows"
+            tracing::info!(
+                "gpui sees {} display(s); sss_capture sees {} monitor(s)",
+                displays.len(),
+                monitors.len()
             );
+            for d in &displays {
+                tracing::debug!("  gpui display id={:?} bounds={:?}", d.id(), d.bounds());
+            }
+            for m in monitors.iter() {
+                tracing::debug!("  capture monitor id={} bounds={}", m.id(), m.bounds());
+            }
             let mut opened = 0usize;
-            for monitor in monitors.iter() {
+            for (idx, monitor) in monitors.iter().enumerate() {
                 let m_bounds = monitor.bounds();
                 let display_id = displays
                     .iter()
@@ -94,7 +107,14 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
                         (b.origin.x.as_f32() as i32 - m_bounds.x()).abs() < 4
                             && (b.origin.y.as_f32() as i32 - m_bounds.y()).abs() < 4
                     })
+                    .or_else(|| displays.get(idx))
                     .map(|d| d.id());
+                tracing::debug!(
+                    "  monitor {} ({}) -> display_id {:?}",
+                    monitor.id(),
+                    m_bounds,
+                    display_id
+                );
 
                 let shared_for_window = shared.clone();
                 let monitor_clone = monitor.clone();
