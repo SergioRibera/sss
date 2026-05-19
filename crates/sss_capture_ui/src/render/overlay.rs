@@ -559,6 +559,105 @@ fn measure_text_advance(
         .width()
 }
 
+/// Slurp-style mask: dim everything OUTSIDE the active region. Painted as
+/// four quads (top / bottom / left / right strips). When no region exists
+/// we dim the whole monitor — gives the user the visual cue that they
+/// haven't selected yet.
+///
+/// `monitor_bounds` is in canvas-space (physical px, global) so we can
+/// clip the strips to the monitor that's actually painting.
+pub fn paint_outside_mask(
+    window: &mut Window,
+    monitor_bounds: CapRect,
+    region: Option<CapRect>,
+    xf: Xform,
+) {
+    let dim = hsla(0.0, 0.0, 0.0, 0.45);
+    let monitor = xf.rect(monitor_bounds);
+    let Some(region) = region else {
+        // No selection yet — uniform shade over the whole output.
+        window.paint_quad(quad(
+            monitor,
+            px(0.),
+            Background::from(dim),
+            px(0.),
+            transparent_black(),
+            Default::default(),
+        ));
+        return;
+    };
+
+    // Clip the region to this monitor before computing strips so a region
+    // spanning multiple outputs is shaded correctly on each.
+    let clipped_x = region.x().max(monitor_bounds.x());
+    let clipped_y = region.y().max(monitor_bounds.y());
+    let clipped_right = (region.x() + region.width() as i32)
+        .min(monitor_bounds.x() + monitor_bounds.width() as i32);
+    let clipped_bottom = (region.y() + region.height() as i32)
+        .min(monitor_bounds.y() + monitor_bounds.height() as i32);
+
+    let strips_visible = clipped_right > clipped_x && clipped_bottom > clipped_y;
+    if !strips_visible {
+        // Region doesn't intersect this monitor → dim the whole output.
+        window.paint_quad(quad(
+            monitor,
+            px(0.),
+            Background::from(dim),
+            px(0.),
+            transparent_black(),
+            Default::default(),
+        ));
+        return;
+    }
+    let inner = CapRect::from_xywh(
+        clipped_x,
+        clipped_y,
+        (clipped_right - clipped_x) as u32,
+        (clipped_bottom - clipped_y) as u32,
+    );
+
+    let mb = monitor_bounds;
+    let strips = [
+        // top
+        CapRect::from_xywh(mb.x(), mb.y(), mb.width(), (inner.y() - mb.y()) as u32),
+        // bottom
+        CapRect::from_xywh(
+            mb.x(),
+            inner.y() + inner.height() as i32,
+            mb.width(),
+            (mb.y() + mb.height() as i32 - (inner.y() + inner.height() as i32)).max(0) as u32,
+        ),
+        // left
+        CapRect::from_xywh(
+            mb.x(),
+            inner.y(),
+            (inner.x() - mb.x()) as u32,
+            inner.height(),
+        ),
+        // right
+        CapRect::from_xywh(
+            inner.x() + inner.width() as i32,
+            inner.y(),
+            (mb.x() + mb.width() as i32 - (inner.x() + inner.width() as i32)).max(0) as u32,
+            inner.height(),
+        ),
+    ];
+
+    for strip in strips {
+        if strip.width() == 0 || strip.height() == 0 {
+            continue;
+        }
+        window.paint_quad(quad(
+            xf.rect(strip),
+            px(0.),
+            Background::from(dim),
+            px(0.),
+            transparent_black(),
+            Default::default(),
+        ));
+    }
+}
+
 /// Paint a hover highlight over a rect for Monitor/Window selector modes.
 /// `label` is rendered centered inside the rect (clipped to the monitor's
 /// viewport so multi-output overlays don't draw duplicates).

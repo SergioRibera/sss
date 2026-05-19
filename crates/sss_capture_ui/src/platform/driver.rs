@@ -22,6 +22,7 @@ use crate::geometry::FPoint;
 use crate::mode::SelectorMode;
 use crate::render::overlay::{
     BlurCache, Xform, paint_blurs, paint_canvas, paint_confirm_hint, paint_hover_target,
+    paint_outside_mask,
 };
 use crate::selector::{Config, Outcome, PostAction, Selection, Selector, SelectorError};
 
@@ -462,7 +463,7 @@ impl Render for OverlayView {
             )
         };
 
-        let picking = matches!(active_tool, crate::config::ToolKind::Pipette);
+        let cursor_kind = active_tool;
 
         div()
             .id("sss-overlay")
@@ -470,9 +471,7 @@ impl Render for OverlayView {
             .track_focus(&self.focus_handle)
             .size_full()
             .relative()
-            .when(picking, |this| this.cursor_pointer())
-            .when(!picking, |this| this.cursor_crosshair())
-            .bg(hsla(0.0, 0.0, 0.0, 0.18))
+            .map(|this| apply_tool_cursor(this, cursor_kind))
             .on_mouse_down(MouseButton::Left, {
                 let shared = shared.clone();
                 move |ev: &MouseDownEvent, window, cx| {
@@ -642,6 +641,10 @@ impl Render for OverlayView {
                                 hover,
                             )
                         };
+                        // 1. Slurp-style dim outside the region (or the whole
+                        //    monitor when nothing's selected yet).
+                        paint_outside_mask(window, monitor_bounds, snapshot.region(), xf);
+                        // 2. Blurred underlays for BlurRect shapes (cached).
                         let mut cache = blur_cache.borrow_mut();
                         paint_blurs(
                             window,
@@ -651,6 +654,7 @@ impl Render for OverlayView {
                             xf,
                             &mut cache,
                         );
+                        // 3. Shapes + rubber-band outline.
                         paint_canvas(window, cx, &snapshot, xf);
                         if let Some((rect, label)) = hover {
                             paint_hover_target(
@@ -742,6 +746,12 @@ fn render_toolbar(
         .right_0()
         .flex()
         .justify_center()
+        // Swallow every pointer event over the bar so clicks on the
+        // tool buttons don't bubble into the canvas hitbox and start a
+        // stray region drag underneath.
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_up(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_move(|_, _, cx| cx.stop_propagation())
         .child(
             div()
                 .flex()
@@ -866,6 +876,20 @@ fn render_toolbar(
 
 fn toolbar_divider() -> impl IntoElement {
     div().w(px(1.)).h(px(20.)).bg(hsla(0., 0., 1., 0.18))
+}
+
+fn apply_tool_cursor(
+    elem: gpui::Stateful<gpui::Div>,
+    tool: crate::config::ToolKind,
+) -> gpui::Stateful<gpui::Div> {
+    use crate::config::ToolKind;
+    match tool {
+        ToolKind::Pointer => elem.cursor_default(),
+        ToolKind::Pipette => elem.cursor_pointer(),
+        ToolKind::Text => elem.cursor_text(),
+        ToolKind::Eraser => elem.cursor(gpui::CursorStyle::DragCopy),
+        _ => elem.cursor_crosshair(),
+    }
 }
 
 fn window_label(w: &sss_capture::Window) -> String {
