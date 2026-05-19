@@ -24,23 +24,60 @@ const ACCENT: Hsla = Hsla {
     a: 1.0,
 };
 
+/// Transform from canvas-space (physical px, global) to window-space
+/// (logical px, monitor-local). `inv_scale = 1.0 / window.scale_factor()`.
+#[derive(Clone, Copy)]
+pub struct Xform {
+    pub origin: (i32, i32),
+    pub inv_scale: f32,
+}
+
+impl Xform {
+    pub fn new(origin: (i32, i32), scale: f32) -> Self {
+        Self {
+            origin,
+            inv_scale: if scale > 0.0 { 1.0 / scale } else { 1.0 },
+        }
+    }
+
+    fn pt(&self, p: FPoint) -> Point<Pixels> {
+        point(
+            px((p.x - self.origin.0 as f32) * self.inv_scale),
+            px((p.y - self.origin.1 as f32) * self.inv_scale),
+        )
+    }
+
+    fn len(&self, v: f32) -> f32 {
+        v * self.inv_scale
+    }
+
+    fn rect(&self, r: CapRect) -> Bounds<Pixels> {
+        Bounds {
+            origin: point(
+                px((r.x() - self.origin.0) as f32 * self.inv_scale),
+                px((r.y() - self.origin.1) as f32 * self.inv_scale),
+            ),
+            size: size(
+                px(r.width() as f32 * self.inv_scale),
+                px(r.height() as f32 * self.inv_scale),
+            ),
+        }
+    }
+}
+
 /// Paint the region rubber-band and every shape onto `window`.
-///
-/// `origin` is the monitor's global top-left in canvas coordinates; we
-/// subtract it from every point so the same canvas state renders correctly
-/// on every per-output overlay.
-pub fn paint_canvas(window: &mut Window, _cx: &mut App, canvas: &Canvas, origin: (i32, i32)) {
+pub fn paint_canvas(window: &mut Window, _cx: &mut App, canvas: &Canvas, xf: Xform) {
     if let Some(rect) = canvas.region() {
-        paint_rect_stroke(window, rect, origin, 2.0, ACCENT);
+        paint_rect_stroke(window, rect, xf, 2.0, ACCENT);
     }
     for shape in canvas.shapes() {
-        paint_shape(window, shape, origin);
+        paint_shape(window, shape, xf);
     }
     if let Some(preview) = canvas.preview_shape() {
-        paint_shape(window, &preview, origin);
+        paint_shape(window, &preview, xf);
     }
     if let Some(pending) = canvas.pending_text() {
-        paint_shape(window, &pending, origin);
+        paint_shape(window, &pending, xf);
     }
     if let Some(verts) = canvas.polygon_vertices() {
         if verts.len() >= 2 {
@@ -49,7 +86,7 @@ pub fn paint_canvas(window: &mut Window, _cx: &mut App, canvas: &Canvas, origin:
             paint_polyline(
                 window,
                 &pts,
-                origin,
+                xf,
                 style.stroke_width.max(1.0),
                 color_to_hsla(style.stroke),
                 false,
@@ -58,28 +95,28 @@ pub fn paint_canvas(window: &mut Window, _cx: &mut App, canvas: &Canvas, origin:
     }
 }
 
-fn paint_shape(window: &mut Window, shape: &Shape, origin: (i32, i32)) {
+fn paint_shape(window: &mut Window, shape: &Shape, xf: Xform) {
     let stroke = color_to_hsla(shape.style.stroke);
     let width = shape.style.stroke_width.max(1.0);
     let fill = shape.style.fill.map(color_to_hsla);
 
     match &shape.kind {
         ShapeKind::FreehandStroke { points } => {
-            paint_polyline(window, points, origin, width, stroke, false);
+            paint_polyline(window, points, xf, width, stroke, false);
         }
         ShapeKind::Line { from, to } => {
-            paint_polyline(window, &[*from, *to], origin, width, stroke, false);
+            paint_polyline(window, &[*from, *to], xf, width, stroke, false);
         }
         ShapeKind::Arrow { from, to } => {
-            paint_polyline(window, &[*from, *to], origin, width, stroke, false);
-            let a = local_pt(*from, origin);
-            let b = local_pt(*to, origin);
+            paint_polyline(window, &[*from, *to], xf, width, stroke, false);
+            let a = xf.pt(*from);
+            let b = xf.pt(*to);
             let dx = (b.x - a.x).as_f32();
             let dy = (b.y - a.y).as_f32();
             let len = (dx * dx + dy * dy).sqrt().max(1.0);
             let ux = dx / len;
             let uy = dy / len;
-            let head = (width * 3.0).max(10.0);
+            let head = xf.len((width * 3.0).max(10.0));
             let p1 = point(
                 px(b.x.as_f32() - (ux * head + uy * head * 0.5)),
                 px(b.y.as_f32() - (uy * head - ux * head * 0.5)),
@@ -88,10 +125,10 @@ fn paint_shape(window: &mut Window, shape: &Shape, origin: (i32, i32)) {
                 px(b.x.as_f32() - (ux * head - uy * head * 0.5)),
                 px(b.y.as_f32() - (uy * head + ux * head * 0.5)),
             );
-            stroke_segments(window, &[(b, p1), (b, p2)], width, stroke);
+            stroke_segments(window, &[(b, p1), (b, p2)], xf.len(width), stroke);
         }
         ShapeKind::Rectangle { rect } => {
-            let r = cap_rect_local(*rect, origin);
+            let r = xf.rect(*rect);
             if let Some(f) = fill {
                 window.paint_quad(quad(
                     r,
@@ -102,47 +139,44 @@ fn paint_shape(window: &mut Window, shape: &Shape, origin: (i32, i32)) {
                     Default::default(),
                 ));
             }
-            paint_rect_stroke(window, *rect, origin, width, stroke);
+            paint_rect_stroke(window, *rect, xf, width, stroke);
         }
         ShapeKind::BlurRect { rect, .. } => {
-            // GPU live blur preview is follow-up work; show the rectangle
-            // outline so the user can see what region they've selected.
-            paint_rect_stroke(window, *rect, origin, width.max(1.5), stroke);
+            paint_rect_stroke(window, *rect, xf, width.max(1.5), stroke);
         }
         ShapeKind::Ellipse { rect } => {
-            let r = cap_rect_local(*rect, origin);
+            let r = xf.rect(*rect);
             let cx = r.origin.x + r.size.width / 2.;
             let cy = r.origin.y + r.size.height / 2.;
             let rx = r.size.width / 2.;
             let ry = r.size.height / 2.;
-            paint_ellipse(window, point(cx, cy), rx, ry, width, stroke, fill);
+            paint_ellipse(window, point(cx, cy), rx, ry, xf.len(width), stroke, fill);
         }
         ShapeKind::Step {
             center, radius, ..
         } => {
-            // The numbered label is rendered by composite.rs when the
-            // screenshot is baked. The interactive preview shows just the
-            // circle; wiring shape_line into the canvas paint pass is
-            // follow-up work.
-            let c = local_pt(*center, origin);
+            let c = xf.pt(*center);
+            let r_logical = px(xf.len(*radius));
             paint_ellipse(
                 window,
                 c,
-                px(*radius),
-                px(*radius),
+                r_logical,
+                r_logical,
                 1.0,
                 hsla(0.0, 0.0, 1.0, 1.0),
                 fill.or(Some(stroke)),
             );
         }
         ShapeKind::Text { .. } => {
-            // Same as Step: text is baked at export time by composite.rs.
+            // Live text is rendered via `paint_step_label` / `paint_text` in
+            // a separate pass that has access to the text system. See the
+            // companion helpers in `platform::driver`.
         }
         ShapeKind::Polygon { points, closed } => {
             if points.is_empty() {
                 return;
             }
-            paint_polyline(window, points, origin, width, stroke, *closed);
+            paint_polyline(window, points, xf, width, stroke, *closed);
         }
     }
 }
@@ -150,7 +184,7 @@ fn paint_shape(window: &mut Window, shape: &Shape, origin: (i32, i32)) {
 fn paint_polyline(
     window: &mut Window,
     points: &[FPoint],
-    origin: (i32, i32),
+    xf: Xform,
     width: f32,
     color: Hsla,
     closed: bool,
@@ -158,11 +192,11 @@ fn paint_polyline(
     if points.len() < 2 {
         return;
     }
-    let mut builder = PathBuilder::stroke(px(width));
-    let first = local_pt(points[0], origin);
+    let mut builder = PathBuilder::stroke(px(xf.len(width)));
+    let first = xf.pt(points[0]);
     builder.move_to(first);
     for p in &points[1..] {
-        builder.line_to(local_pt(*p, origin));
+        builder.line_to(xf.pt(*p));
     }
     if closed {
         builder.line_to(first);
@@ -191,16 +225,16 @@ fn stroke_segments(
 fn paint_rect_stroke(
     window: &mut Window,
     rect: CapRect,
-    origin: (i32, i32),
+    xf: Xform,
     width: f32,
     color: Hsla,
 ) {
-    let r = cap_rect_local(rect, origin);
+    let r = xf.rect(rect);
     let tl = r.origin;
     let tr = point(tl.x + r.size.width, tl.y);
     let br = point(tl.x + r.size.width, tl.y + r.size.height);
     let bl = point(tl.x, tl.y + r.size.height);
-    let mut builder = PathBuilder::stroke(px(width));
+    let mut builder = PathBuilder::stroke(px(xf.len(width)));
     builder.move_to(tl);
     builder.line_to(tr);
     builder.line_to(br);
@@ -245,20 +279,6 @@ fn paint_ellipse(
     }
 }
 
-fn local_pt(p: FPoint, origin: (i32, i32)) -> Point<Pixels> {
-    point(px(p.x - origin.0 as f32), px(p.y - origin.1 as f32))
-}
-
-fn cap_rect_local(rect: CapRect, origin: (i32, i32)) -> Bounds<Pixels> {
-    Bounds {
-        origin: point(
-            px((rect.x() - origin.0) as f32),
-            px((rect.y() - origin.1) as f32),
-        ),
-        size: size(px(rect.width() as f32), px(rect.height() as f32)),
-    }
-}
-
 fn color_to_hsla(c: Color) -> Hsla {
     let [r, g, b, a] = c.0;
     let rf = r as f32 / 255.0;
@@ -292,3 +312,4 @@ fn color_to_hsla(c: Color) -> Hsla {
         a: a as f32 / 255.0,
     }
 }
+

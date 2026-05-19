@@ -17,7 +17,7 @@ use sss_capture::{Image as CapImage, Monitor, Rect as CapRect};
 use crate::canvas::{Canvas, CanvasEvent};
 use crate::geometry::FPoint;
 use crate::mode::SelectorMode;
-use crate::render::overlay::paint_canvas;
+use crate::render::overlay::{Xform, paint_canvas};
 use crate::selector::{Config, Outcome, PostAction, Selection, Selector, SelectorError};
 
 // ─── Public entry point ─────────────────────────────────────────────────
@@ -311,16 +311,20 @@ impl Render for OverlayView {
             (state.config.toolbar, state.runtime_mode)
         };
 
-        // Build mouse listeners that translate window-local positions to
-        // global canvas coordinates by adding the monitor's origin. The
-        // overlay window covers exactly one output, so this is a constant
-        // offset for the window's lifetime.
+        // Mouse events arrive in logical pixels (DIPs) relative to the
+        // window origin; the canvas state lives in physical pixels (so it
+        // round-trips with `sss_capture::Rect`). We multiply by the
+        // window's scale_factor at event time so the same code path works
+        // on HiDPI outputs.
         let monitor_origin = (
             monitor.bounds().x() as f32,
             monitor.bounds().y() as f32,
         );
-        let translate = move |pos: Point<Pixels>| -> FPoint {
-            FPoint::new(pos.x.as_f32() + monitor_origin.0, pos.y.as_f32() + monitor_origin.1)
+        let translate = move |pos: Point<Pixels>, scale: f32| -> FPoint {
+            FPoint::new(
+                pos.x.as_f32() * scale + monitor_origin.0,
+                pos.y.as_f32() * scale + monitor_origin.1,
+            )
         };
 
         div()
@@ -329,12 +333,12 @@ impl Render for OverlayView {
             .track_focus(&self.focus_handle)
             .size_full()
             .relative()
+            .cursor_crosshair()
             .bg(hsla(0.0, 0.0, 0.0, 0.18))
             .on_mouse_down(MouseButton::Left, {
                 let shared = shared.clone();
-                let translate = translate;
-                move |ev: &MouseDownEvent, _, cx| {
-                    let pos = translate(ev.position);
+                move |ev: &MouseDownEvent, window, cx| {
+                    let pos = translate(ev.position, window.scale_factor());
                     shared.update(cx, |s, cx| {
                         s.last_cursor = pos;
                         s.handle_canvas(CanvasEvent::PointerDown(pos));
@@ -344,8 +348,8 @@ impl Render for OverlayView {
             })
             .on_mouse_move({
                 let shared = shared.clone();
-                move |ev: &MouseMoveEvent, _, cx| {
-                    let pos = translate(ev.position);
+                move |ev: &MouseMoveEvent, window, cx| {
+                    let pos = translate(ev.position, window.scale_factor());
                     shared.update(cx, |s, cx| {
                         s.last_cursor = pos;
                         s.handle_canvas(CanvasEvent::PointerMove(pos));
@@ -355,8 +359,8 @@ impl Render for OverlayView {
             })
             .on_mouse_up(MouseButton::Left, {
                 let shared = shared.clone();
-                move |ev: &MouseUpEvent, _, cx| {
-                    let pos = translate(ev.position);
+                move |ev: &MouseUpEvent, window, cx| {
+                    let pos = translate(ev.position, window.scale_factor());
                     shared.update(cx, |s, cx| {
                         s.last_cursor = pos;
                         s.handle_canvas(CanvasEvent::PointerUp(pos));
@@ -421,7 +425,8 @@ impl Render for OverlayView {
                     move |_, _, _| {},
                     move |_, _, window, cx| {
                         let snapshot = shared_for_paint.read(cx).canvas.clone();
-                        paint_canvas(window, cx, &snapshot, origin);
+                        let xf = Xform::new(origin, window.scale_factor());
+                        paint_canvas(window, cx, &snapshot, xf);
                     },
                 )
                 .size_full(),
