@@ -6,8 +6,8 @@
 //! It carries no state of its own.
 
 use gpui::{
-    App, Background, Bounds, Hsla, PathBuilder, PathStyle, Pixels, Point, StrokeOptions, Window,
-    hsla, point, px, quad, size, transparent_black,
+    App, Background, Bounds, FontWeight, Hsla, PathBuilder, PathStyle, Pixels, Point,
+    StrokeOptions, TextAlign, TextRun, Window, hsla, point, px, quad, size, transparent_black,
 };
 use sss_capture::Rect as CapRect;
 
@@ -21,6 +21,20 @@ const ACCENT: Hsla = Hsla {
     h: 0.58,
     s: 0.78,
     l: 0.66,
+    a: 1.0,
+};
+
+const HINT_BG: Hsla = Hsla {
+    h: 0.66,
+    s: 0.10,
+    l: 0.10,
+    a: 0.92,
+};
+
+const HINT_FG: Hsla = Hsla {
+    h: 0.0,
+    s: 0.0,
+    l: 0.94,
     a: 1.0,
 };
 
@@ -277,6 +291,97 @@ fn paint_ellipse(
     if let Ok(path) = outline.build() {
         window.paint_path(path, stroke);
     }
+}
+
+/// Paint the "Press Enter to accept" pill underneath the active region.
+///
+/// `monitor_bounds` and `region` are in canvas-space (physical px). Only
+/// the monitor whose horizontal centre line covers the region draws the
+/// hint, so multi-monitor selections don't show duplicates.
+pub fn paint_confirm_hint(
+    window: &mut Window,
+    cx: &mut App,
+    monitor_bounds: CapRect,
+    region: Option<CapRect>,
+    xf: Xform,
+) {
+    let text = "Press Enter to accept";
+    let font_size = px(14.);
+    let mut font = window.text_style().font();
+    font.weight = FontWeight::SEMIBOLD;
+    let runs = [TextRun {
+        len: text.len(),
+        font,
+        color: HINT_FG,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    }];
+    let line =
+        window
+            .text_system()
+            .shape_line(text.into(), font_size, &runs, None);
+    let text_w = line.width().as_f32();
+    let line_h = window.line_height().as_f32().max(font_size.as_f32() * 1.3);
+    let pad_x = 14.0_f32;
+    let pad_y = 6.0_f32;
+    let panel_w = text_w + pad_x * 2.0;
+    let panel_h = line_h + pad_y * 2.0;
+
+    let mb = xf.rect(monitor_bounds);
+    let mw = mb.size.width.as_f32();
+    let mh = mb.size.height.as_f32();
+
+    let (panel_x, panel_y) = match region.filter(|r| r.width() >= 2 && r.height() >= 2) {
+        Some(r) => {
+            let rl = xf.rect(r);
+            let cx_local = (rl.origin.x + rl.size.width / 2.0).as_f32();
+            if cx_local < 0.0 || cx_local >= mw {
+                return;
+            }
+            let region_top = rl.origin.y.as_f32();
+            let region_bottom = region_top + rl.size.height.as_f32();
+            let margin = 16.0;
+            let below = region_bottom + margin;
+            let panel_y = if below + panel_h <= mh - 8.0 {
+                below
+            } else if region_top - panel_h - margin >= 8.0 {
+                region_top - panel_h - margin
+            } else {
+                (mh - panel_h - 8.0).max(8.0)
+            };
+            let max_x = (mw - panel_w - 8.0).max(8.0);
+            let panel_x = (cx_local - panel_w / 2.0).clamp(8.0, max_x);
+            (panel_x, panel_y)
+        }
+        None => (
+            (mw - panel_w) / 2.0,
+            (mh - panel_h - 48.0).max(8.0),
+        ),
+    };
+
+    let origin = point(px(panel_x), px(panel_y));
+    let panel_bounds = Bounds {
+        origin,
+        size: size(px(panel_w), px(panel_h)),
+    };
+    window.paint_quad(quad(
+        panel_bounds,
+        px(6.),
+        Background::from(HINT_BG),
+        px(1.),
+        ACCENT,
+        Default::default(),
+    ));
+    let text_origin = point(px(panel_x + pad_x), px(panel_y + pad_y));
+    let _ = line.paint(
+        text_origin,
+        px(line_h),
+        TextAlign::Left,
+        None,
+        window,
+        cx,
+    );
 }
 
 fn color_to_hsla(c: Color) -> Hsla {

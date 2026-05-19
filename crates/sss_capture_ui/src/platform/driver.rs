@@ -17,7 +17,7 @@ use sss_capture::{Image as CapImage, Monitor, Rect as CapRect};
 use crate::canvas::{Canvas, CanvasEvent};
 use crate::geometry::FPoint;
 use crate::mode::SelectorMode;
-use crate::render::overlay::{Xform, paint_canvas};
+use crate::render::overlay::{Xform, paint_canvas, paint_confirm_hint};
 use crate::selector::{Config, Outcome, PostAction, Selection, Selector, SelectorError};
 
 // ─── Public entry point ─────────────────────────────────────────────────
@@ -420,17 +420,20 @@ impl Render for OverlayView {
             .when(show_toolbar, |this| {
                 this.child(render_toolbar(shared.clone(), runtime_mode))
             })
-            .child(
+            .child({
+                let monitor_bounds = monitor.bounds();
                 gpui::canvas(
                     move |_, _, _| {},
                     move |_, _, window, cx| {
                         let snapshot = shared_for_paint.read(cx).canvas.clone();
                         let xf = Xform::new(origin, window.scale_factor());
                         paint_canvas(window, cx, &snapshot, xf);
+                        let region = snapshot.region();
+                        paint_confirm_hint(window, cx, monitor_bounds, region, xf);
                     },
                 )
-                .size_full(),
-            )
+                .size_full()
+            })
     }
 }
 
