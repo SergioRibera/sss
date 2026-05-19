@@ -54,6 +54,22 @@ impl ToolKind {
         }
     }
 
+    pub fn icon_path(self) -> &'static str {
+        match self {
+            ToolKind::Pointer => "icons/pointer.svg",
+            ToolKind::Brush => "icons/brush.svg",
+            ToolKind::Line => "icons/line.svg",
+            ToolKind::Arrow => "icons/arrow.svg",
+            ToolKind::Rectangle => "icons/rectangle.svg",
+            ToolKind::Ellipse => "icons/ellipse.svg",
+            ToolKind::Polygon => "icons/polygon.svg",
+            ToolKind::BlurRect => "icons/blur.svg",
+            ToolKind::Eraser => "icons/eraser.svg",
+            ToolKind::Step => "icons/step.svg",
+            ToolKind::Text => "icons/text.svg",
+        }
+    }
+
     pub fn build(self, ui: &UiConfig) -> Tool {
         let brush = BrushSettings {
             color: ui.default_stroke_color,

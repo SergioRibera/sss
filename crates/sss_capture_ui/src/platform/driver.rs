@@ -44,7 +44,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
 
     let result_slot: Arc<Mutex<Option<Selection>>> = Arc::new(Mutex::new(None));
 
-    let app: Application = gpui_platform::application();
+    let app: Application = gpui_platform::application().with_assets(crate::assets::UiAssets);
     {
         let monitors = monitors.clone();
         let result_slot = result_slot.clone();
@@ -471,23 +471,27 @@ fn render_toolbar(
     let bar_bg = hsla(0.0, 0.0, 0.10, 0.92);
     let bar_border = hsla(0.58, 0.7, 0.5, 1.0);
 
-    let mode_btn = |label: &'static str, mode: SelectorMode, shared: Entity<SharedState>| {
-        let selected = mode == active_mode;
-        toolbar_button(label.into(), selected, false, move |cx| {
-            shared.update(cx, |s, cx| {
-                s.runtime_mode = mode;
-                cx.notify();
-            });
-        })
-    };
+    let mode_btn =
+        |id: &'static str, icon: &'static str, mode: SelectorMode, shared: Entity<SharedState>| {
+            let selected = mode == active_mode;
+            toolbar_icon_button(id, icon, selected, false, move |cx| {
+                shared.update(cx, |s, cx| {
+                    s.runtime_mode = mode;
+                    cx.notify();
+                });
+            })
+        };
 
     let mut tool_row = div().flex().flex_row().gap_1();
     for kind in palette {
         let selected = kind == active_tool;
         let shared = shared.clone();
         let ui = ui.clone();
-        tool_row = tool_row.child(toolbar_button(
-            kind.label().into(),
+        let id: gpui::SharedString = format!("tool-{}", kind.label()).into();
+        let icon: gpui::SharedString = kind.icon_path().into();
+        tool_row = tool_row.child(toolbar_icon_button(
+            id,
+            icon,
             selected,
             false,
             move |cx| {
@@ -518,6 +522,7 @@ fn render_toolbar(
                 .flex()
                 .flex_row()
                 .gap_3()
+                .items_center()
                 .px_3()
                 .py_2()
                 .rounded_lg()
@@ -531,75 +536,130 @@ fn render_toolbar(
                         .flex()
                         .flex_row()
                         .gap_1()
-                        .child(mode_btn("Area", SelectorMode::Area, shared.clone()))
-                        .child(mode_btn("Monitor", SelectorMode::Monitor, shared.clone()))
-                        .child(mode_btn("Window", SelectorMode::Window, shared.clone())),
+                        .child(mode_btn(
+                            "mode-area",
+                            "icons/area.svg",
+                            SelectorMode::Area,
+                            shared.clone(),
+                        ))
+                        .child(mode_btn(
+                            "mode-monitor",
+                            "icons/monitor.svg",
+                            SelectorMode::Monitor,
+                            shared.clone(),
+                        ))
+                        .child(mode_btn(
+                            "mode-window",
+                            "icons/window.svg",
+                            SelectorMode::Window,
+                            shared.clone(),
+                        )),
                 )
+                .child(toolbar_divider())
                 .child(tool_row)
+                .child(toolbar_divider())
                 .child(
                     div()
                         .flex()
                         .flex_row()
                         .gap_1()
-                        .child(toolbar_button("Undo".into(), false, false, {
-                            let shared = shared.clone();
-                            move |cx| {
-                                shared.update(cx, |s, cx| {
-                                    s.handle_canvas(CanvasEvent::Undo);
-                                    cx.notify();
-                                });
-                            }
-                        }))
-                        .child(toolbar_button("Redo".into(), false, false, {
-                            let shared = shared.clone();
-                            move |cx| {
-                                shared.update(cx, |s, cx| {
-                                    s.handle_canvas(CanvasEvent::Redo);
-                                    cx.notify();
-                                });
-                            }
-                        })),
+                        .child(toolbar_icon_button(
+                            "action-undo",
+                            "icons/undo.svg",
+                            false,
+                            false,
+                            {
+                                let shared = shared.clone();
+                                move |cx| {
+                                    shared.update(cx, |s, cx| {
+                                        s.handle_canvas(CanvasEvent::Undo);
+                                        cx.notify();
+                                    });
+                                }
+                            },
+                        ))
+                        .child(toolbar_icon_button(
+                            "action-redo",
+                            "icons/redo.svg",
+                            false,
+                            false,
+                            {
+                                let shared = shared.clone();
+                                move |cx| {
+                                    shared.update(cx, |s, cx| {
+                                        s.handle_canvas(CanvasEvent::Redo);
+                                        cx.notify();
+                                    });
+                                }
+                            },
+                        )),
                 )
-                .child(toolbar_button("Cancel".into(), false, false, {
-                    let shared = shared.clone();
-                    move |cx| {
-                        shared.update(cx, |s, _| s.cancel());
-                        cx.quit();
-                    }
-                }))
-                .child(toolbar_button("Capture".into(), false, true, {
-                    let shared = shared.clone();
-                    move |cx| {
-                        shared.update(cx, |s, _| s.confirm());
-                        cx.quit();
-                    }
-                })),
+                .child(toolbar_divider())
+                .child(toolbar_icon_button(
+                    "action-cancel",
+                    "icons/cancel.svg",
+                    false,
+                    false,
+                    {
+                        let shared = shared.clone();
+                        move |cx| {
+                            shared.update(cx, |s, _| s.cancel());
+                            cx.quit();
+                        }
+                    },
+                ))
+                .child(toolbar_icon_button(
+                    "action-confirm",
+                    "icons/confirm.svg",
+                    false,
+                    true,
+                    {
+                        let shared = shared.clone();
+                        move |cx| {
+                            shared.update(cx, |s, _| s.confirm());
+                            cx.quit();
+                        }
+                    },
+                )),
         )
 }
 
-fn toolbar_button(
-    label: String,
+fn toolbar_divider() -> impl IntoElement {
+    div().w(px(1.)).h(px(20.)).bg(hsla(0., 0., 1., 0.18))
+}
+
+fn toolbar_icon_button(
+    id: impl Into<gpui::SharedString>,
+    icon: impl Into<gpui::SharedString>,
     selected: bool,
     primary: bool,
     on_click: impl Fn(&mut App) + 'static,
 ) -> impl IntoElement {
-    let bg = if selected {
-        hsla(0.58, 0.7, 0.4, 1.0)
+    let (bg, fg) = if selected {
+        (hsla(0.58, 0.7, 0.4, 1.0), white())
     } else if primary {
-        hsla(0.36, 0.7, 0.45, 1.0)
+        (hsla(0.36, 0.7, 0.45, 1.0), white())
     } else {
-        hsla(0.0, 0.0, 0.20, 1.0)
+        (hsla(0.0, 0.0, 0.20, 1.0), hsla(0.0, 0.0, 0.9, 1.0))
     };
     div()
-        .id(gpui::ElementId::Name(label.clone().into()))
-        .px_3()
-        .py_1()
+        .id(gpui::ElementId::Name(id.into()))
+        .w(px(32.))
+        .h(px(28.))
+        .flex()
+        .items_center()
+        .justify_center()
         .rounded_md()
         .bg(bg)
-        .text_color(white())
+        .text_color(fg)
         .hover(|s| s.opacity(0.85))
         .active(|s| s.opacity(0.7))
         .cursor_pointer()
-        .child(label)
+        .child(
+            gpui::svg()
+                .path(icon)
+                .size(px(18.))
+                .text_color(fg),
+        )
         .on_click(move |_, _, cx| on_click(cx))
 }

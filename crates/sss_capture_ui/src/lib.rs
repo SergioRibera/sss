@@ -8,6 +8,7 @@ pub use sss_capture::{
     Point, Rect, Rotation, Size, Window, WindowId, WindowSearch,
 };
 
+mod assets;
 mod canvas;
 mod color;
 mod config;
