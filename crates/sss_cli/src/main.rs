@@ -21,7 +21,12 @@ pub struct Area {
 }
 
 fn main() -> Result<(), Report> {
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    // Default: warn-and-above for our code, but silence winit-wayland's
+    // expected layer-shell complaints (xdg_toplevel / min-max size unsupported
+    // — those are inherent to the protocol we deliberately use).
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("warn,winit_wayland=error,sctk=error,wayland_client=error")
+    });
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(env_filter)
         .with_writer(std::io::stderr)

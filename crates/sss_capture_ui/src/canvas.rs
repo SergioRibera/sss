@@ -450,7 +450,18 @@ impl Canvas {
 
     fn on_move(&mut self, p: FPoint) {
         match self.drag.as_mut() {
-            Some(Drag::Stroke { points }) => points.push(p),
+            Some(Drag::Stroke { points }) => {
+                // Drop clustered pointer events (>1px from last) so wobble
+                // doesn't pile up. Smoothing at render time also de-noises,
+                // but trimming inputs keeps the stored point list compact.
+                let push = points
+                    .last()
+                    .map(|l| l.distance(p) >= 1.0)
+                    .unwrap_or(true);
+                if push {
+                    points.push(p);
+                }
+            }
             Some(Drag::TwoPoint { from, to }) => {
                 *to = if self.constrain {
                     apply_constraint(&self.active_tool, *from, p)

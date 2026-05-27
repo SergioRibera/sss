@@ -343,11 +343,20 @@ fn draw_shape(
     let fill = shape.style.fill.map(to_color32);
     match &shape.kind {
         ShapeKind::FreehandStroke { points } => {
-            let pts: Vec<Pos2> = points
+            let smoothed = crate::shape::smoothed_freehand(points, stroke.width);
+            let pts: Vec<Pos2> = smoothed
                 .iter()
                 .map(|p| Pos2::new(p.x - off.x, p.y - off.y))
                 .collect();
-            painter.add(egui::Shape::line(pts, stroke));
+            if pts.len() == 1 {
+                painter.circle_filled(pts[0], stroke.width * 0.5, stroke.color);
+            } else if pts.len() >= 2 {
+                painter.add(egui::Shape::line(pts.clone(), stroke));
+                // Round caps at endpoints — egui polylines are butt by default.
+                let r = stroke.width * 0.5;
+                painter.circle_filled(*pts.first().unwrap(), r, stroke.color);
+                painter.circle_filled(*pts.last().unwrap(), r, stroke.color);
+            }
         }
         ShapeKind::Line { from, to } => {
             painter.line_segment(

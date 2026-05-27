@@ -183,3 +183,70 @@ impl Default for TextStyle {
         }
     }
 }
+
+/// Smooth a freehand polyline: drop clustered samples and densify with a
+/// uniform Catmull–Rom spline. Output is suitable for direct rendering with
+/// any polyline rasteriser — kinks vanish and slow-hand jitter is averaged
+/// out without introducing visible drift away from input vertices.
+pub fn smoothed_freehand(points: &[FPoint], width: f32) -> Vec<FPoint> {
+    if points.len() < 2 {
+        return points.to_vec();
+    }
+    let min_gap = (width * 0.4).max(0.75);
+    let mut filtered: Vec<FPoint> = Vec::with_capacity(points.len());
+    for &p in points {
+        let push = match filtered.last() {
+            Some(last) => last.distance(p) >= min_gap,
+            None => true,
+        };
+        if push {
+            filtered.push(p);
+        }
+    }
+    // Always keep last raw sample so the rendered stroke reaches the cursor.
+    if let Some(&last) = points.last() {
+        if filtered.last().map(|p| *p != last).unwrap_or(true) {
+            filtered.push(last);
+        }
+    }
+    if filtered.len() < 3 {
+        return filtered;
+    }
+    let n = filtered.len();
+    let mut out: Vec<FPoint> = Vec::with_capacity(n * 8);
+    out.push(filtered[0]);
+    for i in 0..n - 1 {
+        let p0 = if i == 0 { filtered[0] } else { filtered[i - 1] };
+        let p1 = filtered[i];
+        let p2 = filtered[i + 1];
+        let p3 = if i + 2 >= n {
+            filtered[n - 1]
+        } else {
+            filtered[i + 2]
+        };
+        // Adapt sample count to segment length so short hops don't waste verts.
+        let dist = p1.distance(p2);
+        let segments = (dist.ceil() as usize / 2).clamp(2, 10);
+        for s in 1..=segments {
+            let t = s as f32 / segments as f32;
+            out.push(catmull_rom(p0, p1, p2, p3, t));
+        }
+    }
+    out
+}
+
+fn catmull_rom(p0: FPoint, p1: FPoint, p2: FPoint, p3: FPoint, t: f32) -> FPoint {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let x = 0.5
+        * ((2.0 * p1.x)
+            + (-p0.x + p2.x) * t
+            + (2.0 * p0.x - 5.0 * p1.x + 4.0 * p2.x - p3.x) * t2
+            + (-p0.x + 3.0 * p1.x - 3.0 * p2.x + p3.x) * t3);
+    let y = 0.5
+        * ((2.0 * p1.y)
+            + (-p0.y + p2.y) * t
+            + (2.0 * p0.y - 5.0 * p1.y + 4.0 * p2.y - p3.y) * t2
+            + (-p0.y + 3.0 * p1.y - 3.0 * p2.y + p3.y) * t3);
+    FPoint::new(x, y)
+}

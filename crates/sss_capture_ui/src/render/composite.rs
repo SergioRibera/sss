@@ -94,10 +94,23 @@ fn draw_shape(img: &mut RgbaImage, shape: &Shape, origin: (i32, i32)) {
         FreehandStroke { points } => {
             let color = shape.style.stroke;
             let w = shape.style.stroke_width.max(1.0) as i32;
-            for pair in points.windows(2) {
-                let a = local(pair[0], origin);
-                let b = local(pair[1], origin);
-                stroke_line_aa(img, a, b, color, w);
+            let smoothed = crate::shape::smoothed_freehand(points, w as f32);
+            if smoothed.len() == 1 {
+                fill_disk(img, local(smoothed[0], origin), (w / 2).max(0), color);
+            } else if smoothed.len() >= 2 {
+                let r = (w / 2).max(0);
+                for pair in smoothed.windows(2) {
+                    let a = local(pair[0], origin);
+                    let b = local(pair[1], origin);
+                    stroke_line_aa(img, a, b, color, w);
+                    // Disk at every joint covers miter gaps when the curve
+                    // turns sharply.
+                    fill_disk(img, a, r, color);
+                }
+                // End cap.
+                if let Some(last) = smoothed.last() {
+                    fill_disk(img, local(*last, origin), r, color);
+                }
             }
         }
         Line { from, to } => {
