@@ -12,7 +12,6 @@ keywords = ["screenshot", "selection", "annotation", "overlay", "slurp"]
 [features]
 default = ["editor", "serde"]
 editor = ["dep:egui", "dep:egui-winit", "dep:egui-wgpu", "dep:wgpu", "dep:pollster"]
-wayland-layer-shell = []
 serde = ["dep:serde"]
 
 [dependencies]
@@ -24,47 +23,36 @@ tracing.workspace = true
 serde = { workspace = true, optional = true }
 ab_glyph = "0.2"
 
-# CPU pixel buffer for the layer-shell overlay path. The crate is tiny and
-# only kicks in on Linux Wayland; everything else still goes through the
-# winit/wgpu driver (gated behind the `editor` feature).
-[target.'cfg(target_os = "linux")'.dependencies]
-wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
-wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-wayland-cursor = "0.31"
-memmap2 = "0.9"
-rustix = { version = "1", features = ["fs", "mm", "shm", "event"] }
-# SVG icon loader for the layer-shell toolbar. resvg + tiny-skia raster the
-# user-supplied SVGs on the CPU; the result is cached in a `RgbaImage`.
+# SVG icon loader for the editor toolbar. resvg + tiny-skia raster the
+# user-supplied SVGs on the CPU; results are cached. Cross-platform — every
+# host with the editor feature uses these icons.
 resvg = { version = "0.47", default-features = false }
 usvg = { version = "0.47", default-features = false }
 tiny-skia = "0.12"
 
-# Windowing — winit handles X11 / Wayland (xdg-shell) / Win32 / Cocoa.
-#
-# Note: we do NOT enable the `wayland-dlopen` feature. The default is to
-# link against libwayland-client.so.0 via DT_NEEDED; the dynamic linker
-# resolves it the standard way. dlopen-mode breaks on setups where
-# `libloading` can't find the SONAME (e.g. nix shells with no library
-# path on LD_LIBRARY_PATH).
-winit = { version = "0.30", default-features = false, features = [
-    "rwh_06",
+[target.'cfg(target_os = "linux")'.dependencies]
+# Windowing — winit fork with native wlr-layer-shell support.
+winit = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell", default-features = false, features = [
     "x11",
     "wayland",
 ] }
+# Override `winit-wayland` defaults to disable `dlopen` — we link directly
+# against libwayland-client.so.0 via DT_NEEDED. dlopen mode breaks in nix
+# shells / other setups where the SONAME isn't on LD_LIBRARY_PATH.
+winit-wayland = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell", default-features = false, features = ["csd-adwaita"] }
 
-# Optional editor stack.
-egui       = { version = "0.34", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
-egui-winit = { version = "0.34", optional = true, default-features = false, features = ["clipboard"] }
-egui-wgpu  = { version = "0.34", optional = true, default-features = false }
-wgpu       = { version = "29",   optional = true }
-pollster   = { version = "0.4",  optional = true }
+# Optional editor stack — egui fork wired to the winit fork above.
+egui       = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
+egui-winit = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["clipboard", "wayland", "x11"] }
+egui-wgpu  = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["wayland", "x11"] }
+wgpu       = { version = "25", optional = true }
+pollster   = { version = "0.4", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winit = { version = "0.30", features = ["rwh_06"] }
+winit = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-winit = { version = "0.30", features = ["rwh_06"] }
+winit = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell" }
 
 [[example]]
 name = "select_region"

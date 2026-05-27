@@ -19,7 +19,25 @@ pub fn flatten(image: &mut RgbaImage, canvas: &Canvas, origin: (i32, i32)) {
     }
 }
 
+/// Render every shape that sits *below* the first `BlurRect` in z-order
+/// — used to build the "below the blur" source for the live preview.
+/// Shapes drawn on top of a blur don't contribute (they'd otherwise show
+/// up in the blurred sample as ghost halos around the user's strokes).
+pub fn flatten_below_first_blur(
+    image: &mut RgbaImage,
+    canvas: &Canvas,
+    origin: (i32, i32),
+) {
+    for shape in canvas.shapes() {
+        if matches!(shape.kind, ShapeKind::BlurRect { .. }) {
+            break;
+        }
+        paint_one(image, shape, origin);
+    }
+}
+
 /// Like [`flatten`] but also paints in-flight previews on top.
+#[allow(dead_code)]
 pub fn flatten_with_preview(image: &mut RgbaImage, canvas: &Canvas, origin: (i32, i32)) {
     for shape in canvas.shapes() {
         paint_one(image, shape, origin);

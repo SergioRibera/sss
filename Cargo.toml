@@ -34,6 +34,17 @@ codegen-units = 1
 inherits = "release"
 lto = "thin"
 
+# Local forks. `egui-winit` (and friends) declare a crates.io dependency on
+# `winit = "0.31.0-beta.2"` which is not actually published; redirect it
+# (and the egui stack) to the git forks so cargo resolves a single copy that
+# matches the direct git deps in `sss_capture_ui`.
+[patch.crates-io]
+winit         = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell" }
+winit-wayland = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell" }
+egui          = { git = "https://github.com/SergioRibera/egui",  branch = "winit_layer_shell" }
+egui-winit    = { git = "https://github.com/SergioRibera/egui",  branch = "winit_layer_shell" }
+egui-wgpu     = { git = "https://github.com/SergioRibera/egui",  branch = "winit_layer_shell" }
+
 [workspace.dependencies]
 thiserror = "2"
 serde = { version = "1", features = ["serde_derive"] }

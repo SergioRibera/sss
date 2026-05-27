@@ -95,6 +95,9 @@ in
       libxrandr
       dbus.lib
       stdenv.cc.cc.lib
+      vulkan-loader
+      libglvnd
+      mesa
     ];
 
     # Base args, need for build all crate artifacts and caching this for late builds

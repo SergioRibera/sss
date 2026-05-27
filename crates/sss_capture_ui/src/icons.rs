@@ -1,17 +1,54 @@
-//! SVG icon loader and rasterisation cache for the layer-shell toolbar.
+//! Cross-platform SVG icon set used by the editor toolbar / radial menu.
+//!
+//! The enum identifies a glyph; `rasterise` returns a cached premultiplied
+//! RGBA bitmap tinted to `rgb`. The bitmaps feed both the legacy CPU layer
+//! shell driver and the egui-based driver.
 
 use std::sync::OnceLock;
 
 use egui::ahash::HashMap;
 use egui::mutex::Mutex;
 
-use super::wayland_layer::ToolbarIcon;
-
 const ICON_SIZE: u32 = 20;
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ToolbarIcon {
+    Pointer,
+    Brush,
+    Line,
+    Arrow,
+    Rectangle,
+    RectangleFilled,
+    Ellipse,
+    EllipseFilled,
+    Blur,
+    Eraser,
+    Step,
+    Text,
+    Polygon,
+    PolygonFilled,
+    Undo,
+    Redo,
+    Cancel,
+    Confirm,
+    Copy,
+    Save,
+    ColorSwatch,
+    Clear,
+    Pipette,
+    Snap,
+    Magnifier,
+    Raise,
+    Lower,
+    Trash,
+    GizmoScale,
+    GizmoRotate,
+}
 
 macro_rules! icon_bytes {
     ($name:literal) => {
-        include_bytes!(concat!("../../assets/icons/", $name, ".svg")) as &'static [u8]
+        include_bytes!(concat!("../assets/icons/", $name, ".svg")) as &'static [u8]
     };
 }
 
@@ -50,7 +87,7 @@ fn raw_svg(icon: ToolbarIcon) -> &'static [u8] {
     }
 }
 
-pub(crate) struct RasterIcon {
+pub struct RasterIcon {
     pub width: u32,
     pub height: u32,
     /// Premultiplied RGBA, row-major.
@@ -60,8 +97,8 @@ pub(crate) struct RasterIcon {
 type ToolbarIconCache = HashMap<(ToolbarIcon, [u8; 3]), Option<RasterIcon>>;
 static CACHE: OnceLock<Mutex<ToolbarIconCache>> = OnceLock::new();
 
-/// Returns the rasterised icon, or `None` when the SVG is empty/unparseable.
-pub(crate) fn rasterise(kind: ToolbarIcon, rgb: [u8; 3]) -> Option<&'static RasterIcon> {
+/// Returns the rasterised icon, or `None` when the SVG is empty / unparseable.
+pub fn rasterise(kind: ToolbarIcon, rgb: [u8; 3]) -> Option<&'static RasterIcon> {
     let cache = CACHE.get_or_init(|| Mutex::new(Default::default()));
     let mut guard = cache.lock();
     if let Some(entry) = guard.get(&(kind, rgb)) {
@@ -82,7 +119,7 @@ fn rasterise_uncached(kind: ToolbarIcon, rgb: [u8; 3]) -> Option<RasterIcon> {
     if !looks_useful(bytes) {
         return None;
     }
-    // usvg 0.43 has no hook for the `currentColor` value, so rewrite it in
+    // usvg has no hook for the `currentColor` value, so rewrite it in
     // the source bytes before parsing.
     let recoloured;
     let bytes = if let Ok(s) = std::str::from_utf8(bytes) {
@@ -100,7 +137,7 @@ fn rasterise_uncached(kind: ToolbarIcon, rgb: [u8; 3]) -> Option<RasterIcon> {
     let tree = match usvg::Tree::from_data(bytes, &opt) {
         Ok(t) => t,
         Err(e) => {
-            tracing::warn!(?kind, error = %e, "icon SVG parse failed; falling back to CPU drawer");
+            tracing::warn!(?kind, error = %e, "icon SVG parse failed");
             return None;
         }
     };
@@ -130,4 +167,47 @@ fn looks_useful(bytes: &[u8]) -> bool {
         "<use ",
     ];
     SHAPE_TAGS.iter().any(|t| s.contains(t))
+}
+
+// ---- tool ↔ icon helpers ----
+
+pub fn tool_icon(t: &crate::tool::Tool) -> ToolbarIcon {
+    use crate::tool::Tool;
+    match t {
+        Tool::Pointer => ToolbarIcon::Pointer,
+        Tool::Brush(_) => ToolbarIcon::Brush,
+        Tool::Line(_) => ToolbarIcon::Line,
+        Tool::Arrow(_) => ToolbarIcon::Arrow,
+        Tool::Rectangle(_) => ToolbarIcon::Rectangle,
+        Tool::Ellipse(_) => ToolbarIcon::Ellipse,
+        Tool::BlurRect { .. } => ToolbarIcon::Blur,
+        Tool::Eraser { .. } => ToolbarIcon::Eraser,
+        Tool::Step(_) => ToolbarIcon::Step,
+        Tool::Text(_) => ToolbarIcon::Text,
+        Tool::Polygon(_) => ToolbarIcon::Polygon,
+    }
+}
+
+pub fn filled_tool_icon(t: &crate::tool::Tool) -> ToolbarIcon {
+    use crate::tool::Tool;
+    match t {
+        Tool::Rectangle(_) => ToolbarIcon::RectangleFilled,
+        Tool::Ellipse(_) => ToolbarIcon::EllipseFilled,
+        Tool::Polygon(_) => ToolbarIcon::PolygonFilled,
+        _ => tool_icon(t),
+    }
+}
+
+pub fn set_active_tool_width(t: &mut crate::tool::Tool, width: f32) {
+    use crate::tool::Tool;
+    match t {
+        Tool::Brush(b)
+        | Tool::Line(b)
+        | Tool::Arrow(b)
+        | Tool::Rectangle(b)
+        | Tool::Ellipse(b)
+        | Tool::Polygon(b) => b.width = width,
+        Tool::Step(s) => s.radius = (width * 4.0 + 4.0).max(6.0),
+        _ => {}
+    }
 }
