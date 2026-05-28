@@ -273,33 +273,50 @@ jobs:
           pattern: bundles-*
           path: dist
 
-      # nix-bundle-app emits one single-arch formula per (binary, target).
-      # We merge them into a universal `on_macos { on_arm / on_intel }`
-      # formula so one `brew install sergioribera/tap/<name>` works on
-      # both Apple Silicon and Intel macs.
+      # nix-bundle-app emits one single-arch formula per (binary, target),
+      # and its `url` field is the bare `meta.downloadUrl` (a directory).
+      # We merge per-arch into a universal `on_macos { on_arm / on_intel }`
+      # formula AND rewrite the url to the actual tarball asset for that
+      # arch. Output filename + class are remapped per binary so the tap
+      # keeps the legacy `sss_cli.rb` / `sss_code.rb` names (cli's crate
+      # is `sss_cli` but its binary is `sss` — Homebrew users typed
+      # `brew install sergioribera/tap/sss_cli` historically).
       - name: Merge per-arch formulas into universal
         id: merge
         run: |
           python3 - <<'PY'
           import collections, glob, os, pathlib, re
 
+          # internal-name (from meta.name) -> (formula filename stem,
+          # ruby class, installed binary). The brew test stanza needs the
+          # ACTUAL binary that lands in $bin, not the formula stem.
+          rename = {
+              "sss":      ("sss_cli",  "SssCli",  "sss"),
+              "sss_code": ("sss_code", "SssCode", "sss_code"),
+          }
+
           slices = collections.defaultdict(dict)   # name -> {arch: (url, sha)}
           fields = {}                              # name -> shared metadata
 
           for slice_dir in sorted(glob.glob("dist/bundles-darwin-*")):
               arch = "arm" if slice_dir.endswith("aarch64") else "intel"
+              os_label = "darwin"
               for rb in glob.glob(f"{slice_dir}/*.rb"):
                   text = pathlib.Path(rb).read_text()
                   name = pathlib.Path(rb).stem
-                  url = re.search(r'url\s+"([^"]+)"', text).group(1)
+                  base_url = re.search(r'url\s+"([^"]+)"', text).group(1)
                   sha = re.search(r'sha256\s+"([^"]+)"', text).group(1)
+                  version = re.search(r'version\s+"([^"]+)"', text).group(1)
+                  # Construct the actual tarball asset URL.
+                  asset_arch = "x86_64" if arch == "intel" else "aarch64"
+                  tarball = f"{name}-{version}-{asset_arch}-{os_label}.tar.gz"
+                  url = base_url.rstrip("/") + "/" + tarball
                   slices[name][arch] = (url, sha)
                   fields.setdefault(name, {
                       "desc": re.search(r'desc\s+"([^"]+)"', text).group(1),
                       "homepage": re.search(r'homepage\s+"([^"]+)"', text).group(1),
-                      "version": re.search(r'version\s+"([^"]+)"', text).group(1),
+                      "version": version,
                       "license": re.search(r'license\s+"([^"]+)"', text).group(1),
-                      "class": re.search(r'class\s+(\w+)\s+<', text).group(1),
                   })
 
           if not slices:
@@ -310,9 +327,12 @@ jobs:
 
           os.makedirs("formulas", exist_ok=True)
           for name, f in fields.items():
+              file_stem, klass, binary = rename.get(
+                  name, (name, name[:1].upper() + name[1:], name)
+              )
               arches = slices[name]
               parts = [
-                  f'class {f["class"]} < Formula',
+                  f"class {klass} < Formula",
                   f'  desc "{f["desc"]}"',
                   f'  homepage "{f["homepage"]}"',
                   f'  version "{f["version"]}"',
@@ -339,13 +359,13 @@ jobs:
                   "  end",
                   "",
                   "  test do",
-                  f'    system "#{{bin}}/{name}", "--version"',
+                  f'    system "#{{bin}}/{binary}", "--version"',
                   "  end",
                   "end",
                   "",
               ]
-              pathlib.Path(f"formulas/{name}.rb").write_text("\n".join(parts))
-              print(f"wrote formulas/{name}.rb ({', '.join(arches)})")
+              pathlib.Path(f"formulas/{file_stem}.rb").write_text("\n".join(parts))
+              print(f"wrote formulas/{file_stem}.rb ({', '.join(arches)})")
           PY
           ls -la formulas || true
 
