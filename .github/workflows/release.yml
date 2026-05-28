@@ -247,17 +247,67 @@ jobs:
             dist/*.tar.gz
             dist/*.tar.xz
             dist/*.tar.zst
-            dist/*.zip
             dist/*.dmg
             dist/*.pkg
-            dist/*.msi
-            dist/*.exe
             dist/*.rb
             dist/*-aur.tar.gz
             dist/INSTALL.md
             dist/SHA256SUMS
 
-  # Triggers the AUR publishing job for whichever binary just released.
-  # AUR push runs in a separate workflow (.github/workflows/aur.yml) so
-  # the release stays green even if the AUR push fails (e.g. transient
-  # network / SSH).
+  # Pushes Homebrew formula files to SergioRibera/homebrew-tap. Triggered
+  # by the AUR push workflow indirectly (both react to a successful
+  # Release run via workflow_run). AUR runs in aur.yml, brew runs here so
+  # the secrets stay isolated per ecosystem.
+  homebrew:
+    name: Publish to Homebrew tap
+    needs: [plan, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download brew formulas
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bundles-*
+          path: dist
+          merge-multiple: true
+
+      - name: Collect .rb files
+        id: collect
+        run: |
+          mkdir -p formulas
+          shopt -s nullglob
+          rbs=(dist/*.rb)
+          if [ "${#rbs[@]}" -eq 0 ]; then
+            echo "::notice::no .rb files in this release — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp "${rbs[@]}" formulas/
+          ls -la formulas
+
+      - name: Checkout homebrew-tap
+        if: steps.collect.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: SergioRibera/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Commit + push formulas
+        if: steps.collect.outputs.skip != 'true'
+        working-directory: tap
+        env:
+          BINARY: ${{ needs.plan.outputs.binary }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          mkdir -p Formula
+          cp -f ../formulas/*.rb Formula/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/*.rb
+          if git diff --cached --quiet; then
+            echo "no formula changes"
+            exit 0
+          fi
+          git commit -m "$BINARY $VERSION"
+          git push

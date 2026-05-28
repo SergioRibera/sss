@@ -1,17 +1,14 @@
 # Per-binary `bundler.release` outputs. Each CI runner builds the slice of
-# the global target matrix that its `system` can produce natively (or via
-# nixpkgs `pkgsCross` for the linux→windows / linux→aarch64-linux paths).
-# The publish job downloads every slice and concatenates the install
-# scripts / INSTALL.md sections.
+# the global target matrix that its `system` can produce natively. The
+# publish job downloads every slice and concatenates the install scripts /
+# INSTALL.md sections.
 #
 # Two binaries ship from this workspace:
 #   - `sss`      (sss_cli  — GUI selector + CLI). v0.1.x.
 #   - `sss_code` (sss_code — pure CLI, code → png renderer). v0.2.x.
 #
-# `sss_code` cross-compiles cleanly (no GUI deps); `sss` is heavier (egui +
-# wgpu + wayland/x11/dbus) so the Windows GUI target is deliberately
-# skipped for now — adding it needs a windows-native MSVC runner instead of
-# linux→mingw cross.
+# Targets: linux x86_64 / aarch64 + macOS x86_64 / aarch64. Windows is
+# explicitly not built.
 {
   pkgs,
   lib,
@@ -50,8 +47,6 @@ let
       preview canvas; exports to PNG / clipboard.
     '';
     bundleId = "rs.sergioribera.sss";
-    # Pinned so MSI upgrade chain is stable across releases.
-    msiUpgradeCode = "CF05D879-DF84-4B30-BAEF-1B68E1DAD701";
     downloadUrl =
       "https://github.com/${repo}/releases/download/v${sssVersion}";
     desktopEntries = [
@@ -75,7 +70,6 @@ let
       backgrounds. CLI-only; no GUI dependencies.
     '';
     bundleId = "rs.sergioribera.sss_code";
-    msiUpgradeCode = "5E40820B-529A-430A-974D-3573F1BBD7B5";
     downloadUrl =
       "https://github.com/${repo}/releases/download/sss_code/v${sssCodeVersion}";
   };
@@ -87,13 +81,10 @@ let
   linuxFormats = [ "deb" "rpm" "archlinux" "tar.gz" "tar.zst" "appimage" ];
   darwinFormats = [ "tar.gz" "tar.zst" "pkg" "dmg" "brew" ];
 
-  # Windows + cross-arch slices are intentionally omitted in this first
-  # iteration. The workspace pulls git-based crates (winit/egui forks +
-  # mouse_position) which `pkgsCross.*.rustPlatform.buildRustPackage`
-  # cannot vendor without explicit `outputHashes`; native runners (one
-  # per arch/OS) sidestep that. To add a Windows slice, point a native
-  # Windows MSVC runner at `nix build .#release-sss_code` (after teaching
-  # the flake about that target).
+  # Cross-arch slices are intentionally omitted: native runners per arch
+  # sidestep the `outputHashes` plumbing that `pkgsCross.*.rustPlatform`
+  # needs for this workspace's git-based crates (winit/egui forks +
+  # mouse_position).
 
   # Build the matrix entry set for a given binary, gated on what the
   # current `system` can produce. Each runner sees only its own slice.
@@ -123,7 +114,6 @@ let
           formats = darwinFormats;
         };
       };
-      # Windows slice intentionally skipped — see comment above.
     in
       linuxX86 // linuxArmHost // darwinX86 // darwinArm;
 
