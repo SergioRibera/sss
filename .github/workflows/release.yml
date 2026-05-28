@@ -264,29 +264,93 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Keep per-slice subdirs — each runner's .rb has the SAME filename
+      # (`sss.rb` / `sss_code.rb`) but different content per arch, so
+      # `merge-multiple: true` would silently lose one arch.
       - name: Download brew formulas
         uses: actions/download-artifact@v4
         with:
           pattern: bundles-*
           path: dist
-          merge-multiple: true
 
-      - name: Collect .rb files
-        id: collect
+      # nix-bundle-app emits one single-arch formula per (binary, target).
+      # We merge them into a universal `on_macos { on_arm / on_intel }`
+      # formula so one `brew install sergioribera/tap/<name>` works on
+      # both Apple Silicon and Intel macs.
+      - name: Merge per-arch formulas into universal
+        id: merge
         run: |
-          mkdir -p formulas
-          shopt -s nullglob
-          rbs=(dist/*.rb)
-          if [ "${#rbs[@]}" -eq 0 ]; then
-            echo "::notice::no .rb files in this release — skipping"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          cp "${rbs[@]}" formulas/
-          ls -la formulas
+          python3 - <<'PY'
+          import collections, glob, os, pathlib, re
+
+          slices = collections.defaultdict(dict)   # name -> {arch: (url, sha)}
+          fields = {}                              # name -> shared metadata
+
+          for slice_dir in sorted(glob.glob("dist/bundles-darwin-*")):
+              arch = "arm" if slice_dir.endswith("aarch64") else "intel"
+              for rb in glob.glob(f"{slice_dir}/*.rb"):
+                  text = pathlib.Path(rb).read_text()
+                  name = pathlib.Path(rb).stem
+                  url = re.search(r'url\s+"([^"]+)"', text).group(1)
+                  sha = re.search(r'sha256\s+"([^"]+)"', text).group(1)
+                  slices[name][arch] = (url, sha)
+                  fields.setdefault(name, {
+                      "desc": re.search(r'desc\s+"([^"]+)"', text).group(1),
+                      "homepage": re.search(r'homepage\s+"([^"]+)"', text).group(1),
+                      "version": re.search(r'version\s+"([^"]+)"', text).group(1),
+                      "license": re.search(r'license\s+"([^"]+)"', text).group(1),
+                      "class": re.search(r'class\s+(\w+)\s+<', text).group(1),
+                  })
+
+          if not slices:
+              print("::notice::no darwin .rb formulas to publish")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+                  fh.write("skip=true\n")
+              raise SystemExit(0)
+
+          os.makedirs("formulas", exist_ok=True)
+          for name, f in fields.items():
+              arches = slices[name]
+              parts = [
+                  f'class {f["class"]} < Formula',
+                  f'  desc "{f["desc"]}"',
+                  f'  homepage "{f["homepage"]}"',
+                  f'  version "{f["version"]}"',
+                  f'  license "{f["license"]}"',
+                  "",
+                  "  on_macos do",
+              ]
+              for label, key in (("on_arm", "arm"), ("on_intel", "intel")):
+                  if key in arches:
+                      url, sha = arches[key]
+                      parts += [
+                          f"    {label} do",
+                          f'      url "{url}"',
+                          f'      sha256 "{sha}"',
+                          "    end",
+                      ]
+              parts += [
+                  "  end",
+                  "",
+                  "  def install",
+                  '    bin.install Dir["bin/*"]',
+                  '    lib.install Dir["lib/*"] if Dir.exist?("lib")',
+                  '    share.install Dir["share/*"] if Dir.exist?("share")',
+                  "  end",
+                  "",
+                  "  test do",
+                  f'    system "#{{bin}}/{name}", "--version"',
+                  "  end",
+                  "end",
+                  "",
+              ]
+              pathlib.Path(f"formulas/{name}.rb").write_text("\n".join(parts))
+              print(f"wrote formulas/{name}.rb ({', '.join(arches)})")
+          PY
+          ls -la formulas || true
 
       - name: Checkout homebrew-tap
-        if: steps.collect.outputs.skip != 'true'
+        if: steps.merge.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           repository: SergioRibera/homebrew-tap
@@ -294,7 +358,7 @@ jobs:
           path: tap
 
       - name: Commit + push formulas
-        if: steps.collect.outputs.skip != 'true'
+        if: steps.merge.outputs.skip != 'true'
         working-directory: tap
         env:
           BINARY: ${{ needs.plan.outputs.binary }}
