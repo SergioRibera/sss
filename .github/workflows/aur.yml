@@ -1,0 +1,135 @@
+name: Publish to AUR
+
+# Picks up after a successful Release run. Determines which binary was
+# released from the tag and pushes the corresponding -bin package to AUR:
+#   v*              → sss-bin
+#   sss_code/v*     → sss_code-bin
+#
+# The PKGBUILD + .SRCINFO + source tarball are produced by the archlinux
+# format of nix-bundle-app (in dist/aur/ of the GitHub release). We just
+# download them and push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to push to AUR (e.g. v0.1.5 or sss_code/v0.2.0)."
+        required: true
+        type: string
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  publish_aur:
+    name: Push to AUR
+    runs-on: ubuntu-latest
+    container: archlinux:multilib-devel
+    if: >
+      ${{
+        github.event_name == 'workflow_dispatch'
+        || github.event.workflow_run.conclusion == 'success'
+      }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag + AUR package name
+        id: plan
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            # workflow_run gives us the head_branch of the triggering run
+            # which is the tag ref (e.g. 'refs/tags/v0.1.5' → 'v0.1.5').
+            tag="${{ github.event.workflow_run.head_branch }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == sss_code/v* ]]; then
+            aur_pkg="sss_code-bin"
+          else
+            aur_pkg="sss-bin"
+          fi
+          echo "aur_pkg=$aur_pkg" >> "$GITHUB_OUTPUT"
+
+      - name: Install bootstrap tools
+        run: |
+          pacman -Syu --noconfirm git base-devel openssh pacman-contrib curl jq
+
+      - name: Download AUR tarball from release
+        id: download
+        shell: bash
+        run: |
+          tag="${{ steps.plan.outputs.tag }}"
+          aur_pkg="${{ steps.plan.outputs.aur_pkg }}"
+
+          mkdir -p work && cd work
+          # release.yml packs the archlinux format's `aur/` subdir into
+          # `<pkg>-bin-<ver>-aur.tar.gz` and uploads it as a release asset.
+          api="https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag"
+          curl -fsSL -H "Accept: application/vnd.github+json" "$api" > release.json
+          url=$(jq -r '.assets[] | .browser_download_url' release.json \
+                | grep -E "${aur_pkg}-.+-aur\.tar\.gz$" | head -n1)
+          if [ -z "$url" ]; then
+            echo "::error::No <pkg>-bin-<ver>-aur.tar.gz asset on release $tag."
+            exit 1
+          fi
+          echo "Downloading $url"
+          curl -fsSL -O "$url"
+          tar xzf "${aur_pkg}"-*-aur.tar.gz
+          ls -la
+
+          if [ ! -f PKGBUILD ]; then
+            echo "::error::PKGBUILD missing after extracting AUR tarball."
+            exit 1
+          fi
+
+      - name: Configure SSH for AUR
+        shell: bash
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          mkdir -p /home/builder/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > /home/builder/.ssh/id_rsa
+          chmod 600 /home/builder/.ssh/id_rsa
+          ssh-keyscan aur.archlinux.org >> /home/builder/.ssh/known_hosts
+          chown -R builder:builder /home/builder/.ssh
+
+      - name: Push to AUR
+        shell: bash
+        run: |
+          aur_pkg="${{ steps.plan.outputs.aur_pkg }}"
+          tag="${{ steps.plan.outputs.tag }}"
+          version="${tag#v}"
+          version="${version#sss_code/v}"
+
+          chown -R builder:builder "$PWD"
+          chmod -R 755 "$PWD"
+          REPO_DIR="$PWD"
+
+          su --preserve-environment builder -c "
+            set -e
+            cd \$HOME
+            git clone ssh://aur@aur.archlinux.org/${aur_pkg}.git aur-repo
+            cd aur-repo
+            cp '$REPO_DIR/work/'*PKGBUILD* . 2>/dev/null || true
+            cp '$REPO_DIR/work/'*.SRCINFO . 2>/dev/null || true
+            cp '$REPO_DIR/work/'*.tar.gz . 2>/dev/null || true
+            cp '$REPO_DIR/work/PKGBUILD' .
+
+            updpkgsums
+            makepkg --printsrcinfo > .SRCINFO
+
+            git config user.name '${{ secrets.AUR_USERNAME }}'
+            git config user.email '${{ secrets.AUR_EMAIL }}'
+            git add PKGBUILD .SRCINFO
+            git commit -m 'Release ${version}' || echo 'No changes to commit'
+            git push origin master
+          "

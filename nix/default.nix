@@ -20,6 +20,7 @@ in
     lib ? pkgs.lib,
     crane,
     fenix,
+    bundler ? null,
     stdenv ? pkgs.stdenv,
     ...
   }: let
@@ -138,6 +139,22 @@ in
     # Build packages and `nix run` apps
     sss = genBuild "sss";
     sssCode = genBuild "sss_code";
+
+    # Per-binary release bundles via nix-bundle-app — only attached when
+    # the flake was evaluated with `bundler` (the workspace's flake.nix
+    # always supplies it; downstream consumers using ./nix directly may
+    # not). Each `release-*` is a directory containing every (target,
+    # format) artifact the current Nix `system` can produce + install.sh /
+    # install.ps1 / INSTALL.md / SHA256SUMS, ready to upload as a GitHub
+    # release.
+    releaseBundles =
+      if bundler == null
+      then {}
+      else import ./release.nix {
+        inherit pkgs lib system bundler craneLib commonArgs;
+        sssPkg = sss.pkg;
+        sssCodePkg = sssCode.pkg;
+      };
   in {
     # `nix run`
     apps = rec {
@@ -151,7 +168,7 @@ in
       cli = sss.pkg;
       docs = import ./gen-docs.nix { inherit pkgs lib; };
       default = cli;
-    };
+    } // releaseBundles;
     # `nix develop`
     #
     # The dev shell needs LD_LIBRARY_PATH wired up so binaries built

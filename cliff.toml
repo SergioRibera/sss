@@ -1,0 +1,53 @@
+# git-cliff configuration — Conventional Commits → release notes.
+# https://git-cliff.org/docs/configuration
+#
+# `--current` (used in CI) emits the section for the tag currently being
+# released, walking back to the previous tag matching `tag_pattern`. This
+# repo cuts two parallel tag streams:
+#   - `vX.Y.Z`              for the `sss` (sss_cli) binary
+#   - `sss_code/vX.Y.Z`     for the `sss_code` binary
+# git-cliff treats each tag independently, so the changelog naturally
+# scopes to commits since whichever predecessor tag the release script
+# resolves.
+
+[changelog]
+header = ""
+trailer = ""
+body = """
+{% if version %}\
+## What's changed in {{ version | trim_start_matches(pat="v") }}
+{% else %}\
+## Unreleased
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}\
+- {{ commit.message | upper_first | trim }}\
+{% if commit.breaking %} **[breaking]**{% endif %}\
+{% if commit.id %} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/SergioRibera/sss/commit/{{ commit.id }})){% endif %}
+{% endfor %}\
+{% endfor %}\n
+"""
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Refactor" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^style", group = "Style" },
+  { message = "^test", group = "Tests" },
+  { message = "^build", group = "Build" },
+  { message = "^ci", group = "CI" },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^chore", group = "Chore" },
+  { message = ".*", group = "Other" },
+]
+filter_commits = false
+# Both release streams ('v*' for sss, 'sss_code/v*' for sss_code).
+tag_pattern = "(v|sss_code/v)[0-9]*"
+sort_commits = "newest"
