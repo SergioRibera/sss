@@ -397,7 +397,8 @@ impl ExtImageCopyBackend {
             return Err(CaptureError::backend(BACKEND, "frame capture failed"));
         }
 
-        let img = decode_frame(&mmap[..], chosen_fmt, width, height, stride)?;
+        let raw = decode_frame(&mmap[..], chosen_fmt, width, height, stride)?;
+        let img = apply_transform(raw, state.frame_transform);
 
         frame.destroy();
         buffer.destroy();
@@ -669,6 +670,36 @@ fn decode_frame(
     RgbaImage::from_raw(width, height, rgba).ok_or_else(|| {
         CaptureError::ImageConversion(format!("buffer too small for {width}x{height}"))
     })
+}
+
+/// Apply the buffer transform reported by `ext_image_copy_capture_frame_v1.transform`
+/// so the returned image matches the orientation the user sees on the monitor.
+///
+/// The `transform` value comes from the `wl_output.transform` enum:
+///
+/// | value | meaning                                  |
+/// |-------|------------------------------------------|
+/// | 0     | normal (no-op)                           |
+/// | 1     | 90° rotation                             |
+/// | 2     | 180° rotation                            |
+/// | 3     | 270° rotation                            |
+/// | 4     | horizontally flipped                     |
+/// | 5     | horizontally flipped + 90° rotation      |
+/// | 6     | horizontally flipped + 180° rotation     |
+/// | 7     | horizontally flipped + 270° rotation     |
+fn apply_transform(img: RgbaImage, transform: u32) -> RgbaImage {
+    use image::imageops::{flip_horizontal, rotate180, rotate270, rotate90};
+    match transform {
+        0 => img,
+        1 => rotate90(&img),
+        2 => rotate180(&img),
+        3 => rotate270(&img),
+        4 => flip_horizontal(&img),
+        5 => rotate90(&flip_horizontal(&img)),
+        6 => rotate180(&flip_horizontal(&img)),
+        7 => rotate270(&flip_horizontal(&img)),
+        _ => img,
+    }
 }
 
 fn pick_format(advertised: &[wl_shm::Format]) -> Option<wl_shm::Format> {
