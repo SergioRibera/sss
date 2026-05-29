@@ -1,7 +1,9 @@
-//! Linux backends: native Wayland (wlr-screencopy), xdg-desktop-portal, X11.
+//! Linux backends: native Wayland (ext-image-copy-capture / wlr-screencopy),
+//! xdg-desktop-portal, X11.
 
 use std::env;
 
+pub(crate) mod ext_image_copy;
 pub(crate) mod portal;
 pub(crate) mod wayland;
 pub(crate) mod x11;

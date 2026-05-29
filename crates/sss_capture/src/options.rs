@@ -31,6 +31,9 @@ impl CaptureOptions {
 pub enum BackendKind {
     #[default]
     Auto,
+    /// ext-image-copy-capture-v1 (cosmic, future GNOME/KWin/sway).
+    WaylandExt,
+    /// zwlr_screencopy_manager_v1 (wlroots: sway/Hyprland/niri/river).
     Wayland,
     WaylandPortal,
     X11,

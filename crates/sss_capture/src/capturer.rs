@@ -206,6 +206,7 @@ fn select_backend(kind: BackendKind) -> Result<Box<dyn Backend>> {
     let mut errors: Vec<String> = Vec::new();
     match kind {
         BackendKind::Auto => auto_select(&mut errors),
+        BackendKind::WaylandExt => try_wayland_ext(&mut errors),
         BackendKind::Wayland => try_wayland(&mut errors),
         BackendKind::WaylandPortal => try_portal(&mut errors),
         BackendKind::X11 => try_x11(&mut errors),
@@ -220,19 +221,25 @@ fn auto_select(errors: &mut Vec<String>) -> Option<Box<dyn Backend>> {
     use crate::backend::linux::{is_wayland_session, is_x11_session};
 
     if is_wayland_session() {
+        // ext-image-copy-capture-v1 is the upstream successor to wlr-screencopy.
+        // Try it first; cosmic-comp only speaks this one. wlroots compositors
+        // (sway/Hyprland/niri/river) currently still speak the wlr variant, so
+        // we fall back to that. Portal is the last Wayland resort.
+        if let Some(b) = try_wayland_ext(errors) {
+            return Some(b);
+        }
         if let Some(b) = try_wayland(errors) {
             return Some(b);
         }
-        // On wlroots compositors without zwlr_screencopy_v1, XWayland is more
-        // likely to work than the portal which hangs without a configured
-        // `org.freedesktop.portal.Screenshot` backend.
+        if let Some(b) = try_portal(errors) {
+            return Some(b);
+        }
+        // XWayland is a last-ditch attempt: it only captures X surfaces, which
+        // misses wayland-native windows. Better than nothing on legacy stacks.
         if is_x11_session() {
             if let Some(b) = try_x11(errors) {
                 return Some(b);
             }
-        }
-        if let Some(b) = try_portal(errors) {
-            return Some(b);
         }
         return None;
     }
@@ -274,6 +281,23 @@ fn try_wayland(errors: &mut Vec<String>) -> Option<Box<dyn Backend>> {
 #[cfg(not(target_os = "linux"))]
 fn try_wayland(errors: &mut Vec<String>) -> Option<Box<dyn Backend>> {
     errors.push("wayland: Linux-only".to_string());
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn try_wayland_ext(errors: &mut Vec<String>) -> Option<Box<dyn Backend>> {
+    match crate::backend::linux::ext_image_copy::ExtImageCopyBackend::try_new() {
+        Ok(b) => Some(Box::new(b)),
+        Err(e) => {
+            tracing::warn!(backend = "wayland-ext-image-copy", error = %e, "backend unavailable");
+            errors.push(format!("wayland-ext-image-copy: {e}"));
+            None
+        }
+    }
+}
+#[cfg(not(target_os = "linux"))]
+fn try_wayland_ext(errors: &mut Vec<String>) -> Option<Box<dyn Backend>> {
+    errors.push("wayland-ext-image-copy: Linux-only".to_string());
     None
 }
 
