@@ -45,7 +45,7 @@ winit-wayland = { git = "https://github.com/SergioRibera/winit", branch = "layer
 egui       = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
 egui-winit = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["clipboard", "wayland", "x11"] }
 egui-wgpu  = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["wayland", "x11"] }
-wgpu       = { version = "25", optional = true }
+wgpu       = { version = "29", optional = true }
 pollster   = { version = "0.4", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
