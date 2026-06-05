@@ -1,1 +1,1 @@
-/nix/store/8lrwjginrxrh3waf0dlc386zyzvi6zak-sss-config-reference.md
+/nix/store/8j2z3m7zs409vvynldxgycra5sd4dpqi-sss-config-reference.md
