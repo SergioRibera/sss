@@ -10,6 +10,7 @@ mod config;
 mod error;
 mod img;
 mod interactive;
+mod persist;
 mod shot;
 
 #[derive(Clone, Copy, Debug, Default)]

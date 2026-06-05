@@ -78,13 +78,18 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
     let snap_step_init = config.ui.snap_step.max(2.0);
     #[cfg(feature = "editor")]
     let initial_fill = config.ui.default_fill;
+    let initial_area = config.initial_area;
+    let mut canvas = Canvas::default();
+    if let Some(rect) = initial_area {
+        canvas.set_region(Some(rect));
+    }
     let app = App {
         config,
         capturer,
         monitors,
         initial,
         windows: Vec::new(),
-        canvas: Canvas::default(),
+        canvas,
         active_window: None,
         last_cursor: FPoint::default(),
         outcome: None,

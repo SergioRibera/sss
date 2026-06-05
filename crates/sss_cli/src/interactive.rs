@@ -18,6 +18,7 @@ use sss_lib::GenerationSettings;
 use std::sync::Arc;
 
 use crate::config::CliConfig;
+use crate::persist;
 
 /// What the interactive selector produced. Consumed by `main`.
 pub struct PreRendered {
@@ -85,6 +86,11 @@ pub fn run(
     if let Some(path) = default_output.clone() {
         builder = builder.save_path_hint(path);
     }
+    if config.remember_last_selection {
+        if let Some(rect) = persist::load_last_area() {
+            builder = builder.initial_area(rect);
+        }
+    }
 
     let selection = builder
         .build()
@@ -92,22 +98,29 @@ pub fn run(
         .run()
         .map_err(|e| eyre!("selector run: {e}"))?;
 
-    let image = match selection.outcome {
+    let (image, last_region) = match selection.outcome {
         Outcome::Region {
-            image: Some(img), ..
-        }
-        | Outcome::Monitor {
+            rect,
+            image: Some(img),
+        } => (img.into_rgba(), Some(rect)),
+        Outcome::Monitor {
             image: Some(img), ..
         }
         | Outcome::Window {
             image: Some(img), ..
-        } => img.into_rgba(),
+        } => (img.into_rgba(), None),
         // Cancellation is the user's explicit choice (Esc / Cancel
         // button). Surface it as `Ok(None)` so the CLI can exit with a
         // non-zero status without color_eyre's full error chrome.
         Outcome::Cancelled => return Ok(None),
         _ => return Err(eyre!("selector returned without an image")),
     };
+
+    if config.remember_last_selection {
+        if let Some(rect) = last_region {
+            persist::save_last_area(rect);
+        }
+    }
 
     Ok(Some(PreRendered {
         image,

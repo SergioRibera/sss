@@ -91,6 +91,7 @@ pub struct SelectorBuilder {
     show_copy: bool,
     show_save: bool,
     save_path_hint: Option<PathBuf>,
+    initial_area: Option<Rect>,
 }
 
 impl Default for SelectorBuilder {
@@ -107,6 +108,7 @@ impl Default for SelectorBuilder {
             show_copy: true,
             show_save: true,
             save_path_hint: None,
+            initial_area: None,
         }
     }
 }
@@ -174,6 +176,14 @@ impl SelectorBuilder {
         self
     }
 
+    /// Pre-seed the area selector with a rectangle. The overlay opens with
+    /// this region already drawn, ready to be confirmed or adjusted. Only
+    /// honoured in `Area` / `AnyOf` modes.
+    pub fn initial_area(mut self, rect: Rect) -> Self {
+        self.initial_area = Some(rect);
+        self
+    }
+
     pub fn build(self) -> Result<Selector, SelectorError> {
         let capturer = match self.capturer {
             Some(c) => c,
@@ -199,6 +209,7 @@ impl SelectorBuilder {
                 show_copy: self.show_copy,
                 show_save: self.show_save,
                 save_path_hint: self.save_path_hint,
+                initial_area: self.initial_area,
             },
             capturer,
         })
@@ -224,6 +235,7 @@ pub(crate) struct Config {
     pub show_copy: bool,
     pub show_save: bool,
     pub save_path_hint: Option<PathBuf>,
+    pub initial_area: Option<Rect>,
 }
 
 impl Selector {

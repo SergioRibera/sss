@@ -235,6 +235,14 @@ pub struct CliConfig {
     #[merge(strategy = overwrite_false)]
     #[serde(default = "default_bool")]
     pub verbose: bool,
+
+    /// Persist the last interactive area selection and pre-seed the
+    /// selector with it next time `--area` is opened without a value.
+    /// Stored under `${XDG_CONFIG_HOME}/sss/last_selection.toml`.
+    #[clap(long, help = "Remember the last interactive area selection.")]
+    #[merge(strategy = overwrite_false)]
+    #[serde(default = "default_bool")]
+    pub remember_last_selection: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
