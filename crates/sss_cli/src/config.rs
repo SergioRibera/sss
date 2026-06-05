@@ -125,10 +125,11 @@ struct ClapConfig {
     #[merge(skip)]
     config: Option<PathBuf>,
     #[clap(flatten)]
+    #[serde(default)]
     #[merge(strategy = recursive)]
     pub cli: Option<CliConfig>,
     #[clap(flatten)]
-    #[serde(rename = "general")]
+    #[serde(rename = "general", default)]
     pub lib_config: sss_lib::GenerationSettingsArgs,
     /// Configuration block for the interactive selector / annotation UI.
     /// Loaded from `[capture-ui]` in `config.toml`; not exposed as

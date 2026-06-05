@@ -94,9 +94,10 @@ pub struct GenerationSettingsArgs {
     #[merge(strategy = swap_option)]
     pub save_format: Option<String>,
     #[clap(flatten)]
+    #[serde(default)]
     pub colors: ColorsArgs,
     #[clap(flatten)]
-    #[serde(rename = "window-controls")]
+    #[serde(rename = "window-controls", default)]
     pub window_controls: WindowControlsArgs,
 }
 
@@ -237,6 +238,58 @@ impl From<WindowControlsArgs> for WindowControls {
             width: val.window_controls_width.unwrap_or(120),
             height: val.window_controls_height.unwrap_or(40),
             title_padding: val.titlebar_padding.unwrap_or(10),
+        }
+    }
+}
+
+// Explicit defaults so a config with a missing or partial `[general]`
+// section (or omitted sub-keys) deserialises with the same values the
+// CLI would otherwise inject through `From<…Args>`. Keeping these here
+// — rather than `#[derive(Default)]` — makes the contract visible at
+// the type level instead of hiding it inside the `From` impls.
+
+impl Default for GenerationSettingsArgs {
+    fn default() -> Self {
+        Self {
+            fonts: None,
+            radius: Some(15),
+            author: None,
+            author_font: Some("Hack".to_string()),
+            padding_x: Some(80),
+            padding_y: Some(100),
+            shadow: false,
+            shadow_image: false,
+            shadow_blur: Some(50.0),
+            show_notify: false,
+            copy: false,
+            output: None,
+            save_format: None,
+            colors: ColorsArgs::default(),
+            window_controls: WindowControlsArgs::default(),
+        }
+    }
+}
+
+impl Default for ColorsArgs {
+    fn default() -> Self {
+        Self {
+            background: None,
+            author_color: Some("#FFFFFF".to_string()),
+            window_background: None,
+            window_title_color: Some("#FFFFFF".to_string()),
+            shadow_color: None,
+        }
+    }
+}
+
+impl Default for WindowControlsArgs {
+    fn default() -> Self {
+        Self {
+            enable: false,
+            window_title: None,
+            window_controls_width: Some(120),
+            window_controls_height: Some(40),
+            titlebar_padding: Some(10),
         }
     }
 }
