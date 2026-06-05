@@ -3,6 +3,7 @@
 ,
 }: { config
    , lib
+   , options
    , pkgs
    , ...
    }:
@@ -13,6 +14,7 @@ with lib; let
     system = pkgs.system;
   };
   cfgSSS = config.programs.sss;
+  optSSS = options.programs.sss;
   tomlFormat = pkgs.formats.toml { };
   configDir =
     if pkgs.stdenv.isDarwin
@@ -24,18 +26,29 @@ with lib; let
   captureUiConfig = import ./captureUiConfig.nix { inherit lib; };
   sssPackage = lists.optional cfgSSS.enable sss.packages.default;
   codePackage = lists.optional cfgSSS.code.enable sss.packages.code;
-  # Drop null leaves (unset options) recursively. `pkgs.formats.toml`
-  # rejects nulls, so anything the user left at its `null` default must
-  # be removed before serialisation. Also strips the synthetic `enable`
-  # key the module surface uses to gate activation.
-  filterConfig = cfg:
-    let
-      stripNulls = v:
-        if builtins.isAttrs v && !(lib.isDerivation v)
-        then filterAttrs (_: x: x != null) (builtins.mapAttrs (_: stripNulls) v)
-        else v;
-    in
-      stripNulls (filterAttrs (n: v: v != null && n != "enable") cfg);
+  # Emit only the keys the user actually set. We can't use the evaluated
+  # `config` view because defaults already filled it in — the Rust side
+  # supplies its own defaults via `#[serde(default)]`, so anything the
+  # user did not touch must be omitted (otherwise empty strings, falses,
+  # and nulls leak in and break parsing). `options.<path>.definitions`
+  # returns the raw user-supplied attrset for each section, which we
+  # merge and then strip null leaves from.
+  mergeDefs = opt: foldl' recursiveUpdate { } (opt.definitions or [ ]);
+  # Drop null leaves AND empty subtables — `pkgs.formats.toml` would
+  # otherwise emit bare `[section]` headers for untouched sections.
+  cleanse = v:
+    if builtins.isAttrs v && !(lib.isDerivation v)
+    then
+      filterAttrs
+        (_: x: x != null && !(builtins.isAttrs x && x == { }))
+        (builtins.mapAttrs (_: cleanse) v)
+    else v;
+  userTomlConfig = cleanse (filterAttrs (n: _: n != "enable") {
+    cli = mergeDefs optSSS.cli;
+    code = mergeDefs optSSS.code;
+    general = mergeDefs optSSS.general;
+    capture-ui = mergeDefs optSSS.capture-ui;
+  });
 in
 {
   options.programs = {
@@ -75,8 +88,7 @@ in
     home.packages = sssPackage ++ codePackage;
 
     home.file."${configDir}/sss/config.toml" = mkIf (cfgSSS.enable || cfgSSS.code.enable) {
-      source =
-        tomlFormat.generate "config.toml" (filterConfig cfgSSS);
+      source = tomlFormat.generate "config.toml" userTomlConfig;
     };
   };
 }
