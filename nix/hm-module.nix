@@ -24,7 +24,18 @@ with lib; let
   captureUiConfig = import ./captureUiConfig.nix { inherit lib; };
   sssPackage = lists.optional cfgSSS.enable sss.packages.default;
   codePackage = lists.optional cfgSSS.code.enable sss.packages.code;
-  filterConfig = cfg: filterAttrs (n: v: ((builtins.typeOf v) != "null") && n != "enable") cfg;
+  # Drop null leaves (unset options) recursively. `pkgs.formats.toml`
+  # rejects nulls, so anything the user left at its `null` default must
+  # be removed before serialisation. Also strips the synthetic `enable`
+  # key the module surface uses to gate activation.
+  filterConfig = cfg:
+    let
+      stripNulls = v:
+        if builtins.isAttrs v && !(lib.isDerivation v)
+        then filterAttrs (_: x: x != null) (builtins.mapAttrs (_: stripNulls) v)
+        else v;
+    in
+      stripNulls (filterAttrs (n: v: v != null && n != "enable") cfg);
 in
 {
   options.programs = {
