@@ -31,4 +31,9 @@ with lib; {
     default = "auto";
     description = "Force a specific capture backend.";
   };
+  remember-last-selection = mkEnableOption ''
+    Persist the last interactive area selection and pre-seed the selector
+    with it next time `--area` is opened without a value. Stored at
+    `''${XDG_CONFIG_HOME}/sss/last_selection.toml`.
+  '';
 }

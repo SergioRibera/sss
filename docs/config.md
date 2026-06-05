@@ -785,6 +785,38 @@ true
 
 
 
+## programs\.sss\.cli\.remember-last-selection
+
+
+
+Whether to enable Persist the last interactive area selection and pre-seed the selector
+with it next time ` --area ` is opened without a value\. Stored at
+` ${XDG_CONFIG_HOME}/sss/last_selection.toml `\.
+\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+
+
+*Example:*
+
+```nix
+true
+```
+
+
+
 ## programs\.sss\.cli\.screen
 
 

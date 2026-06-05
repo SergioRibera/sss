@@ -8,6 +8,10 @@ show_cursor = false
 current = false
 screen = false
 screen-id = ""
+# Persist the last interactive area selection at
+# ${XDG_CONFIG_HOME}/sss/last_selection.toml and pre-seed the selector
+# with it the next time `--area` is opened without a value.
+remember-last-selection = false
 
 # These are the configurations for sss_code
 [code]
