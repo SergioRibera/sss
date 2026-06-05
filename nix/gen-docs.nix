@@ -66,6 +66,26 @@ let
     attribute path: `programs.sss.general.padding-x` becomes
     `[general]` / `padding-x` in TOML, etc.
 
+    ## `imports` (TOML-only)
+
+    The top-level `imports` array merges other TOML files in before the
+    importing file. It is **not** a Nix module option — set it directly
+    in your `config.toml`:
+
+    ```toml
+    imports = [
+      "themes/dark.toml",
+      "~/.config/sss/local.toml",
+    ]
+    ```
+
+    Paths resolve relative to the importing file's directory (or `~/`
+    to `$HOME`). Missing files are skipped with a warning — never an
+    error, so an optional override file is safe to list. Within a
+    file, later entries override earlier ones; the importing file
+    overrides all of its imports; CLI flags override everything.
+    Cycles are broken with a warning.
+
   '';
 
 in pkgs.runCommand "sss-config-reference.md"

@@ -1,6 +1,16 @@
 # This content should go in the path ~/.config/sss/config.toml
 # These parameters contain the same parameters and format as those of the arguments
- 
+
+# Optional: merge in other TOML files before this one. Paths resolve
+# relative to this file's directory (or `~/` to `$HOME`). Missing files
+# are skipped with a warning — never an error. Within this list, later
+# entries override earlier ones; the importing file overrides all of
+# its imports; CLI flags override everything.
+# imports = [
+#   "themes/dark.toml",
+#   "~/.config/sss/local.toml",
+# ]
+
 # These are the configurations for sss
 [cli]
 area = "x,y WxH"

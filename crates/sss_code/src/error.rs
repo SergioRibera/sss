@@ -17,6 +17,7 @@ pub enum CodeScreenshot {
 #[error(transparent)]
 pub enum Configuration {
     Deserialization(#[from] toml::de::Error),
+    Io(#[from] std::io::Error),
     #[error("Invalid Home directory path from operating system")]
     InvalidHome,
     #[error("Not found `{0}` param in configuration")]

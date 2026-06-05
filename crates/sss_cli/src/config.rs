@@ -4,7 +4,8 @@ use clap::Parser;
 use merge2::{bool::overwrite_false, option::recursive, Merge};
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use sss_capture_ui::UiConfig;
-use sss_lib::{default_bool, swap_option};
+use sss_lib::config_loader::{load_with_imports, HasImports, LoadError};
+use sss_lib::{default_bool, swap_option, RootArgs};
 
 use crate::error::Configuration as ConfigurationError;
 use crate::{str_to_area, Area};
@@ -120,10 +121,9 @@ impl Serialize for WindowSpec {
 #[clap(version, author)]
 #[serde(rename_all = "kebab-case")]
 struct ClapConfig {
-    #[clap(long, help = "Set custom config file path")]
-    #[serde(skip)]
-    #[merge(skip)]
-    config: Option<PathBuf>,
+    #[clap(flatten)]
+    #[serde(flatten)]
+    pub root: RootArgs,
     #[clap(flatten)]
     #[serde(default)]
     #[merge(strategy = recursive)]
@@ -344,11 +344,17 @@ pub enum DirectTarget {
     Window(String),
 }
 
+impl HasImports for ClapConfig {
+    fn take_imports(&mut self) -> Vec<PathBuf> {
+        std::mem::take(&mut self.root.imports)
+    }
+}
+
 pub fn get_config() -> Result<(CliConfig, sss_lib::GenerationSettings, UiConfig), ConfigurationError>
 {
     let mut args = ClapConfig::parse();
 
-    let config_path = if let Some(path) = args.config.as_ref() {
+    let config_path = if let Some(path) = args.root.config.as_ref() {
         tracing::trace!("Loading custom path");
         path.clone()
     } else {
@@ -364,9 +370,14 @@ pub fn get_config() -> Result<(CliConfig, sss_lib::GenerationSettings, UiConfig)
     };
     tracing::info!("Reading configs from path: {config_path:?}");
 
-    if let Ok(cfg_content) = std::fs::read_to_string(config_path) {
+    let loaded = load_with_imports(&config_path, &|s| toml::from_str::<ClapConfig>(s))
+        .map_err(|e| match e {
+            LoadError::Io(e) => ConfigurationError::Io(e),
+            LoadError::Parse(e) => ConfigurationError::Deserialization(e),
+        })?;
+
+    if let Some(mut config) = loaded {
         tracing::debug!("Merging from config file");
-        let mut config: ClapConfig = toml::from_str(&cfg_content)?;
         config.merge(&mut args);
         return Ok((
             config.cli.unwrap_or_default(),

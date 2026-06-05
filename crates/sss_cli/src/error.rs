@@ -15,6 +15,7 @@ pub enum SSScreenshot {
 #[error(transparent)]
 pub enum Configuration {
     Deserialization(#[from] toml::de::Error),
+    Io(#[from] std::io::Error),
     #[error("Invalid Home directory path from operating system")]
     InvalidHome,
 }

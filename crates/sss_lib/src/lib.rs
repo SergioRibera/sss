@@ -5,6 +5,7 @@ mod args;
 #[cfg(target_os = "linux")]
 mod clipboard;
 pub mod components;
+pub mod config_loader;
 pub mod error;
 pub mod font;
 mod img;
@@ -13,6 +14,7 @@ mod shadow;
 pub mod utils;
 
 pub use args::*;
+pub use config_loader::RootArgs;
 pub use image;
 use image::{Rgba, RgbaImage};
 pub use imageproc;
