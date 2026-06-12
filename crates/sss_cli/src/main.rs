@@ -1,9 +1,10 @@
 use color_eyre::eyre::Report;
-use config::get_config;
+use config::{get_config, OcrConfig};
 use img::Screenshot;
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 use sss_capture_ui::SelectorMode;
 use sss_lib::generate_image;
+use sss_ocr::PrewarmHandle;
 use tracing_subscriber::EnvFilter;
 
 mod config;
@@ -59,6 +60,7 @@ fn main() -> Result<(), Report> {
         formula = ocr_config.formula,
         "OCR configuration"
     );
+    let prewarm = start_prewarm(&ocr_config);
     if config.verbose {
         // Re-init at info level by overriding the existing filter. We do
         // that lazily here so the verbose flag is read after parsing.
@@ -107,16 +109,57 @@ fn main() -> Result<(), Report> {
                 g_config.output = path.to_string_lossy().into_owned();
             }
         }
-        return Ok(generate_image(
-            g_config,
-            Screenshot::pre_rendered(pre.image),
-        )?);
+        let result = generate_image(g_config, Screenshot::pre_rendered(pre.image));
+        finish_prewarm(prewarm);
+        return Ok(result?);
     }
 
-    Ok(generate_image(
+    let result = generate_image(
         g_config,
         Screenshot::from_target(direct.unwrap(), config.show_cursor),
-    )?)
+    );
+    finish_prewarm(prewarm);
+    Ok(result?)
+}
+
+/// Spawns the OCR model-prewarm worker when OCR is enabled, otherwise
+/// returns `None`.
+///
+/// Honours `[ocr].models-dir` from the config file: when set, the worker
+/// downloads into that directory instead of the default XDG cache. The
+/// path is committed to `OAR_HOME` for the lifetime of the process.
+fn start_prewarm(ocr: &OcrConfig) -> Option<PrewarmHandle> {
+    if !ocr.is_enabled() {
+        return None;
+    }
+    sss_ocr::install_models_dir_with(ocr.models_dir.clone());
+    Some(sss_ocr::spawn_prewarm(
+        ocr.effective_tier(),
+        ocr.languages(),
+        ocr.formula,
+    ))
+}
+
+/// Blocks until the prewarm worker finishes downloading every model.
+///
+/// We deliberately block at end-of-run rather than at start: a screenshot
+/// session does not need the models, only the optional OCR overlay does.
+/// Joining here guarantees that closing sss never leaves a half-downloaded
+/// file behind, which is what the user asked for ("si se cierra sss el
+/// hilo de descarga siga hasta terminar y recien se cierra el proceso de
+/// sss completo").
+fn finish_prewarm(prewarm: Option<PrewarmHandle>) {
+    let Some(handle) = prewarm else {
+        return;
+    };
+    if handle.is_finished() {
+        let _ = handle.wait();
+        return;
+    }
+    tracing::info!("waiting for OCR model download to finish before exiting");
+    if let Err(err) = handle.wait() {
+        tracing::warn!(%err, "OCR model prewarm failed; OCR will be unavailable next run");
+    }
 }
 
 /// Decide which mode the selector should open in based on which targeting

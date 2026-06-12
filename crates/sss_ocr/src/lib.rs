@@ -40,10 +40,20 @@ pub fn models_dir() -> PathBuf {
 ///
 /// Safe to call more than once; only the first call wins.
 pub fn install_models_dir() {
+    install_models_dir_with(None);
+}
+
+/// Like [`install_models_dir`] but lets the caller override the cache root.
+///
+/// When `custom` is `Some`, that path becomes `OAR_HOME`. When `None`,
+/// behaves identically to [`install_models_dir`]. Only the **first** call
+/// to either function wins — subsequent calls are no-ops, so the caller in
+/// `sss_cli` must invoke this before any [`OcrEngine`] is built.
+pub fn install_models_dir_with(custom: Option<PathBuf>) {
     use std::sync::Once;
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        let dir = models_dir();
+        let dir = custom.unwrap_or_else(models_dir);
         // Best-effort: oar-ocr will create the dir itself on first download,
         // but creating it eagerly lets `dir.exists()` checks elsewhere succeed.
         let _ = std::fs::create_dir_all(&dir);
