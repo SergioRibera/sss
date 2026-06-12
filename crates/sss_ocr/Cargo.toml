@@ -1,0 +1,22 @@
+[package]
+name = "sss_ocr"
+description = "OCR engine for sss — wraps oar-ocr with tiered models, hardware-aware defaults and a non-blocking download worker"
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+oar-ocr = { version = "0.7", default-features = false, features = ["simd", "auto-download"] }
+image = { version = "0.25", default-features = false, features = ["rayon"] }
+sysinfo = { version = "0.32", default-features = false, features = ["system"] }
+num_cpus = "1.16"
+directories.workspace = true
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tracing.workspace = true

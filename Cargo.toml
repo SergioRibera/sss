@@ -16,6 +16,7 @@ members = [
     "crates/sss_code",
     "crates/sss_capture",
     "crates/sss_capture_ui",
+    "crates/sss_ocr",
 ]
 
 [profile.dev]
