@@ -6,6 +6,7 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use sss_capture_ui::UiConfig;
 use sss_lib::config_loader::{load_with_imports, HasImports, LoadError};
 use sss_lib::{default_bool, swap_option, RootArgs};
+use sss_ocr::{Language, Tier};
 
 use crate::error::Configuration as ConfigurationError;
 use crate::{str_to_area, Area};
@@ -139,6 +140,10 @@ struct ClapConfig {
     #[serde(default, rename = "capture-ui")]
     #[merge(strategy = swap_option)]
     pub capture_ui: Option<UiConfig>,
+    #[clap(flatten)]
+    #[serde(default, rename = "ocr")]
+    #[merge(strategy = recursive)]
+    pub ocr: Option<OcrConfig>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Merge, Parser, Serialize)]
@@ -331,6 +336,108 @@ impl CliConfig {
     }
 }
 
+// --------------------------------------------------------------------------
+// [ocr] section
+// --------------------------------------------------------------------------
+
+/// Configuration block for the OCR engine. Loaded from `[ocr]` in
+/// `config.toml`; the user-facing `--ocr [true|false]` flag overrides
+/// `enable` from the command line.
+///
+/// Everything except `enable` lives in the config file only — the surface
+/// (tier, language list, model overrides) is wider than what's pleasant on
+/// the command line and these settings rarely change between captures.
+#[derive(Clone, Debug, Default, Deserialize, Merge, Parser, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct OcrConfig {
+    /// Run the OCR pipeline after every capture. When false the selector
+    /// behaves exactly as the OCR-less build did.
+    #[clap(
+        long = "ocr",
+        num_args = 0..=1,
+        default_missing_value = "true",
+        value_parser = clap::builder::BoolishValueParser::new(),
+        help = "Enable or disable the OCR pipeline for this run (true|false)."
+    )]
+    #[merge(strategy = swap_option)]
+    pub enable: Option<bool>,
+
+    /// Picks model sizes against host hardware. `auto` (default) chooses
+    /// between light/standard/heavy at startup.
+    #[clap(skip)]
+    #[serde(default = "default_tier")]
+    #[merge(strategy = overwrite_tier)]
+    pub tier: Tier,
+
+    /// Recognition languages to pre-download. The first entry is the
+    /// active one at runtime; the rest stay cached for fast switching.
+    /// Accepts both ISO 639-1 codes (`"en"`, `"es"`, `"ja"`) and the
+    /// PaddleOCR script names (`"latin"`, `"cyrillic"`, `"arabic"`).
+    /// Defaults to `["auto"]`.
+    #[clap(skip)]
+    #[serde(default = "default_languages")]
+    #[merge(strategy = merge_languages)]
+    pub language: Vec<String>,
+
+    /// Opt into the formula recognition model. Only honoured at
+    /// [`Tier::Heavy`] — at lighter tiers the formula model is skipped.
+    #[clap(skip)]
+    #[serde(default = "default_bool")]
+    #[merge(strategy = overwrite_false)]
+    pub formula: bool,
+
+    /// Override the on-disk cache directory. When empty (the default) the
+    /// OCR worker uses `$XDG_DATA_HOME/sss/models` (or the equivalent on
+    /// macOS / Windows via [`directories`]).
+    #[clap(skip)]
+    #[serde(default)]
+    #[merge(strategy = swap_option)]
+    pub models_dir: Option<PathBuf>,
+}
+
+fn default_tier() -> Tier {
+    Tier::Auto
+}
+
+fn default_languages() -> Vec<String> {
+    vec!["auto".to_string()]
+}
+
+/// Overwrite `dst` with `src` unless `src` is `Auto` and `dst` is set —
+/// preserves a "stronger" tier coming from the CLI override.
+fn overwrite_tier(dst: &mut Tier, src: &mut Tier) {
+    if !matches!(*src, Tier::Auto) {
+        *dst = *src;
+    }
+}
+
+/// Replace the language list when the override is non-empty; otherwise
+/// keep the existing list. Mirrors how single-value `Option` merges work.
+fn merge_languages(dst: &mut Vec<String>, src: &mut Vec<String>) {
+    if !src.is_empty() {
+        *dst = std::mem::take(src);
+    }
+}
+
+impl OcrConfig {
+    /// Returns `true` when OCR is enabled. Defaults to **true** when the
+    /// field is missing from both the config file and the CLI — matching
+    /// the product decision "OCR on by default".
+    pub fn is_enabled(&self) -> bool {
+        self.enable.unwrap_or(true)
+    }
+
+    /// Parses the configured language codes into [`Language`] enum values.
+    pub fn languages(&self) -> Vec<Language> {
+        sss_ocr::resolve_language(&self.language)
+    }
+
+    /// Effective tier after resolving `Auto` against the host hardware.
+    pub fn effective_tier(&self) -> Tier {
+        self.tier.resolve()
+    }
+}
+
 /// Outcome of resolving the CLI flags before opening the selector.
 #[derive(Clone, Debug)]
 pub enum DirectTarget {
@@ -350,8 +457,15 @@ impl HasImports for ClapConfig {
     }
 }
 
-pub fn get_config() -> Result<(CliConfig, sss_lib::GenerationSettings, UiConfig), ConfigurationError>
-{
+/// Fully-resolved CLI + config bundle returned by [`get_config`].
+pub struct ResolvedConfig {
+    pub cli: CliConfig,
+    pub lib: sss_lib::GenerationSettings,
+    pub ui: UiConfig,
+    pub ocr: OcrConfig,
+}
+
+pub fn get_config() -> Result<ResolvedConfig, ConfigurationError> {
     let mut args = ClapConfig::parse();
 
     let config_path = if let Some(path) = args.root.config.as_ref() {
@@ -376,18 +490,18 @@ pub fn get_config() -> Result<(CliConfig, sss_lib::GenerationSettings, UiConfig)
             LoadError::Parse(e) => ConfigurationError::Deserialization(e),
         })?;
 
-    if let Some(mut config) = loaded {
+    let merged = if let Some(mut config) = loaded {
         tracing::debug!("Merging from config file");
         config.merge(&mut args);
-        return Ok((
-            config.cli.unwrap_or_default(),
-            config.lib_config.into(),
-            config.capture_ui.unwrap_or_default(),
-        ));
-    }
-    Ok((
-        args.cli.unwrap_or_default(),
-        args.lib_config.into(),
-        args.capture_ui.unwrap_or_default(),
-    ))
+        config
+    } else {
+        args
+    };
+
+    Ok(ResolvedConfig {
+        cli: merged.cli.unwrap_or_default(),
+        lib: merged.lib_config.into(),
+        ui: merged.capture_ui.unwrap_or_default(),
+        ocr: merged.ocr.unwrap_or_default(),
+    })
 }

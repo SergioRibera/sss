@@ -37,3 +37,4 @@ mouse_position = { git = "https://github.com/SergioRibera/mouse_position", branc
 sss_lib = { path = "../sss_lib" }
 sss_capture = { path = "../sss_capture" }
 sss_capture_ui = { path = "../sss_capture_ui" }
+sss_ocr = { path = "../sss_ocr" }

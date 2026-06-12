@@ -46,7 +46,19 @@ fn main() -> Result<(), Report> {
         })
         .install()?;
 
-    let (config, mut g_config, ui_config) = get_config()?;
+    let config::ResolvedConfig {
+        cli: config,
+        lib: mut g_config,
+        ui: ui_config,
+        ocr: ocr_config,
+    } = get_config()?;
+    tracing::info!(
+        enabled = ocr_config.is_enabled(),
+        tier = ?ocr_config.effective_tier(),
+        languages = ?ocr_config.languages(),
+        formula = ocr_config.formula,
+        "OCR configuration"
+    );
     if config.verbose {
         // Re-init at info level by overriding the existing filter. We do
         // that lazily here so the verbose flag is read after parsing.

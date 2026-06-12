@@ -4704,6 +4704,7 @@ dependencies = [
  "sss_capture",
  "sss_capture_ui",
  "sss_lib",
+ "sss_ocr",
  "thiserror 2.0.18",
  "toml",
  "tracing",

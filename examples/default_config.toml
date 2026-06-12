@@ -59,3 +59,18 @@ enable = false
 height = 40
 titlebar-padding = 10
 width = 120
+
+# OCR pipeline. On by default. The first launch downloads the model files
+# for the active tier + language list (see sss_ocr docs); subsequent
+# launches reuse the on-disk cache.
+[ocr]
+enable = true
+# auto picks light/standard/heavy based on host cores + RAM.
+tier = "auto"
+# First entry is the recogniser used at runtime; the rest are pre-cached
+# for fast switching. Use "auto" for the general PP-OCRv5 model.
+language = ["auto"]
+# Enable the formula recognition model (heavy tier only — ~220MB).
+formula = false
+# Custom on-disk cache. Leave commented to use $XDG_DATA_HOME/sss/models.
+# models-dir = "/var/cache/sss/models"
