@@ -102,7 +102,14 @@ fn main() -> Result<(), Report> {
             ocr_pipeline.clone(),
         )? {
             Some(pre) => pre,
-            None => std::process::exit(1),
+            None => {
+                // User pressed Esc / Cancel. Honour the "the download
+                // thread keeps running until the first download is done"
+                // requirement: block on the prewarm worker before
+                // exiting with the cancellation status code.
+                finish_prewarm(prewarm);
+                std::process::exit(1);
+            }
         };
         // OCR text copy short-circuits the image pipeline entirely: the
         // overlay only sets `copy_text` when the user pressed Ctrl+C with
