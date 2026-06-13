@@ -24,6 +24,7 @@ with lib; let
   codeConfig = import ./codeConfig.nix { inherit lib; };
   sharedConfig = import ./sharedConfig.nix { inherit lib; };
   captureUiConfig = import ./captureUiConfig.nix { inherit lib; };
+  ocrConfig = import ./ocrConfig.nix { inherit lib; };
   sssPackage = lists.optional cfgSSS.enable sss.packages.default;
   codePackage = lists.optional cfgSSS.code.enable sss.packages.code;
   # Emit only the keys the user actually set. We can't use the evaluated
@@ -49,6 +50,7 @@ with lib; let
       code = mergeDefs optSSS.code;
       general = mergeDefs optSSS.general;
       capture-ui = mergeDefs optSSS.capture-ui;
+      ocr = mergeDefs optSSS.ocr;
     })
     // (optionalAttrs (cfgSSS.imports != [ ]) { inherit (cfgSSS) imports; });
 in
@@ -97,6 +99,15 @@ in
         '';
         default = { };
         type = types.submodule { options = captureUiConfig; };
+      };
+
+      ocr = mkOption {
+        description = ''
+          OCR pipeline configuration: enable flag, model tier, language
+          set, formula opt-in and cache directory override.
+        '';
+        default = { };
+        type = types.submodule { options = ocrConfig; };
       };
     };
   };

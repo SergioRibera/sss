@@ -23,7 +23,9 @@
     # Iterate over Arm, x86 for MacOs 🍎 and Linux 🐧
     (flake-utils.lib.eachDefaultSystem (
       system: let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+        };
         crane = inputs.crane.mkLib pkgs;
         bundler = nix-bundle-app.lib.mkLib pkgs;
         sssBundle = import ./nix {

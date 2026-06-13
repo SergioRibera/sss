@@ -77,6 +77,9 @@ in
       wayland-protocols
       wayland-scanner
       dbus.dev
+      # onnxruntime for sss_ocr — the ort crate dlopens libonnxruntime
+      # at runtime when `ORT_PREFER_DYNAMIC_LINK=1` is set (see below).
+      onnxruntime
     ];
 
     # Libraries that the workspace loads via dlopen at runtime. These
@@ -99,6 +102,7 @@ in
       vulkan-loader
       libglvnd
       mesa
+      onnxruntime
     ];
 
     # Base args, need for build all crate artifacts and caching this for late builds
@@ -116,6 +120,12 @@ in
         ];
         runtimeDependencies = lib.optionals stdenv.hostPlatform.isLinux runtimeDeps;
       inherit buildInputs;
+      # ort-sys needs to find the system onnxruntime instead of trying
+      # to fetch a prebuilt blob (which fails in Nix's sandbox).
+      # `ORT_PREFER_DYNAMIC_LINK=1` flips ort to dlopen-at-runtime mode;
+      # `ORT_LIB_LOCATION` points it at the nixpkgs build.
+      ORT_LIB_LOCATION = "${pkgs.onnxruntime}/lib";
+      ORT_PREFER_DYNAMIC_LINK = "1";
     };
 
     # sss artifacts
@@ -184,6 +194,7 @@ in
           oranda
           cargo-edit
           cargo-dist
+          claude-code
           cargo-release
         ] ++ buildInputs;
       LD_LIBRARY_PATH = lib.makeLibraryPath runtimeDeps;
@@ -194,5 +205,10 @@ in
         "${pkgs.dbus.dev}/lib/pkgconfig"
         "${pkgs.libxcb.dev}/lib/pkgconfig"
       ];
+      # See `commonArgs` above — sss_ocr needs onnxruntime via ort's
+      # dynamic-link path, and the same env vars must be visible to
+      # `cargo build` inside the dev shell.
+      ORT_LIB_LOCATION = "${pkgs.onnxruntime}/lib";
+      ORT_PREFER_DYNAMIC_LINK = "1";
     };
   }
