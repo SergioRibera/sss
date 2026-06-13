@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
 use color_eyre::eyre::Report;
 use config::{get_config, OcrConfig};
 use img::Screenshot;
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-use sss_capture_ui::SelectorMode;
+use sss_capture_ui::{OcrPipeline, SelectorMode};
 use sss_lib::generate_image;
-use sss_ocr::PrewarmHandle;
+use sss_lib::image::RgbaImage;
+use sss_ocr::{Language, OcrEngine, PrewarmHandle, PrewarmStatus, PrewarmWaiter};
 use tracing_subscriber::EnvFilter;
 
 mod config;
@@ -61,6 +64,7 @@ fn main() -> Result<(), Report> {
         "OCR configuration"
     );
     let prewarm = start_prewarm(&ocr_config);
+    let ocr_pipeline = build_ocr_pipeline(&ocr_config, prewarm.as_ref().map(|h| h.waiter()));
     if config.verbose {
         // Re-init at info level by overriding the existing filter. We do
         // that lazily here so the verbose flag is read after parsing.
@@ -90,7 +94,13 @@ fn main() -> Result<(), Report> {
         // "user changed their mind". We exit 1 directly so scripts can
         // detect the cancel, but without color_eyre's big error chrome
         // which would otherwise present cancellation as a crash.
-        let pre = match interactive::run(&config, &g_config, &ui_config, mode)? {
+        let pre = match interactive::run(
+            &config,
+            &g_config,
+            &ui_config,
+            mode,
+            ocr_pipeline.clone(),
+        )? {
             Some(pre) => pre,
             None => std::process::exit(1),
         };
@@ -138,6 +148,63 @@ fn start_prewarm(ocr: &OcrConfig) -> Option<PrewarmHandle> {
         ocr.languages(),
         ocr.formula,
     ))
+}
+
+/// Builds the OCR submission closure passed to the interactive selector.
+///
+/// Each call to the returned closure spawns a one-shot worker that:
+///   1. blocks on `waiter` (so OCR can't run until models are on disk);
+///   2. builds an [`OcrEngine`] for the first configured language;
+///   3. runs recognition on the supplied RGBA frame;
+///   4. emits the resulting `Vec<TextBox>` through an `mpsc::channel`.
+///
+/// Returning `None` keeps the selector's OCR rx empty (and the canvas
+/// reports zero detections), which is the disabled-OCR path.
+fn build_ocr_pipeline(
+    ocr: &OcrConfig,
+    waiter: Option<PrewarmWaiter>,
+) -> Option<OcrPipeline> {
+    if !ocr.is_enabled() {
+        return None;
+    }
+    let tier = ocr.effective_tier();
+    let languages = ocr.languages();
+    let formula = ocr.formula;
+    let pipeline: OcrPipeline = Arc::new(move |image: RgbaImage| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let waiter = waiter.clone();
+        let languages = languages.clone();
+        std::thread::Builder::new()
+            .name("sss-ocr-worker".into())
+            .spawn(move || {
+                if let Some(w) = waiter {
+                    if matches!(w.block_until_done(), PrewarmStatus::Failed) {
+                        tracing::warn!("OCR worker giving up: prewarm failed");
+                        return;
+                    }
+                }
+                let language = languages
+                    .first()
+                    .copied()
+                    .unwrap_or(Language::Auto);
+                let engine = match OcrEngine::new(tier, language, formula) {
+                    Ok(e) => e,
+                    Err(err) => {
+                        tracing::warn!(%err, "OCR engine build failed");
+                        return;
+                    }
+                };
+                match engine.run(&image) {
+                    Ok(boxes) => {
+                        let _ = tx.send(boxes);
+                    }
+                    Err(err) => tracing::warn!(%err, "OCR inference failed"),
+                }
+            })
+            .expect("failed to spawn sss-ocr-worker thread");
+        rx
+    });
+    Some(pipeline)
 }
 
 /// Blocks until the prewarm worker finishes downloading every model.

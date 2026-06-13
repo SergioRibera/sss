@@ -3,12 +3,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::mpsc::Receiver;
 
 use sss_capture::Image as CapImage;
 use sss_capture::Monitor;
+use sss_core::ocr::TextBox;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId as WinitWindowId};
 
@@ -44,11 +46,22 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
         None
     };
 
+    // Kick off OCR as soon as we have the eager capture — the user's region
+    // selection runs in parallel with model inference. If either the
+    // pipeline is unset (OCR disabled) or the eager capture failed, skip.
+    let ocr_rx: Option<Receiver<Vec<TextBox>>> = match (&initial, &config.ocr_pipeline) {
+        (Some(img), Some(pipeline)) => {
+            tracing::debug!("dispatching eager frame to OCR pipeline");
+            Some(pipeline(img.as_rgba().clone()))
+        }
+        _ => None,
+    };
+
     let monitors = capturer.monitors().map_err(SelectorError::Capture)?;
 
     let event_loop =
         EventLoop::new().map_err(|e| SelectorError::Backend(format!("winit event loop: {e}")))?;
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    event_loop.set_control_flow(ControlFlow::Wait);
 
     let save_path_hint = config.save_path_hint.clone();
     let initial_mode = match config.mode {
@@ -88,6 +101,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
         capturer,
         monitors,
         initial,
+        ocr_rx,
         windows: Vec::new(),
         canvas,
         active_window: None,
@@ -187,6 +201,10 @@ struct App {
     capturer: Arc<sss_capture::Capturer>,
     monitors: Vec<Monitor>,
     initial: Option<CapImage>,
+    /// Pending OCR result. Polled in `about_to_wait`; on the first
+    /// successful recv the boxes go into the canvas and the receiver
+    /// is dropped so we revert to plain `ControlFlow::Wait`.
+    ocr_rx: Option<Receiver<Vec<TextBox>>>,
     windows: Vec<OverlayWindow>,
     canvas: Canvas,
     active_window: Option<WinitWindowId>,
@@ -445,6 +463,37 @@ impl App {
         drop(r);
         event_loop.exit();
     }
+
+    /// Pump the OCR result channel.
+    ///
+    /// While the worker is in flight we ask winit to wake us every
+    /// 200 ms; the moment a `Vec<TextBox>` lands we copy it into the
+    /// canvas, drop the receiver (so the next call is a no-op) and let
+    /// the loop fall back to `ControlFlow::Wait`.
+    fn poll_ocr(&mut self, event_loop: &dyn ActiveEventLoop) {
+        let Some(rx) = &self.ocr_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(boxes) => {
+                tracing::info!(count = boxes.len(), "OCR result received");
+                self.canvas.set_text_boxes(boxes);
+                self.ocr_rx = None;
+                event_loop.set_control_flow(ControlFlow::Wait);
+                self.broadcast_redraw();
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                let until =
+                    std::time::Instant::now() + std::time::Duration::from_millis(200);
+                event_loop.set_control_flow(ControlFlow::WaitUntil(until));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                tracing::warn!("OCR worker disconnected without a result");
+                self.ocr_rx = None;
+                event_loop.set_control_flow(ControlFlow::Wait);
+            }
+        }
+    }
 }
 
 struct OverlayWindow {
@@ -590,6 +639,10 @@ impl ApplicationHandler for App {
                 self.windows.iter().filter(|w| w.gpu.is_some()).count()
             );
         }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.poll_ocr(event_loop);
     }
 
     fn window_event(

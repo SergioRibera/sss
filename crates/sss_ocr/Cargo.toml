@@ -12,6 +12,7 @@ license.workspace = true
 default = []
 
 [dependencies]
+sss_core = { path = "../sss_core", features = ["serde"] }
 oar-ocr = { version = "0.7", default-features = false, features = ["simd", "auto-download"] }
 image = { version = "0.25", default-features = false, features = ["rayon"] }
 sysinfo = { version = "0.32", default-features = false, features = ["system"] }

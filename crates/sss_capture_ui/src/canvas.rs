@@ -1,6 +1,7 @@
 //! Canvas state — the editable model behind the overlay.
 
 use sss_capture::Rect;
+use sss_core::ocr::TextBox;
 
 use crate::geometry::{FPoint, FRect};
 use crate::shape::{Shape, ShapeId, ShapeKind, Style};
@@ -37,6 +38,9 @@ pub struct Canvas {
     pending_polygon: Option<Vec<FPoint>>,
     /// Hold-Shift constrain: snap lines to 45° and rect/ellipse to square.
     constrain: bool,
+    /// OCR detections in the captured image's pixel coordinate space.
+    /// Empty when OCR is disabled or still downloading models.
+    text_boxes: Vec<TextBox>,
 }
 
 impl Default for Canvas {
@@ -55,6 +59,7 @@ impl Default for Canvas {
             fill_color: None,
             pending_polygon: None,
             constrain: false,
+            text_boxes: Vec::new(),
         };
         // Seed history so the first user action is undoable.
         s.history.snapshot(&s.shapes);
@@ -79,6 +84,23 @@ impl Canvas {
 
     pub fn fill_color(&self) -> Option<crate::color::Color> {
         self.fill_color
+    }
+
+    /// OCR detections that should be drawn / hit-tested. Populated
+    /// asynchronously by the OCR worker once the recogniser finishes.
+    pub fn text_boxes(&self) -> &[TextBox] {
+        &self.text_boxes
+    }
+
+    /// Replace the OCR detection set. Called from the platform driver
+    /// when the OCR worker delivers its result.
+    pub fn set_text_boxes(&mut self, boxes: Vec<TextBox>) {
+        self.text_boxes = boxes;
+    }
+
+    /// True when OCR returned at least one detection.
+    pub fn has_ocr(&self) -> bool {
+        !self.text_boxes.is_empty()
     }
 
     /// All committed shapes, back-to-front.

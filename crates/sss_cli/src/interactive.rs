@@ -11,7 +11,8 @@ use std::path::PathBuf;
 use color_eyre::eyre::{eyre, Report};
 use sss_capture_ui::{
     sss_capture::{BackendKind, CaptureOptions, Capturer},
-    CaptureTrigger, Outcome, PostAction, SelectorBuilder, SelectorMode, ToolKind, UiConfig,
+    CaptureTrigger, OcrPipeline, Outcome, PostAction, SelectorBuilder, SelectorMode, ToolKind,
+    UiConfig,
 };
 use sss_lib::image::RgbaImage;
 use sss_lib::GenerationSettings;
@@ -41,6 +42,7 @@ pub fn run(
     g: &GenerationSettings,
     ui: &UiConfig,
     mode: SelectorMode,
+    ocr_pipeline: Option<OcrPipeline>,
 ) -> Result<Option<PreRendered>, Report> {
     let default_output = if g.output.trim().is_empty() || g.output == "out.png" {
         Some(default_screenshot_path())
@@ -90,6 +92,9 @@ pub fn run(
         if let Some(rect) = persist::load_last_area() {
             builder = builder.initial_area(rect);
         }
+    }
+    if let Some(pipeline) = ocr_pipeline {
+        builder = builder.ocr_pipeline(pipeline);
     }
 
     let selection = builder

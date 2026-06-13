@@ -2,8 +2,11 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::mpsc::Receiver;
 
+use image::RgbaImage;
 use sss_capture::{CaptureError, CaptureOptions, Capturer, Image, MonitorId, Rect, WindowId};
+use sss_core::ocr::TextBox;
 use thiserror::Error;
 
 use crate::canvas::Canvas;
@@ -11,6 +14,17 @@ use crate::config::UiConfig;
 use crate::mode::SelectorMode;
 use crate::tool::ToolPalette;
 use crate::trigger::{CaptureTrigger, KeyBind};
+
+/// Hook the CLI plugs in to run OCR over the eager-captured screenshot.
+///
+/// The selector calls the closure once, immediately after the eager
+/// capture succeeds, and stores the returned `Receiver`. Each redraw it
+/// `try_recv`s; the first message becomes [`Canvas::set_text_boxes`].
+///
+/// Returning `Receiver<Vec<TextBox>>` instead of a future keeps this crate
+/// runtime-agnostic — the implementation just spawns a `std::thread`.
+pub type OcrPipeline =
+    Arc<dyn Fn(RgbaImage) -> Receiver<Vec<TextBox>> + Send + Sync>;
 
 /// What the overlay produced.
 #[derive(Clone, Debug)]
@@ -78,7 +92,6 @@ pub struct Selection {
 }
 
 /// Builder for [`Selector`].
-#[derive(Debug)]
 pub struct SelectorBuilder {
     mode: SelectorMode,
     toolbar: bool,
@@ -92,6 +105,27 @@ pub struct SelectorBuilder {
     show_save: bool,
     save_path_hint: Option<PathBuf>,
     initial_area: Option<Rect>,
+    ocr_pipeline: Option<OcrPipeline>,
+}
+
+impl std::fmt::Debug for SelectorBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SelectorBuilder")
+            .field("mode", &self.mode)
+            .field("toolbar", &self.toolbar)
+            .field("ui", &self.ui)
+            .field("palette_override", &self.palette_override)
+            .field("trigger", &self.trigger)
+            .field("capturer", &self.capturer)
+            .field("capture_opts", &self.capture_opts)
+            .field("confirm_with_enter", &self.confirm_with_enter)
+            .field("show_copy", &self.show_copy)
+            .field("show_save", &self.show_save)
+            .field("save_path_hint", &self.save_path_hint)
+            .field("initial_area", &self.initial_area)
+            .field("ocr_pipeline", &self.ocr_pipeline.as_ref().map(|_| "<fn>"))
+            .finish()
+    }
 }
 
 impl Default for SelectorBuilder {
@@ -109,6 +143,7 @@ impl Default for SelectorBuilder {
             show_save: true,
             save_path_hint: None,
             initial_area: None,
+            ocr_pipeline: None,
         }
     }
 }
@@ -184,6 +219,15 @@ impl SelectorBuilder {
         self
     }
 
+    /// Plug an OCR pipeline in. When set, the eager-captured frame is
+    /// pushed into the closure as soon as the overlay opens; results
+    /// flow back through the returned `Receiver` and end up in the
+    /// canvas via [`Canvas::set_text_boxes`].
+    pub fn ocr_pipeline(mut self, pipeline: OcrPipeline) -> Self {
+        self.ocr_pipeline = Some(pipeline);
+        self
+    }
+
     pub fn build(self) -> Result<Selector, SelectorError> {
         let capturer = match self.capturer {
             Some(c) => c,
@@ -210,6 +254,7 @@ impl SelectorBuilder {
                 show_save: self.show_save,
                 save_path_hint: self.save_path_hint,
                 initial_area: self.initial_area,
+                ocr_pipeline: self.ocr_pipeline,
             },
             capturer,
         })
@@ -223,7 +268,7 @@ pub struct Selector {
     pub(crate) capturer: Arc<Capturer>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct Config {
     pub mode: SelectorMode,
     pub toolbar: bool,
@@ -236,6 +281,26 @@ pub(crate) struct Config {
     pub show_save: bool,
     pub save_path_hint: Option<PathBuf>,
     pub initial_area: Option<Rect>,
+    pub ocr_pipeline: Option<OcrPipeline>,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("mode", &self.mode)
+            .field("toolbar", &self.toolbar)
+            .field("palette", &self.palette)
+            .field("ui", &self.ui)
+            .field("trigger", &self.trigger)
+            .field("capture_opts", &self.capture_opts)
+            .field("confirm_with_enter", &self.confirm_with_enter)
+            .field("show_copy", &self.show_copy)
+            .field("show_save", &self.show_save)
+            .field("save_path_hint", &self.save_path_hint)
+            .field("initial_area", &self.initial_area)
+            .field("ocr_pipeline", &self.ocr_pipeline.as_ref().map(|_| "<fn>"))
+            .finish()
+    }
 }
 
 impl Selector {

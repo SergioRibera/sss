@@ -81,6 +81,45 @@ impl PrewarmHandle {
     pub fn is_finished(&self) -> bool {
         !matches!(self.status(), PrewarmStatus::InProgress)
     }
+
+    /// Cheap clonable token that lets a background thread block on the
+    /// prewarm result without owning the [`PrewarmHandle`] itself (the
+    /// `JoinHandle` is consumed by [`Self::wait`] in `main`).
+    pub fn waiter(&self) -> PrewarmWaiter {
+        PrewarmWaiter {
+            status: Arc::clone(&self.status),
+        }
+    }
+}
+
+/// Shared, lock-free view of a prewarm worker's status.
+///
+/// Clones over to any thread that wants to gate work on download completion
+/// (e.g. the per-capture OCR submission worker that fires once the user
+/// has confirmed a region).
+#[derive(Debug, Clone)]
+pub struct PrewarmWaiter {
+    status: Arc<AtomicU8>,
+}
+
+impl PrewarmWaiter {
+    pub fn status(&self) -> PrewarmStatus {
+        PrewarmStatus::from_u8(self.status.load(Ordering::Acquire))
+    }
+
+    /// Spin-with-sleep until the worker leaves [`PrewarmStatus::InProgress`].
+    ///
+    /// Polls every 150 ms; OCR submission is already off the UI thread so
+    /// the small latency is invisible to the user.
+    pub fn block_until_done(&self) -> PrewarmStatus {
+        loop {
+            let s = self.status();
+            if !matches!(s, PrewarmStatus::InProgress) {
+                return s;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+    }
 }
 
 /// Spawns a worker thread that constructs each `(tier, language)` pipeline

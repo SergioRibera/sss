@@ -4770,6 +4770,7 @@ dependencies = [
  "num_cpus",
  "oar-ocr",
  "serde",
+ "sss_core",
  "sysinfo",
  "thiserror 2.0.18",
  "tracing",

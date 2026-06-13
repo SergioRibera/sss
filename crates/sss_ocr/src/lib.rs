@@ -16,7 +16,7 @@ mod types;
 pub use engine::OcrEngine;
 pub use error::OcrError;
 pub use hardware::{Tier, resolve_tier};
-pub use prewarm::{PrewarmHandle, PrewarmStatus, spawn_prewarm};
+pub use prewarm::{PrewarmHandle, PrewarmStatus, PrewarmWaiter, spawn_prewarm};
 pub use registry::{Language, ModelSet, resolve_language, resolve_models, union_files};
 pub use types::{TextBox, TextPoint};
 
