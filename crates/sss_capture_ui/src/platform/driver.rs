@@ -79,6 +79,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
             copy: false,
             save: false,
             save_path_hint: save_path_hint.clone(),
+            copy_text: None,
         },
     }));
     #[cfg(feature = "editor")]
@@ -111,6 +112,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
             copy: false,
             save: false,
             save_path_hint,
+            copy_text: None,
         },
         mods: ModState::default(),
         #[cfg(feature = "editor")]
@@ -459,6 +461,7 @@ impl App {
             copy: self.action.copy,
             save: self.action.save,
             save_path_hint: self.action.save_path_hint.take(),
+            copy_text: self.action.copy_text.take(),
         };
         drop(r);
         event_loop.exit();
@@ -755,7 +758,15 @@ impl ApplicationHandler for App {
                         self.canvas.handle(CanvasEvent::Redo);
                     }
                     Key::Character("c") | Key::Character("C") if self.mods.ctrl => {
-                        self.action.copy = true;
+                        // OCR text first: Ctrl+C with a non-empty selection
+                        // copies the joined text rather than the image. The
+                        // CLI side checks `copy_text` ahead of `copy` and
+                        // bypasses the image pipeline when present.
+                        if let Some(text) = self.canvas.selected_text() {
+                            self.action.copy_text = Some(text);
+                        } else {
+                            self.action.copy = true;
+                        }
                         self.confirm(event_loop);
                     }
                     Key::Character("s") | Key::Character("S") if self.mods.ctrl => {
@@ -937,6 +948,22 @@ impl ApplicationHandler for App {
                                             return;
                                         }
                                     }
+                                }
+                            }
+                            // OCR selection: when the Pointer tool is active
+                            // and the click lands inside a recognised text
+                            // polygon, toggle that box in the selection set
+                            // and swallow the event so PointerDown doesn't
+                            // start a region drag.
+                            if matches!(
+                                self.canvas.active_tool,
+                                crate::tool::Tool::Pointer
+                            ) && self.canvas.has_ocr()
+                            {
+                                if let Some(idx) = self.canvas.ocr_hit(pt.x, pt.y) {
+                                    self.canvas.toggle_text_box_selection(idx);
+                                    self.broadcast_redraw();
+                                    return;
                                 }
                             }
                             self.canvas.handle(CanvasEvent::PointerDown(pt));

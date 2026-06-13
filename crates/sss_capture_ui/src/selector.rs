@@ -81,6 +81,12 @@ pub struct PostAction {
     pub copy: bool,
     pub save: bool,
     pub save_path_hint: Option<PathBuf>,
+    /// Set when the user pressed Ctrl+C with at least one OCR text box
+    /// selected. Mutually exclusive with `copy` (which means "copy the
+    /// pre-rendered screenshot"): the CLI checks `copy_text` first and
+    /// writes the joined OCR text to the system clipboard, skipping the
+    /// image pipeline entirely.
+    pub copy_text: Option<String>,
 }
 
 /// Aggregate result of a [`Selector::run`] call.

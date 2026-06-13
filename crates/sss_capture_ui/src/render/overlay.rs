@@ -511,8 +511,11 @@ fn draw_ocr_boxes(
     screen_offset: Pos2,
     region_color: Color32,
 ) {
-    let stroke = Stroke::new(1.0, region_color.gamma_multiply(0.55));
-    for tb in canvas.text_boxes() {
+    let idle = Stroke::new(1.0, region_color.gamma_multiply(0.55));
+    let active = Stroke::new(1.8, Color32::from_rgba_premultiplied(255, 200, 64, 220));
+    let active_fill = Color32::from_rgba_premultiplied(255, 200, 64, 28);
+    let selected = canvas.selected_text_indices();
+    for (i, tb) in canvas.text_boxes().iter().enumerate() {
         if tb.polygon.len() < 3 {
             continue;
         }
@@ -521,8 +524,12 @@ fn draw_ocr_boxes(
             .iter()
             .map(|p| Pos2::new(p.x - screen_offset.x, p.y - screen_offset.y))
             .collect();
-        pts.push(pts[0]);
-        painter.add(egui::Shape::line(pts, stroke));
+        if selected.contains(&i) {
+            painter.add(egui::Shape::convex_polygon(pts, active_fill, active));
+        } else {
+            pts.push(pts[0]);
+            painter.add(egui::Shape::line(pts, idle));
+        }
     }
 }
 

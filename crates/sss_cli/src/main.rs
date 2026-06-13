@@ -104,6 +104,17 @@ fn main() -> Result<(), Report> {
             Some(pre) => pre,
             None => std::process::exit(1),
         };
+        // OCR text copy short-circuits the image pipeline entirely: the
+        // overlay only sets `copy_text` when the user pressed Ctrl+C with
+        // at least one OCR box selected, so the intent is "text, not
+        // screenshot". Bypass `generate_image` and exit clean.
+        if let Some(text) = pre.action.copy_text.as_ref() {
+            if let Err(err) = sss_lib::copy_text_to_clipboard(text) {
+                tracing::warn!(%err, "failed to copy OCR text to clipboard");
+            }
+            finish_prewarm(prewarm);
+            return Ok(());
+        }
         // The GUI may have flipped Copy / Save intent. Honour them only when
         // the CLI itself didn't already specify them.
         if pre.action.copy && !g_config.copy {

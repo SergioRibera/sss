@@ -224,3 +224,24 @@ fn copy_image_to_clipboard(img: &RgbaImage) -> Result<(), ImagenGeneration> {
     })?;
     Ok(())
 }
+
+/// Push `text` to the system clipboard. Used by the OCR text-copy flow:
+/// when the user clicks a recognised text box and presses `Ctrl+C`, the
+/// CLI calls this instead of the image clipboard path.
+///
+/// Unlike [`copy_image_to_clipboard`] we don't go through the wlr
+/// `data-control` protocol — arboard's text setter is small and
+/// well-supported across compositors / X11 / Windows / macOS, and a single
+/// short string doesn't justify a hand-rolled wayland source.
+pub fn copy_text_to_clipboard(text: &str) -> Result<(), ImagenGeneration> {
+    let mut c = arboard::Clipboard::new()?;
+    #[cfg(target_os = "linux")]
+    let set = c
+        .set()
+        .clipboard(arboard::LinuxClipboardKind::Clipboard)
+        .wait();
+    #[cfg(not(target_os = "linux"))]
+    let set = c.set();
+    set.text(text.to_owned())?;
+    Ok(())
+}
