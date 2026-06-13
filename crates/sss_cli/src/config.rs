@@ -353,7 +353,9 @@ pub struct OcrConfig {
     /// Run the OCR pipeline after every capture. When false the selector
     /// behaves exactly as the OCR-less build did.
     #[clap(
+        id = "ocr-enable",
         long = "ocr",
+        value_name = "BOOL",
         num_args = 0..=1,
         default_missing_value = "true",
         value_parser = clap::builder::BoolishValueParser::new(),
