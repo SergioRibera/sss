@@ -154,6 +154,9 @@ pub fn draw_canvas(
     for shape in canvas.shapes() {
         draw_shape(painter, shape, screen_offset, blurred_bg, monitor_size_px);
     }
+    if matches!(canvas.active_tool, Tool::Pointer) && canvas.has_ocr() {
+        draw_ocr_boxes(painter, canvas, screen_offset, region_color);
+    }
     if let Some(preview) = canvas.preview_shape() {
         draw_shape(painter, &preview, screen_offset, blurred_bg, monitor_size_px);
     }
@@ -492,6 +495,34 @@ fn draw_shape(
                 painter.line_segment([last, first], stroke);
             }
         }
+    }
+}
+
+/// Paint a thin polygon outline over every OCR-detected text region in
+/// screen space.
+///
+/// Drawn only while the Pointer (select) tool is active — for every other
+/// tool the boxes would compete with brush strokes / shape previews. The
+/// fill is left transparent so the underlying screenshot remains legible;
+/// hover / selection visuals come in a later milestone.
+fn draw_ocr_boxes(
+    painter: &egui::Painter,
+    canvas: &Canvas,
+    screen_offset: Pos2,
+    region_color: Color32,
+) {
+    let stroke = Stroke::new(1.0, region_color.gamma_multiply(0.55));
+    for tb in canvas.text_boxes() {
+        if tb.polygon.len() < 3 {
+            continue;
+        }
+        let mut pts: Vec<Pos2> = tb
+            .polygon
+            .iter()
+            .map(|p| Pos2::new(p.x - screen_offset.x, p.y - screen_offset.y))
+            .collect();
+        pts.push(pts[0]);
+        painter.add(egui::Shape::line(pts, stroke));
     }
 }
 
