@@ -15,7 +15,8 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -24,6 +25,14 @@ use oar_ocr::download;
 use crate::error::OcrError;
 use crate::hardware::Tier;
 use crate::registry::{Language, union_files};
+
+/// Default download concurrency. ModelScope throttles per-connection on
+/// most edges; 4 parallel fetches saturate residential links without
+/// tripping per-IP rate limits.
+const DEFAULT_PARALLEL: usize = 4;
+/// Hard upper bound to keep accidental `SSS_OCR_PARALLEL=999` from
+/// stampeding the mirror.
+const MAX_PARALLEL: usize = 12;
 
 /// Coarse state machine for the prewarm worker.
 ///
@@ -160,37 +169,108 @@ pub fn spawn_prewarm(
                 .iter()
                 .filter_map(|n| download::find(n).map(|e| e.size))
                 .sum();
+            let parallelism = resolve_parallelism(pending.len());
             eprintln!(
-                "[OCR] downloading {} model file(s), {} total → {}",
+                "[OCR] downloading {} model file(s), {} total, {} parallel → {}",
                 pending.len(),
                 human_bytes(total_bytes),
+                parallelism,
                 dir.display()
             );
-            for (i, file) in pending.iter().enumerate() {
-                let size = download::find(file).map(|e| e.size).unwrap_or(0);
-                eprintln!(
-                    "[OCR] {}/{}  {}  ({})",
-                    i + 1,
-                    pending.len(),
-                    file,
-                    human_bytes(size)
+
+            // Shared work queue + counters. The queue is drained from the
+            // back by workers (cheap `Vec::pop`); the order doesn't matter
+            // because every file is independent.
+            let queue: Arc<Mutex<Vec<&'static str>>> =
+                Arc::new(Mutex::new(pending.clone()));
+            let done_count = Arc::new(AtomicUsize::new(0));
+            let failure: Arc<Mutex<Option<OcrError>>> = Arc::new(Mutex::new(None));
+            let stop_watch = Arc::new(AtomicBool::new(false));
+
+            // Single aggregate progress watcher — printing per-file bars
+            // from N parallel workers would clobber each other on stderr.
+            let watch_dir = dir.clone();
+            let watch_pending = pending.clone();
+            let watch_total = total_bytes;
+            let watch_count = pending.len();
+            let watch_done = Arc::clone(&done_count);
+            let watch_stop = Arc::clone(&stop_watch);
+            let watcher = thread::Builder::new()
+                .name("sss-ocr-progress".into())
+                .spawn(move || {
+                    aggregate_loop(
+                        &watch_dir,
+                        &watch_pending,
+                        watch_total,
+                        watch_count,
+                        &watch_done,
+                        &watch_stop,
+                    )
+                })
+                .expect("failed to spawn aggregate progress watcher");
+
+            let mut workers = Vec::with_capacity(parallelism);
+            for i in 0..parallelism {
+                let queue = Arc::clone(&queue);
+                let done_count = Arc::clone(&done_count);
+                let failure = Arc::clone(&failure);
+                workers.push(
+                    thread::Builder::new()
+                        .name(format!("sss-ocr-fetch-{i}"))
+                        .spawn(move || {
+                            loop {
+                                // Bail early if a sibling worker already
+                                // hit an error — no point pulling more
+                                // files we're about to discard.
+                                if failure
+                                    .lock()
+                                    .map(|g| g.is_some())
+                                    .unwrap_or(false)
+                                {
+                                    return;
+                                }
+                                let next = queue
+                                    .lock()
+                                    .expect("download queue poisoned")
+                                    .pop();
+                                let Some(file) = next else {
+                                    return;
+                                };
+                                match download::fetch(file) {
+                                    Ok(_) => {
+                                        done_count
+                                            .fetch_add(1, Ordering::AcqRel);
+                                    }
+                                    Err(e) => {
+                                        let mut slot = failure
+                                            .lock()
+                                            .expect("failure mutex poisoned");
+                                        if slot.is_none() {
+                                            *slot = Some(OcrError::from(e));
+                                        }
+                                        return;
+                                    }
+                                }
+                            }
+                        })
+                        .expect("failed to spawn fetch worker"),
                 );
-                let stop = Arc::new(AtomicBool::new(false));
-                let stop_watch = Arc::clone(&stop);
-                let dir_watch = dir.clone();
-                let name_watch = file.to_string();
-                let watcher = thread::Builder::new()
-                    .name(format!("sss-ocr-progress-{file}"))
-                    .spawn(move || progress_loop(&dir_watch, &name_watch, size, &stop_watch))
-                    .expect("failed to spawn progress watcher");
-                let result = download::fetch(file).map_err(OcrError::from);
-                stop.store(true, Ordering::Release);
-                let _ = watcher.join();
-                if let Err(err) = result {
-                    eprintln!("[OCR] failed to download {file}: {err}");
-                    status_thread.store(PrewarmStatus::Failed as u8, Ordering::Release);
-                    return Err(err);
-                }
+            }
+            for w in workers {
+                let _ = w.join();
+            }
+            stop_watch.store(true, Ordering::Release);
+            let _ = watcher.join();
+
+            if let Some(err) = failure
+                .lock()
+                .expect("failure mutex poisoned")
+                .take()
+            {
+                eprintln!("[OCR] download failed: {err}");
+                status_thread
+                    .store(PrewarmStatus::Failed as u8, Ordering::Release);
+                return Err(err);
             }
             eprintln!("[OCR] all models ready");
             status_thread.store(PrewarmStatus::Done as u8, Ordering::Release);
@@ -220,34 +300,62 @@ fn is_cached(dir: &Path, name: &str) -> bool {
     }
 }
 
-/// Live progress bar pinned to one model file.
+/// Resolve worker count.
 ///
-/// oar-ocr downloads into `.{name}.{pid}.{counter}.part` then renames into
-/// place on success, so we sum every `.part` file matching the prefix and
-/// fall back to the final file once the rename happens.
-fn progress_loop(dir: &Path, name: &str, total: u64, stop: &AtomicBool) {
-    let prefix = format!(".{name}.");
-    let target = dir.join(name);
-    let mut last = 0u64;
-    while !stop.load(Ordering::Acquire) {
-        let cur = match fs::metadata(&target) {
-            Ok(m) if m.is_file() => m.len(),
-            _ => partial_size(dir, &prefix),
-        };
-        if cur != last {
-            print_bar(name, cur, total);
-            last = cur;
-        }
-        thread::sleep(Duration::from_millis(200));
-    }
-    // Final render so the bar always shows 100% on a successful download.
-    let cur = fs::metadata(dir.join(name))
+/// Honours `SSS_OCR_PARALLEL`, clamped to `[1, MAX_PARALLEL]`, and bounded
+/// by the number of files so we never spawn idle workers.
+fn resolve_parallelism(file_count: usize) -> usize {
+    let requested = std::env::var("SSS_OCR_PARALLEL")
         .ok()
-        .filter(|m| m.is_file())
-        .map(|m| m.len())
-        .unwrap_or(last);
-    print_bar(name, cur, total);
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(DEFAULT_PARALLEL);
+    requested.clamp(1, MAX_PARALLEL).min(file_count.max(1))
+}
+
+/// Live aggregate progress bar across every file currently downloading.
+///
+/// Per-file bars would clobber each other from N parallel workers, so we
+/// instead summarise: completed-files / total-files, bytes-on-disk /
+/// total-bytes, and a single percentage. Polled every 300 ms; the cost is
+/// one `read_dir` per tick.
+fn aggregate_loop(
+    dir: &Path,
+    pending: &[&'static str],
+    total: u64,
+    count: usize,
+    done: &AtomicUsize,
+    stop: &AtomicBool,
+) {
+    while !stop.load(Ordering::Acquire) {
+        let bytes = aggregate_bytes(dir, pending);
+        let d = done.load(Ordering::Acquire);
+        print_aggregate(d, count, bytes, total);
+        thread::sleep(Duration::from_millis(300));
+    }
+    let bytes = aggregate_bytes(dir, pending);
+    let d = done.load(Ordering::Acquire);
+    print_aggregate(d, count, bytes, total);
     let _ = writeln!(std::io::stderr());
+}
+
+/// Sum the bytes on disk across every `pending` file — counting the final
+/// path first, falling back to the `.part` tmp files oar-ocr writes during
+/// transfer (see `download_and_verify` upstream).
+fn aggregate_bytes(dir: &Path, pending: &[&'static str]) -> u64 {
+    let mut total = 0u64;
+    for name in pending {
+        let target = dir.join(name);
+        if let Ok(m) = fs::metadata(&target) {
+            if m.is_file() {
+                total += m.len();
+                continue;
+            }
+        }
+        let prefix = format!(".{name}.");
+        total += partial_size(dir, &prefix);
+    }
+    total
 }
 
 fn partial_size(dir: &Path, prefix: &str) -> u64 {
@@ -269,12 +377,12 @@ fn partial_size(dir: &Path, prefix: &str) -> u64 {
     total
 }
 
-fn print_bar(name: &str, cur: u64, total: u64) {
-    const WIDTH: usize = 24;
+fn print_aggregate(done: usize, count: usize, bytes: u64, total: u64) {
+    const WIDTH: usize = 30;
     let pct = if total == 0 {
         0.0
     } else {
-        (cur as f64 / total as f64).clamp(0.0, 1.0)
+        (bytes as f64 / total as f64).clamp(0.0, 1.0)
     };
     let filled = (pct * WIDTH as f64).round() as usize;
     let bar: String = std::iter::repeat('#')
@@ -284,8 +392,8 @@ fn print_bar(name: &str, cur: u64, total: u64) {
     let mut stderr = std::io::stderr();
     let _ = write!(
         stderr,
-        "\r[OCR] {name} [{bar}] {} / {} ({:>5.1}%)   ",
-        human_bytes(cur),
+        "\r[OCR] [{bar}] {done}/{count} files  {} / {}  ({:>5.1}%)   ",
+        human_bytes(bytes),
         human_bytes(total),
         pct * 100.0
     );
