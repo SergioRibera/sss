@@ -32,6 +32,7 @@ pub use config::{ChromeColors, ToolKind, UiConfig};
 pub use mode::SelectorMode;
 pub use selector::{
     OcrPipeline, Outcome, PostAction, Selection, Selector, SelectorBuilder, SelectorError,
+    TextClipboard,
 };
 pub use shape::{Shape, ShapeId, ShapeKind, Style, TextStyle};
 pub use tool::{BrushSettings, StepSettings, Tool, ToolPalette};

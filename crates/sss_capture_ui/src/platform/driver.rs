@@ -57,20 +57,36 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
         SelectorMode::AnyOf => SelectorMode::Area,
         m => m,
     };
+    let initial_area = config.initial_area;
     // Window / Monitor pickers commit on a single click, so OCR has to be
     // ready by the time the user picks. We dispatch the eager full-frame
     // capture immediately for those modes. In Area mode we skip the
     // full-frame run entirely — the cropped re-dispatch fired by
     // `maybe_redispatch_ocr_for_region` on the first pointer-up is both
     // faster and gives the detection model a better resolution for the
-    // text the user actually cares about.
+    // text the user actually cares about. When the caller pre-seeds a
+    // saved area (`initial_area`), kick off the cropped OCR right away
+    // so the boxes are already there when the overlay opens.
     let dispatch_initial_full_frame =
         !matches!(initial_mode, SelectorMode::Area);
+    let mut ocr_pending_offset = (0, 0);
+    let mut ocr_last_region: Option<IRect> = None;
     let ocr_rx: Option<Receiver<Vec<TextBox>>> = match (&initial, &config.ocr_pipeline) {
         (Some(img), Some(pipeline)) if dispatch_initial_full_frame => {
             tracing::debug!(?initial_mode, "dispatching eager frame to OCR pipeline");
             Some(pipeline(img.as_rgba().clone()))
         }
+        (Some(img), Some(pipeline)) => match initial_area
+            .and_then(|r| crop_region(img.as_rgba(), r))
+        {
+            Some((crop, region, offset)) => {
+                tracing::debug!(?region, "dispatching cropped OCR for pre-seeded area");
+                ocr_pending_offset = offset;
+                ocr_last_region = Some(region);
+                Some(pipeline(crop))
+            }
+            None => None,
+        },
         _ => None,
     };
     // `EventLoop::run_app` moves and drops `app`, so the canvas / outcome /
@@ -84,7 +100,6 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
             copy: false,
             save: false,
             save_path_hint: save_path_hint.clone(),
-            copy_text: None,
         },
     }));
     #[cfg(feature = "editor")]
@@ -97,7 +112,6 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
     let snap_step_init = config.ui.snap_step.max(2.0);
     #[cfg(feature = "editor")]
     let initial_fill = config.ui.default_fill;
-    let initial_area = config.initial_area;
     let mut canvas = Canvas::default();
     if let Some(rect) = initial_area {
         canvas.set_region(Some(rect));
@@ -107,9 +121,11 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
         capturer,
         monitors,
         initial,
+        clipboard_worker: None,
         ocr_rx,
-        ocr_pending_offset: (0, 0),
-        ocr_last_region: None,
+        ocr_pending_offset,
+        ocr_last_region,
+        pending_ocr_toggle: None,
         windows: Vec::new(),
         canvas,
         active_window: None,
@@ -119,7 +135,6 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
             copy: false,
             save: false,
             save_path_hint,
-            copy_text: None,
         },
         mods: ModState::default(),
         #[cfg(feature = "editor")]
@@ -210,6 +225,12 @@ struct App {
     capturer: Arc<sss_capture::Capturer>,
     monitors: Vec<Monitor>,
     initial: Option<CapImage>,
+    /// In-flight clipboard-handoff worker, if any. Joined in
+    /// `flush_and_exit` so the process doesn't tear down before the
+    /// compositor / clipboard manager has read our selection — without
+    /// the join, hitting Esc right after copying would wipe whatever the
+    /// user just put on the clipboard.
+    clipboard_worker: Option<std::thread::JoinHandle<()>>,
     /// Pending OCR result. Polled in `about_to_wait`; on the first
     /// successful recv the boxes go into the canvas and the receiver
     /// is dropped so we revert to plain `ControlFlow::Wait`.
@@ -222,6 +243,13 @@ struct App {
     /// initial full-frame dispatch. Used to skip redundant re-OCR when a
     /// pointer-up doesn't actually move the region.
     ocr_last_region: Option<IRect>,
+    /// Deferred OCR text-box toggle. When the Pointer tool clicks on a
+    /// text box inside a region, we still want clicking to toggle the
+    /// box AND dragging to move the region — so we stash the target
+    /// index + press position here, start the canvas drag normally and
+    /// decide at PointerUp: small delta → fire the toggle and cancel
+    /// the drag; large delta → drop the toggle and let the move commit.
+    pending_ocr_toggle: Option<(FPoint, usize)>,
     windows: Vec<OverlayWindow>,
     canvas: Canvas,
     active_window: Option<WinitWindowId>,
@@ -476,9 +504,28 @@ impl App {
             copy: self.action.copy,
             save: self.action.save,
             save_path_hint: self.action.save_path_hint.take(),
-            copy_text: self.action.copy_text.take(),
         };
         drop(r);
+        if let Some(handle) = self.clipboard_worker.take() {
+            // Bounded wait: a responsive clipboard manager grabs the
+            // selection in <100 ms, but if none is around the worker
+            // keeps the wayland source alive until HANDOFF_TIMEOUT — we
+            // don't want to make the user stare at a frozen overlay
+            // that long. Poll `is_finished` for a short grace period,
+            // then exit regardless.
+            let deadline =
+                std::time::Instant::now() + std::time::Duration::from_millis(250);
+            while !handle.is_finished() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            if handle.is_finished() {
+                let _ = handle.join();
+            } else {
+                tracing::debug!(
+                    "clipboard worker still running at exit; detaching (compositor will keep selection alive)"
+                );
+            }
+        }
         event_loop.exit();
     }
 
@@ -525,6 +572,47 @@ impl App {
         }
     }
 
+    /// Inline OCR text copy.
+    ///
+    /// Returns `true` when at least one OCR text box was selected and the
+    /// caller should treat the Copy gesture as already handled — the
+    /// selection is cleared and the joined text is pushed to the system
+    /// clipboard via the injected `text_clipboard` closure. Returns
+    /// `false` when there's nothing to copy (no OCR selection) so the
+    /// caller can fall back to the regular image-copy + close flow.
+    fn copy_selected_text_inline(&mut self) -> bool {
+        let Some(text) = self.canvas.selected_text() else {
+            return false;
+        };
+        let Some(clip) = self.config.text_clipboard.clone() else {
+            tracing::warn!(
+                "OCR text selected but no text_clipboard hook was installed; falling back to image copy"
+            );
+            return false;
+        };
+        // Run the clipboard handoff on a worker so the overlay doesn't
+        // freeze for the few ms the compositor takes to read the
+        // selection. The handle is stashed on `App.clipboard_worker` and
+        // joined on `flush_and_exit`, so we never tear the process down
+        // before the clipboard manager has actually grabbed the bytes —
+        // otherwise hitting Esc immediately after copy would wipe what
+        // the user just put on the clipboard.
+        if let Some(prev) = self.clipboard_worker.take() {
+            let _ = prev.join();
+        }
+        let handle = std::thread::Builder::new()
+            .name("sss-text-clipboard".into())
+            .spawn(move || {
+                if let Err(err) = clip(&text) {
+                    tracing::warn!(%err, "failed to copy OCR text to clipboard");
+                }
+            })
+            .expect("failed to spawn sss-text-clipboard thread");
+        self.clipboard_worker = Some(handle);
+        self.canvas.clear_text_selection();
+        true
+    }
+
     /// Re-run OCR on the currently selected region. Cropping the input to
     /// just the region gives the detection network a tighter aspect ratio
     /// (no terminal-sized glyphs vanishing under a 2× downscale) and is
@@ -541,31 +629,44 @@ impl App {
         let Some(region) = self.canvas.region() else {
             return;
         };
-        if region.width() < 4 || region.height() < 4 {
-            return;
-        }
         if Some(region) == self.ocr_last_region {
             return;
         }
-        let frame_w = img.width() as i32;
-        let frame_h = img.height() as i32;
-        let x = region.x().max(0).min(frame_w);
-        let y = region.y().max(0).min(frame_h);
-        let right = region.right().max(0).min(frame_w);
-        let bottom = region.bottom().max(0).min(frame_h);
-        let w = (right - x) as u32;
-        let h = (bottom - y) as u32;
-        if w < 4 || h < 4 {
+        let Some((crop, clamped, offset)) = crop_region(img.as_rgba(), region) else {
             return;
-        }
-        let crop = image::imageops::crop_imm(img.as_rgba(), x as u32, y as u32, w, h).to_image();
-        tracing::info!(x, y, w, h, "dispatching cropped OCR for region");
+        };
+        tracing::info!(?clamped, "dispatching cropped OCR for region");
         self.ocr_rx = Some(pipeline(crop));
-        self.ocr_pending_offset = (x, y);
-        self.ocr_last_region = Some(region);
+        self.ocr_pending_offset = offset;
+        self.ocr_last_region = Some(clamped);
         let until = std::time::Instant::now() + std::time::Duration::from_millis(50);
         event_loop.set_control_flow(ControlFlow::WaitUntil(until));
     }
+}
+
+/// Clamp `region` to the frame, crop the matching sub-image, and return
+/// the new RGBA crop alongside the clamped region (in frame coords) and
+/// its `(x, y)` offset for translating detected polygons back into frame
+/// space. Returns `None` when the clamped region is degenerate (< 4 px on
+/// either side).
+fn crop_region(
+    img: &image::RgbaImage,
+    region: IRect,
+) -> Option<(image::RgbaImage, IRect, (i32, i32))> {
+    let frame_w = img.width() as i32;
+    let frame_h = img.height() as i32;
+    let x = region.x().max(0).min(frame_w);
+    let y = region.y().max(0).min(frame_h);
+    let right = region.right().max(0).min(frame_w);
+    let bottom = region.bottom().max(0).min(frame_h);
+    let w = (right - x) as u32;
+    let h = (bottom - y) as u32;
+    if w < 4 || h < 4 {
+        return None;
+    }
+    let crop = image::imageops::crop_imm(img, x as u32, y as u32, w, h).to_image();
+    let clamped = IRect::from_xywh(x, y, w, h);
+    Some((crop, clamped, (x, y)))
 }
 
 struct OverlayWindow {
@@ -827,16 +928,18 @@ impl ApplicationHandler for App {
                         self.canvas.handle(CanvasEvent::Redo);
                     }
                     Key::Character("c") | Key::Character("C") if self.mods.ctrl => {
-                        // OCR text first: Ctrl+C with a non-empty selection
-                        // copies the joined text rather than the image. The
-                        // CLI side checks `copy_text` ahead of `copy` and
-                        // bypasses the image pipeline when present.
-                        if let Some(text) = self.canvas.selected_text() {
-                            self.action.copy_text = Some(text);
+                        // OCR text first: when at least one text box is
+                        // selected, Ctrl+C copies the joined text to the
+                        // clipboard inline and clears the selection. The
+                        // overlay stays open so the user can pick more text
+                        // or refine the region; the closing pass only
+                        // happens on Esc / Enter / explicit image copy.
+                        if self.copy_selected_text_inline() {
+                            self.broadcast_redraw();
                         } else {
                             self.action.copy = true;
+                            self.confirm(event_loop);
                         }
-                        self.confirm(event_loop);
                     }
                     Key::Character("s") | Key::Character("S") if self.mods.ctrl => {
                         self.action.save = true;
@@ -1021,18 +1124,20 @@ impl ApplicationHandler for App {
                             }
                             // OCR selection: when the Pointer tool is active
                             // and the click lands inside a recognised text
-                            // polygon, toggle that box in the selection set
-                            // and swallow the event so PointerDown doesn't
-                            // start a region drag.
+                            // polygon, defer the toggle to PointerUp so a
+                            // press-and-drag still moves / resizes the
+                            // region. PointerDown is forwarded to the canvas
+                            // either way — `pending_ocr_toggle` lets us
+                            // distinguish a click (small cursor delta) from
+                            // a drag at release time.
+                            self.pending_ocr_toggle = None;
                             if matches!(
                                 self.canvas.active_tool,
                                 crate::tool::Tool::Pointer
                             ) && self.canvas.has_ocr()
                             {
                                 if let Some(idx) = self.canvas.ocr_hit(pt.x, pt.y) {
-                                    self.canvas.toggle_text_box_selection(idx);
-                                    self.broadcast_redraw();
-                                    return;
+                                    self.pending_ocr_toggle = Some((pt, idx));
                                 }
                             }
                             self.canvas.handle(CanvasEvent::PointerDown(pt));
@@ -1043,6 +1148,23 @@ impl ApplicationHandler for App {
                                 self.gizmo_drag = None;
                                 self.broadcast_redraw();
                                 return;
+                            }
+                            // Click-vs-drag arbitration for OCR text boxes
+                            // overlapping the region: ≤ 4 px of cursor
+                            // travel is a click → cancel the in-flight
+                            // canvas drag (no region move commits) and
+                            // toggle the text box selection. Anything more
+                            // is a drag → let the region move/resize
+                            // commit and re-dispatch OCR on the new region.
+                            if let Some((press_pt, idx)) = self.pending_ocr_toggle.take() {
+                                let dx = pt.x - press_pt.x;
+                                let dy = pt.y - press_pt.y;
+                                if dx * dx + dy * dy <= 16.0 {
+                                    self.canvas.handle(CanvasEvent::PointerCancel);
+                                    self.canvas.toggle_text_box_selection(idx);
+                                    self.broadcast_redraw();
+                                    return;
+                                }
                             }
                             self.canvas.handle(CanvasEvent::PointerUp(pt));
                             self.maybe_redispatch_ocr_for_region(event_loop);
@@ -1684,7 +1806,9 @@ impl App {
                     self.canvas.clear_shapes();
                 }
                 if out.copy {
-                    self.action.copy = true;
+                    if !self.copy_selected_text_inline() {
+                        self.action.copy = true;
+                    }
                 }
                 if out.save {
                     self.action.save = true;
@@ -1769,8 +1893,10 @@ impl App {
                         self.canvas.clear_shapes();
                     }
                     if out.copy {
-                        self.action.copy = true;
-                        confirm = true;
+                        if !self.copy_selected_text_inline() {
+                            self.action.copy = true;
+                            confirm = true;
+                        }
                     }
                     if out.save {
                         self.action.save = true;

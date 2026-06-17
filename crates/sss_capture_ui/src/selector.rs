@@ -26,6 +26,19 @@ use crate::trigger::{CaptureTrigger, KeyBind};
 pub type OcrPipeline =
     Arc<dyn Fn(RgbaImage) -> Receiver<Vec<TextBox>> + Send + Sync>;
 
+/// Pushes a string to the system clipboard. Used by the inline text-copy
+/// flow: when the user has at least one OCR text box selected and triggers
+/// Copy (Ctrl+C or the toolbar icon), the selector invokes this closure
+/// instead of confirming with `PostAction::copy`. The selector stays open
+/// and the box selection is cleared; the user closes the overlay with
+/// Esc / Enter on a clean pass.
+///
+/// Injected from outside (rather than calling arboard directly) so this
+/// crate stays clipboard-backend-agnostic and reuses `sss_lib`'s existing
+/// implementation.
+pub type TextClipboard =
+    Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
+
 /// What the overlay produced.
 #[derive(Clone, Debug)]
 pub enum Outcome {
@@ -81,12 +94,6 @@ pub struct PostAction {
     pub copy: bool,
     pub save: bool,
     pub save_path_hint: Option<PathBuf>,
-    /// Set when the user pressed Ctrl+C with at least one OCR text box
-    /// selected. Mutually exclusive with `copy` (which means "copy the
-    /// pre-rendered screenshot"): the CLI checks `copy_text` first and
-    /// writes the joined OCR text to the system clipboard, skipping the
-    /// image pipeline entirely.
-    pub copy_text: Option<String>,
 }
 
 /// Aggregate result of a [`Selector::run`] call.
@@ -112,6 +119,7 @@ pub struct SelectorBuilder {
     save_path_hint: Option<PathBuf>,
     initial_area: Option<Rect>,
     ocr_pipeline: Option<OcrPipeline>,
+    text_clipboard: Option<TextClipboard>,
 }
 
 impl std::fmt::Debug for SelectorBuilder {
@@ -130,6 +138,7 @@ impl std::fmt::Debug for SelectorBuilder {
             .field("save_path_hint", &self.save_path_hint)
             .field("initial_area", &self.initial_area)
             .field("ocr_pipeline", &self.ocr_pipeline.as_ref().map(|_| "<fn>"))
+            .field("text_clipboard", &self.text_clipboard.as_ref().map(|_| "<fn>"))
             .finish()
     }
 }
@@ -150,6 +159,7 @@ impl Default for SelectorBuilder {
             save_path_hint: None,
             initial_area: None,
             ocr_pipeline: None,
+            text_clipboard: None,
         }
     }
 }
@@ -234,6 +244,15 @@ impl SelectorBuilder {
         self
     }
 
+    /// Provide the closure invoked when the user copies an OCR text
+    /// selection. Required for inline text copy to work — without it, the
+    /// overlay falls back to confirming with `copy = true` even if a text
+    /// box is selected.
+    pub fn text_clipboard(mut self, clip: TextClipboard) -> Self {
+        self.text_clipboard = Some(clip);
+        self
+    }
+
     pub fn build(self) -> Result<Selector, SelectorError> {
         let capturer = match self.capturer {
             Some(c) => c,
@@ -261,6 +280,7 @@ impl SelectorBuilder {
                 save_path_hint: self.save_path_hint,
                 initial_area: self.initial_area,
                 ocr_pipeline: self.ocr_pipeline,
+                text_clipboard: self.text_clipboard,
             },
             capturer,
         })
@@ -288,6 +308,7 @@ pub(crate) struct Config {
     pub save_path_hint: Option<PathBuf>,
     pub initial_area: Option<Rect>,
     pub ocr_pipeline: Option<OcrPipeline>,
+    pub text_clipboard: Option<TextClipboard>,
 }
 
 impl std::fmt::Debug for Config {
@@ -305,6 +326,7 @@ impl std::fmt::Debug for Config {
             .field("save_path_hint", &self.save_path_hint)
             .field("initial_area", &self.initial_area)
             .field("ocr_pipeline", &self.ocr_pipeline.as_ref().map(|_| "<fn>"))
+            .field("text_clipboard", &self.text_clipboard.as_ref().map(|_| "<fn>"))
             .finish()
     }
 }
