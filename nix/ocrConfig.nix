@@ -46,4 +46,22 @@ with lib; {
       equivalent). The directory is created on first download.
     '';
   };
+
+  gpu = mkOption {
+    type = types.enum [ "auto" "cpu" "cuda" "tensorrt" "coreml" "directml" "openvino" "webgpu" ];
+    default = "auto";
+    description = ''
+      ORT execution provider. `auto` picks the best provider compiled
+      into the binary for this host (CoreML on macOS, CUDA when the
+      `cli-cuda` package is installed and `/dev/nvidia0` exists,
+      otherwise CPU). Setting an explicit value forces that backend; at
+      runtime ORT still falls back to CPU when the EP isn't actually
+      available in `libonnxruntime`.
+
+      Pair this with the matching package flavour (e.g.
+      `programs.sss.package = pkgs.sss.cli-cuda`) — selecting `cuda`
+      here without a CUDA-enabled libonnxruntime just falls back to
+      CPU.
+    '';
+  };
 }
