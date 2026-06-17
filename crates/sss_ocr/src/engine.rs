@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use image::{DynamicImage, RgbImage, RgbaImage};
+use oar_ocr::domain::tasks::TextDetectionConfig;
 use oar_ocr::oarocr::{OAROCR, OAROCRBuilder};
+use oar_ocr::processors::LimitType;
 
 use crate::error::OcrError;
 use crate::hardware::Tier;
@@ -57,6 +59,28 @@ impl OcrEngine {
         };
         Ok(map_regions(first.text_regions))
     }
+
+    /// Run OCR on a cropped sub-image and translate every detected polygon
+    /// by `(offset_x, offset_y)` so the boxes land in the caller's
+    /// coordinate space (typically: the eager full-frame capture).
+    pub fn run_with_offset(
+        &self,
+        image: &RgbaImage,
+        offset_x: i32,
+        offset_y: i32,
+    ) -> Result<Vec<TextBox>, OcrError> {
+        let mut boxes = self.run(image)?;
+        if offset_x != 0 || offset_y != 0 {
+            let (dx, dy) = (offset_x as f32, offset_y as f32);
+            for tb in boxes.iter_mut() {
+                for p in tb.polygon.iter_mut() {
+                    p.x += dx;
+                    p.y += dy;
+                }
+            }
+        }
+        Ok(boxes)
+    }
 }
 
 fn build_pipeline(set: &ModelSet) -> Result<OAROCR, OcrError> {
@@ -64,7 +88,8 @@ fn build_pipeline(set: &ModelSet) -> Result<OAROCR, OcrError> {
         PathBuf::from(set.detection),
         PathBuf::from(set.recognition),
         PathBuf::from(set.dict),
-    );
+    )
+    .text_detection_config(high_res_detection_config());
     if let Some(name) = set.doc_orientation {
         builder = builder.with_document_image_orientation_classification(PathBuf::from(name));
     }
@@ -72,6 +97,28 @@ fn build_pipeline(set: &ModelSet) -> Result<OAROCR, OcrError> {
         builder = builder.with_text_line_orientation_classification(PathBuf::from(name));
     }
     Ok(builder.build()?)
+}
+
+/// Defaults inside `oar-ocr` cap the longest side of the input at 960px,
+/// which murders small terminal / IDE text on a modern display: a
+/// 1920×1200 screenshot gets bilinear-shrunk by 2× before the detection
+/// network ever sees it, so anything below ~14 pixels of vertical glyph
+/// height drops out of the proposals.
+///
+/// We flip the limit-type to `Min` (keep at least this many pixels on the
+/// short side — for screenshots that's a no-op) and let `max_side_len`
+/// gate runaway memory at 4096px. Score / box thresholds stay at the
+/// PaddleOCR general-text defaults.
+fn high_res_detection_config() -> TextDetectionConfig {
+    TextDetectionConfig {
+        score_threshold: 0.3,
+        box_threshold: 0.6,
+        unclip_ratio: 1.8,
+        max_candidates: 1500,
+        limit_side_len: Some(960),
+        limit_type: Some(LimitType::Min),
+        max_side_len: Some(4096),
+    }
 }
 
 fn map_regions(regions: Vec<oar_ocr::oarocr::TextRegion>) -> Vec<TextBox> {

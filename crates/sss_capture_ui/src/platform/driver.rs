@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
 use sss_capture::Image as CapImage;
-use sss_capture::Monitor;
+use sss_capture::{Monitor, Rect as IRect};
 use sss_core::ocr::TextBox;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
@@ -46,17 +46,6 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
         None
     };
 
-    // Kick off OCR as soon as we have the eager capture — the user's region
-    // selection runs in parallel with model inference. If either the
-    // pipeline is unset (OCR disabled) or the eager capture failed, skip.
-    let ocr_rx: Option<Receiver<Vec<TextBox>>> = match (&initial, &config.ocr_pipeline) {
-        (Some(img), Some(pipeline)) => {
-            tracing::debug!("dispatching eager frame to OCR pipeline");
-            Some(pipeline(img.as_rgba().clone()))
-        }
-        _ => None,
-    };
-
     let monitors = capturer.monitors().map_err(SelectorError::Capture)?;
 
     let event_loop =
@@ -67,6 +56,22 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
     let initial_mode = match config.mode {
         SelectorMode::AnyOf => SelectorMode::Area,
         m => m,
+    };
+    // Window / Monitor pickers commit on a single click, so OCR has to be
+    // ready by the time the user picks. We dispatch the eager full-frame
+    // capture immediately for those modes. In Area mode we skip the
+    // full-frame run entirely — the cropped re-dispatch fired by
+    // `maybe_redispatch_ocr_for_region` on the first pointer-up is both
+    // faster and gives the detection model a better resolution for the
+    // text the user actually cares about.
+    let dispatch_initial_full_frame =
+        !matches!(initial_mode, SelectorMode::Area);
+    let ocr_rx: Option<Receiver<Vec<TextBox>>> = match (&initial, &config.ocr_pipeline) {
+        (Some(img), Some(pipeline)) if dispatch_initial_full_frame => {
+            tracing::debug!(?initial_mode, "dispatching eager frame to OCR pipeline");
+            Some(pipeline(img.as_rgba().clone()))
+        }
+        _ => None,
     };
     // `EventLoop::run_app` moves and drops `app`, so the canvas / outcome /
     // action are flushed into this shared handle right before each
@@ -103,6 +108,8 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
         monitors,
         initial,
         ocr_rx,
+        ocr_pending_offset: (0, 0),
+        ocr_last_region: None,
         windows: Vec::new(),
         canvas,
         active_window: None,
@@ -207,6 +214,14 @@ struct App {
     /// successful recv the boxes go into the canvas and the receiver
     /// is dropped so we revert to plain `ControlFlow::Wait`.
     ocr_rx: Option<Receiver<Vec<TextBox>>>,
+    /// Pixel offset (image-space → eager-frame-space) for the OCR run that
+    /// fed `ocr_rx`. Region-cropped dispatches set this so the polygons
+    /// land in the right place once they arrive.
+    ocr_pending_offset: (i32, i32),
+    /// Region that the most recent OCR run targeted, or `None` for the
+    /// initial full-frame dispatch. Used to skip redundant re-OCR when a
+    /// pointer-up doesn't actually move the region.
+    ocr_last_region: Option<IRect>,
     windows: Vec<OverlayWindow>,
     canvas: Canvas,
     active_window: Option<WinitWindowId>,
@@ -478,10 +493,21 @@ impl App {
             return;
         };
         match rx.try_recv() {
-            Ok(boxes) => {
-                tracing::info!(count = boxes.len(), "OCR result received");
+            Ok(mut boxes) => {
+                let (dx, dy) = self.ocr_pending_offset;
+                if dx != 0 || dy != 0 {
+                    let (fx, fy) = (dx as f32, dy as f32);
+                    for tb in boxes.iter_mut() {
+                        for p in tb.polygon.iter_mut() {
+                            p.x += fx;
+                            p.y += fy;
+                        }
+                    }
+                }
+                tracing::info!(count = boxes.len(), offset = ?self.ocr_pending_offset, "OCR result received");
                 self.canvas.set_text_boxes(boxes);
                 self.ocr_rx = None;
+                self.ocr_pending_offset = (0, 0);
                 event_loop.set_control_flow(ControlFlow::Wait);
                 self.broadcast_redraw();
             }
@@ -493,9 +519,52 @@ impl App {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("OCR worker disconnected without a result");
                 self.ocr_rx = None;
+                self.ocr_pending_offset = (0, 0);
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
         }
+    }
+
+    /// Re-run OCR on the currently selected region. Cropping the input to
+    /// just the region gives the detection network a tighter aspect ratio
+    /// (no terminal-sized glyphs vanishing under a 2× downscale) and is
+    /// also dramatically faster than re-running on the full desktop. Called
+    /// after pointer-up settles a new region; no-op when the region hasn't
+    /// moved since the last dispatch.
+    fn maybe_redispatch_ocr_for_region(&mut self, event_loop: &dyn ActiveEventLoop) {
+        let Some(pipeline) = self.config.ocr_pipeline.as_ref() else {
+            return;
+        };
+        let Some(img) = self.initial.as_ref() else {
+            return;
+        };
+        let Some(region) = self.canvas.region() else {
+            return;
+        };
+        if region.width() < 4 || region.height() < 4 {
+            return;
+        }
+        if Some(region) == self.ocr_last_region {
+            return;
+        }
+        let frame_w = img.width() as i32;
+        let frame_h = img.height() as i32;
+        let x = region.x().max(0).min(frame_w);
+        let y = region.y().max(0).min(frame_h);
+        let right = region.right().max(0).min(frame_w);
+        let bottom = region.bottom().max(0).min(frame_h);
+        let w = (right - x) as u32;
+        let h = (bottom - y) as u32;
+        if w < 4 || h < 4 {
+            return;
+        }
+        let crop = image::imageops::crop_imm(img.as_rgba(), x as u32, y as u32, w, h).to_image();
+        tracing::info!(x, y, w, h, "dispatching cropped OCR for region");
+        self.ocr_rx = Some(pipeline(crop));
+        self.ocr_pending_offset = (x, y);
+        self.ocr_last_region = Some(region);
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(50);
+        event_loop.set_control_flow(ControlFlow::WaitUntil(until));
     }
 }
 
@@ -976,6 +1045,7 @@ impl ApplicationHandler for App {
                                 return;
                             }
                             self.canvas.handle(CanvasEvent::PointerUp(pt));
+                            self.maybe_redispatch_ocr_for_region(event_loop);
                         }
                     }
                     self.broadcast_redraw();

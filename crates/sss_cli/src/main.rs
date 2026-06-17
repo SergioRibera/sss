@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use color_eyre::eyre::Report;
 use config::{get_config, OcrConfig};
@@ -188,10 +188,15 @@ fn build_ocr_pipeline(
     let tier = ocr.effective_tier();
     let languages = ocr.languages();
     let formula = ocr.formula;
+    // The engine load is the slow part of an OCR run (model parse, ORT
+    // session init). Cache it across dispatches so re-running OCR after a
+    // region change costs only the forward pass, not another cold build.
+    let engine_cache: Arc<Mutex<Option<Arc<OcrEngine>>>> = Arc::new(Mutex::new(None));
     let pipeline: OcrPipeline = Arc::new(move |image: RgbaImage| {
         let (tx, rx) = std::sync::mpsc::channel();
         let waiter = waiter.clone();
         let languages = languages.clone();
+        let engine_cache = engine_cache.clone();
         std::thread::Builder::new()
             .name("sss-ocr-worker".into())
             .spawn(move || {
@@ -201,16 +206,9 @@ fn build_ocr_pipeline(
                         return;
                     }
                 }
-                let language = languages
-                    .first()
-                    .copied()
-                    .unwrap_or(Language::Auto);
-                let engine = match OcrEngine::new(tier, language, formula) {
-                    Ok(e) => e,
-                    Err(err) => {
-                        tracing::warn!(%err, "OCR engine build failed");
-                        return;
-                    }
+                let engine = match get_or_build_engine(&engine_cache, tier, &languages, formula) {
+                    Some(e) => e,
+                    None => return,
                 };
                 match engine.run(&image) {
                     Ok(boxes) => {
@@ -223,6 +221,38 @@ fn build_ocr_pipeline(
         rx
     });
     Some(pipeline)
+}
+
+/// Lazily build (and memoise) a single [`OcrEngine`] for the chosen
+/// `(tier, language, formula)`. The first caller pays the cold-start cost;
+/// every subsequent caller — e.g. a re-OCR triggered by the user resizing
+/// the selection region — just clones the `Arc`.
+fn get_or_build_engine(
+    cache: &Arc<Mutex<Option<Arc<OcrEngine>>>>,
+    tier: sss_ocr::Tier,
+    languages: &[Language],
+    formula: bool,
+) -> Option<Arc<OcrEngine>> {
+    {
+        let guard = cache.lock().unwrap();
+        if let Some(e) = guard.as_ref() {
+            return Some(e.clone());
+        }
+    }
+    let language = languages.first().copied().unwrap_or(Language::Auto);
+    let engine = match OcrEngine::new(tier, language, formula) {
+        Ok(e) => Arc::new(e),
+        Err(err) => {
+            tracing::warn!(%err, "OCR engine build failed");
+            return None;
+        }
+    };
+    let mut guard = cache.lock().unwrap();
+    if let Some(e) = guard.as_ref() {
+        return Some(e.clone());
+    }
+    *guard = Some(engine.clone());
+    Some(engine)
 }
 
 /// Blocks until the prewarm worker finishes downloading every model.
