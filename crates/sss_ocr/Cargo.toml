@@ -10,6 +10,17 @@ license.workspace = true
 
 [features]
 default = []
+# Execution-provider feature flags forward to oar-ocr. Each one compiles in
+# the matching ORT EP bindings; the underlying `libonnxruntime.so` (or
+# system library when `ORT_PREFER_DYNAMIC_LINK=1`) still has to be built
+# with that EP available. Without the feature, asking for that EP at
+# runtime falls back to CPU.
+cuda = ["oar-ocr/cuda"]
+tensorrt = ["oar-ocr/tensorrt"]
+coreml = ["oar-ocr/coreml"]
+directml = ["oar-ocr/directml"]
+openvino = ["oar-ocr/openvino"]
+webgpu = ["oar-ocr/webgpu"]
 
 [dependencies]
 sss_core = { path = "../sss_core", features = ["serde"] }
