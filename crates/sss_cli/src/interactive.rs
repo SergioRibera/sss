@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use color_eyre::eyre::{eyre, Report};
 use sss_capture_ui::{
     sss_capture::{BackendKind, CaptureOptions, Capturer},
-    CaptureTrigger, OcrPipeline, Outcome, PostAction, SelectorBuilder, SelectorMode, ToolKind,
-    UiConfig,
+    CaptureTrigger, OcrPipeline, Outcome, PostAction, SelectorBuilder, SelectorMode, TextClipboard,
+    ToolKind, UiConfig,
 };
 use sss_lib::image::RgbaImage;
 use sss_lib::GenerationSettings;
@@ -95,6 +95,14 @@ pub fn run(
     }
     if let Some(pipeline) = ocr_pipeline {
         builder = builder.ocr_pipeline(pipeline);
+        // Pair the OCR pipeline with the inline text-copy hook so Ctrl+C
+        // (or the Copy toolbar icon) on an active OCR selection writes
+        // the joined text to the system clipboard instead of confirming
+        // an image copy + closing the overlay.
+        let clip: TextClipboard = Arc::new(|text: &str| {
+            sss_lib::copy_text_to_clipboard(text).map_err(|e| e.to_string())
+        });
+        builder = builder.text_clipboard(clip);
     }
 
     let selection = builder

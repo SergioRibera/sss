@@ -14,6 +14,18 @@ license.workspace = true
 name = "sss"
 path = "./src/main.rs"
 
+[features]
+default = []
+# Forward to `sss_ocr` to compile in the matching ORT execution provider.
+# The user still has to point ORT at a libonnxruntime built with that EP
+# (`ORT_LIB_LOCATION` on Nix; system package on others).
+cuda = ["sss_ocr/cuda"]
+tensorrt = ["sss_ocr/tensorrt"]
+coreml = ["sss_ocr/coreml"]
+directml = ["sss_ocr/directml"]
+openvino = ["sss_ocr/openvino"]
+webgpu = ["sss_ocr/webgpu"]
+
 [package.metadata.dist]
 dist = true
 

@@ -6,7 +6,7 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use sss_capture_ui::UiConfig;
 use sss_lib::config_loader::{load_with_imports, HasImports, LoadError};
 use sss_lib::{default_bool, swap_option, RootArgs};
-use sss_ocr::{Language, Tier};
+use sss_ocr::{GpuMode, Language, Tier};
 
 use crate::error::Configuration as ConfigurationError;
 use crate::{str_to_area, Area};
@@ -395,6 +395,51 @@ pub struct OcrConfig {
     #[serde(default)]
     #[merge(strategy = swap_option)]
     pub models_dir: Option<PathBuf>,
+
+    /// Execution provider for ORT inference. `auto` (default) picks the
+    /// best provider compiled into the binary for the host — falls back
+    /// to CPU when no GPU EP is available. Explicit values force the
+    /// pipeline onto a specific backend; ORT still falls back to CPU at
+    /// runtime if the EP isn't actually present in the loaded
+    /// `libonnxruntime`.
+    #[clap(
+        long = "ocr-gpu",
+        value_name = "MODE",
+        default_value = "auto",
+        value_parser = parse_gpu_mode,
+        help = "OCR execution provider: auto, cpu, cuda, tensorrt, coreml, directml, openvino, webgpu."
+    )]
+    #[serde(default = "default_gpu")]
+    #[merge(strategy = overwrite_gpu)]
+    pub gpu: GpuMode,
+}
+
+fn default_gpu() -> GpuMode {
+    GpuMode::Auto
+}
+
+fn parse_gpu_mode(s: &str) -> Result<GpuMode, String> {
+    match s.to_ascii_lowercase().as_str() {
+        "auto" => Ok(GpuMode::Auto),
+        "cpu" => Ok(GpuMode::Cpu),
+        "cuda" => Ok(GpuMode::Cuda),
+        "tensorrt" | "tensor-rt" | "trt" => Ok(GpuMode::TensorRT),
+        "coreml" | "core-ml" => Ok(GpuMode::CoreML),
+        "directml" | "direct-ml" | "dml" => Ok(GpuMode::DirectML),
+        "openvino" | "open-vino" => Ok(GpuMode::OpenVino),
+        "webgpu" | "web-gpu" => Ok(GpuMode::WebGpu),
+        other => Err(format!(
+            "unknown GPU mode '{other}'; expected one of: auto, cpu, cuda, tensorrt, coreml, directml, openvino, webgpu"
+        )),
+    }
+}
+
+/// Preserve a non-`Auto` GPU mode from one side; `Auto` never overrides
+/// an explicit choice from the other layer.
+fn overwrite_gpu(dst: &mut GpuMode, src: &mut GpuMode) {
+    if !matches!(*src, GpuMode::Auto) {
+        *dst = *src;
+    }
 }
 
 fn default_tier() -> Tier {
@@ -437,6 +482,11 @@ impl OcrConfig {
     /// Effective tier after resolving `Auto` against the host hardware.
     pub fn effective_tier(&self) -> Tier {
         self.tier.resolve()
+    }
+
+    /// Selected ORT execution provider for OCR inference.
+    pub fn gpu(&self) -> GpuMode {
+        self.gpu
     }
 }
 

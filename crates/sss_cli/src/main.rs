@@ -7,7 +7,7 @@ use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 use sss_capture_ui::{OcrPipeline, SelectorMode};
 use sss_lib::generate_image;
 use sss_lib::image::RgbaImage;
-use sss_ocr::{Language, OcrEngine, PrewarmHandle, PrewarmStatus, PrewarmWaiter};
+use sss_ocr::{GpuMode, Language, OcrEngine, PrewarmHandle, PrewarmStatus, PrewarmWaiter};
 use tracing_subscriber::EnvFilter;
 
 mod config;
@@ -61,6 +61,7 @@ fn main() -> Result<(), Report> {
         tier = ?ocr_config.effective_tier(),
         languages = ?ocr_config.languages(),
         formula = ocr_config.formula,
+        gpu = ?ocr_config.gpu(),
         "OCR configuration"
     );
     let prewarm = start_prewarm(&ocr_config);
@@ -111,17 +112,6 @@ fn main() -> Result<(), Report> {
                 std::process::exit(1);
             }
         };
-        // OCR text copy short-circuits the image pipeline entirely: the
-        // overlay only sets `copy_text` when the user pressed Ctrl+C with
-        // at least one OCR box selected, so the intent is "text, not
-        // screenshot". Bypass `generate_image` and exit clean.
-        if let Some(text) = pre.action.copy_text.as_ref() {
-            if let Err(err) = sss_lib::copy_text_to_clipboard(text) {
-                tracing::warn!(%err, "failed to copy OCR text to clipboard");
-            }
-            finish_prewarm(prewarm);
-            return Ok(());
-        }
         // The GUI may have flipped Copy / Save intent. Honour them only when
         // the CLI itself didn't already specify them.
         if pre.action.copy && !g_config.copy {
@@ -188,6 +178,7 @@ fn build_ocr_pipeline(
     let tier = ocr.effective_tier();
     let languages = ocr.languages();
     let formula = ocr.formula;
+    let gpu = ocr.gpu();
     // The engine load is the slow part of an OCR run (model parse, ORT
     // session init). Cache it across dispatches so re-running OCR after a
     // region change costs only the forward pass, not another cold build.
@@ -206,7 +197,7 @@ fn build_ocr_pipeline(
                         return;
                     }
                 }
-                let engine = match get_or_build_engine(&engine_cache, tier, &languages, formula) {
+                let engine = match get_or_build_engine(&engine_cache, tier, &languages, formula, gpu) {
                     Some(e) => e,
                     None => return,
                 };
@@ -232,6 +223,7 @@ fn get_or_build_engine(
     tier: sss_ocr::Tier,
     languages: &[Language],
     formula: bool,
+    gpu: GpuMode,
 ) -> Option<Arc<OcrEngine>> {
     {
         let guard = cache.lock().unwrap();
@@ -240,7 +232,7 @@ fn get_or_build_engine(
         }
     }
     let language = languages.first().copied().unwrap_or(Language::Auto);
-    let engine = match OcrEngine::new(tier, language, formula) {
+    let engine = match OcrEngine::new(tier, language, formula, gpu) {
         Ok(e) => Arc::new(e),
         Err(err) => {
             tracing::warn!(%err, "OCR engine build failed");
