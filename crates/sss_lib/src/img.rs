@@ -225,15 +225,30 @@ fn copy_image_to_clipboard(img: &RgbaImage) -> Result<(), ImagenGeneration> {
     Ok(())
 }
 
-/// Push `text` to the system clipboard. Used by the OCR text-copy flow:
-/// when the user clicks a recognised text box and presses `Ctrl+C`, the
-/// CLI calls this instead of the image clipboard path.
+/// Push `text` to the system clipboard.
 ///
-/// Unlike [`copy_image_to_clipboard`] we don't go through the wlr
-/// `data-control` protocol — arboard's text setter is small and
-/// well-supported across compositors / X11 / Windows / macOS, and a single
-/// short string doesn't justify a hand-rolled wayland source.
+/// On Wayland we use the same `zwlr_data_control_manager_v1` path as
+/// [`copy_image_to_clipboard`]: hand the bytes to the compositor, wait
+/// for the clipboard manager to take over, and return — so the caller
+/// can exit cleanly without leaving an arboard fork behind that would
+/// die with the process and wipe the selection.
 pub fn copy_text_to_clipboard(text: &str) -> Result<(), ImagenGeneration> {
+    #[cfg(target_os = "linux")]
+    {
+        match crate::clipboard::copy_text(text.to_owned()) {
+            Ok(()) => return Ok(()),
+            Err(crate::clipboard::WlClipboardError::NotOnWayland) => {
+                tracing::debug!("not on wayland; using arboard");
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "native wayland clipboard unavailable; falling back to arboard"
+                );
+            }
+        }
+    }
+
     let mut c = arboard::Clipboard::new()?;
     #[cfg(target_os = "linux")]
     let set = c

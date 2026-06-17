@@ -36,8 +36,9 @@ use wayland_protocols_wlr::data_control::v1::client::{
 /// How long we'll keep the wayland event loop alive after setting the
 /// selection. Long enough for any clipboard manager to read + take over
 /// (DankMaterialShell, cliphist, clipman all do this within ~50ms),
-/// short enough that we never leave the user hanging.
-const HANDOFF_TIMEOUT: Duration = Duration::from_secs(3);
+/// short enough that we never leave the user hanging if no manager
+/// responds (without this the overlay's exit path blocks here on join).
+const HANDOFF_TIMEOUT: Duration = Duration::from_millis(800);
 
 /// Result of [`copy_png`].
 #[derive(Debug, thiserror::Error)]
@@ -55,13 +56,35 @@ pub enum WlClipboardError {
     Other(String),
 }
 
-/// Publish `png_bytes` as the clipboard's `image/png` selection, then wait
-/// for the receiver(s) to be done.
+/// Publish `png_bytes` as the clipboard's `image/png` selection.
+pub fn copy_png(png_bytes: Vec<u8>) -> Result<(), WlClipboardError> {
+    copy_bytes(png_bytes, &["image/png", "image/x-png", "image/jpeg"])
+}
+
+/// Publish `text` as the clipboard's text selection.
+///
+/// Offers the full UTF-8 MIME set so GTK / Qt / xdotool / vim-paste all
+/// negotiate without falling back to STRING (latin-1).
+pub fn copy_text(text: String) -> Result<(), WlClipboardError> {
+    copy_bytes(
+        text.into_bytes(),
+        &[
+            "text/plain;charset=utf-8",
+            "text/plain;charset=UTF-8",
+            "UTF8_STRING",
+            "text/plain",
+            "STRING",
+            "TEXT",
+        ],
+    )
+}
+
+/// Publish `bytes` under the given MIME-type set and wait for receiver(s).
 ///
 /// Returns once we've served at least one `send` and either received a
 /// `cancelled` event (a clipboard manager took over — we can exit safely),
 /// or [`HANDOFF_TIMEOUT`] elapsed.
-pub fn copy_png(png_bytes: Vec<u8>) -> Result<(), WlClipboardError> {
+fn copy_bytes(bytes: Vec<u8>, mime_types: &[&str]) -> Result<(), WlClipboardError> {
     if std::env::var_os("WAYLAND_DISPLAY").is_none() {
         return Err(WlClipboardError::NotOnWayland);
     }
@@ -79,12 +102,10 @@ pub fn copy_png(png_bytes: Vec<u8>) -> Result<(), WlClipboardError> {
         .bind(&qh, 1..=8, ())
         .map_err(|_| WlClipboardError::Other("no wl_seat".into()))?;
 
-    let bytes = Arc::new(png_bytes);
+    let bytes = Arc::new(bytes);
     let source = manager.create_data_source(&qh, bytes.clone());
-    // Offer the common image MIME types. Most apps will negotiate
-    // `image/png`; a few legacy ones look for `image/x-png` or `PNG`.
-    for mime in ["image/png", "image/x-png", "image/jpeg"] {
-        source.offer(mime.to_string());
+    for mime in mime_types {
+        source.offer((*mime).to_string());
     }
     let device = manager.get_data_device(&seat, &qh, ());
     device.set_selection(Some(&source));
