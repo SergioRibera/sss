@@ -54,6 +54,13 @@ pub struct GenerationSettingsArgs {
     #[clap(long, help = "[default: 100]")]
     #[merge(strategy = swap_option)]
     pub padding_y: Option<u32>,
+    /// Disable the padding + background frame that `sss` normally wraps
+    /// every capture with. Inverted polarity intentional — the border is
+    /// on by default and there is no `--border` opposite.
+    #[clap(long, help = "Skip the background/padding border around the capture")]
+    #[merge(strategy = overwrite_false)]
+    #[serde(default = "default_bool")]
+    pub no_border: bool,
     // Shadow Section
     #[clap(long, help = "Enable shadow")]
     #[merge(strategy = overwrite_false)]
@@ -190,6 +197,7 @@ impl From<GenerationSettingsArgs> for GenerationSettings {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Hack".to_string()),
             window_controls: val.window_controls.into(),
+            border: !val.no_border,
         }
     }
 }
@@ -257,6 +265,7 @@ impl Default for GenerationSettingsArgs {
             author_font: Some("Hack".to_string()),
             padding_x: Some(80),
             padding_y: Some(100),
+            no_border: false,
             shadow: false,
             shadow_image: false,
             shadow_blur: Some(50.0),

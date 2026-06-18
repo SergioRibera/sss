@@ -58,6 +58,10 @@ pub struct GenerationSettings {
     pub colors: Colors,
     /// Set Window Controls
     pub window_controls: WindowControls,
+    /// When `false`, skip the padding + background frame around the inner
+    /// image — the screenshot is written verbatim, without the colored
+    /// border `sss` normally wraps every capture with. Default: `true`.
+    pub border: bool,
 }
 
 #[derive(Clone, Debug)]

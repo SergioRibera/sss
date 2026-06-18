@@ -53,7 +53,15 @@ pub fn generate_image(
 ) -> Result<(), ImagenGeneration> {
     let mut inner = content.content()?;
     let show_winbar = settings.window_controls.enable || settings.window_controls.title.is_some();
-    let (p_x, p_y) = settings.padding;
+    let (p_x, p_y) = if settings.border {
+        settings.padding
+    } else {
+        // Border off: no padding around the inner image. Background and
+        // shadow are also skipped further down (`settings.border` gates
+        // those branches), so the output is just the captured frame plus
+        // the optional winbar / author footer.
+        (0, 0)
+    };
     tracing::info!("Padding: ({p_x}, {p_y})");
     let win_bar_h = if show_winbar {
         settings.window_controls.height
@@ -71,7 +79,14 @@ pub fn generate_image(
         .colors
         .windows_background
         .to_image(inner.width(), settings.window_controls.height);
-    let mut img = settings.colors.background.to_image(w, h);
+    // With the border on, paint the configured background under the
+    // padded image. With it off, leave the canvas transparent so the
+    // final overlay below just copies the inner image verbatim.
+    let mut img = if settings.border {
+        settings.colors.background.to_image(w, h)
+    } else {
+        RgbaImage::new(w, h)
+    };
 
     if settings.window_controls.enable {
         add_window_controls(
@@ -108,15 +123,20 @@ pub fn generate_image(
         round_corner(&mut inner, radius);
     }
 
-    if let Some(shadow) = settings.shadow {
+    // Shadow is part of the decorative border — without padding around
+    // the inner image it would just smear the screenshot. Skip it when
+    // the border is off.
+    if let (Some(shadow), true) = (settings.shadow.as_ref(), settings.border) {
         inner = shadow.apply_to(&inner, p_x, p_y);
         image::imageops::overlay(&mut img, &inner, 0, 0);
     } else {
         image::imageops::overlay(&mut img, &inner, p_x.into(), p_y.into());
     }
 
-    if let Some(author) = settings.author {
-        let title_w = settings.fonts.get_text_len(&author)?;
+    // Author footer sits in the bottom padding strip — without padding
+    // there's nowhere to draw it without scribbling over the screenshot.
+    if let (Some(author), true) = (settings.author.as_ref(), settings.border) {
+        let title_w = settings.fonts.get_text_len(author)?;
 
         settings.fonts.draw_text_mut(
             &mut img,
@@ -124,7 +144,7 @@ pub fn generate_image(
             w / 2 - title_w / 2,
             h - p_y / 2,
             FontStyle::Bold,
-            &author,
+            author,
         )?;
     }
 
