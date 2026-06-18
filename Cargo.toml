@@ -30,11 +30,6 @@ panic = 'abort'
 opt-level = 3
 codegen-units = 1
 
-# The profile that 'cargo dist' will build with
-[profile.dist]
-inherits = "release"
-lto = "thin"
-
 # Local forks. `egui-winit` (and friends) declare a crates.io dependency on
 # `winit = "0.31.0-beta.2"` which is not actually published; redirect it
 # (and the egui stack) to the git forks so cargo resolves a single copy that
@@ -63,35 +58,3 @@ clap = { version = "4.6", features = [
 tracing = "0.1.44"
 color-eyre = { version = "0.6.5", features = ["issue-url"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-
-# Config for 'cargo dist'
-[workspace.metadata.dist]
-# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.22.1"
-# CI backends to support
-ci = "github"
-# The installers to generate for each app
-installers = ["shell", "powershell", "homebrew", "msi"]
-# A GitHub repo to push Homebrew formulas to
-tap = "SergioRibera/homebrew-tap"
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
-# Publish jobs to run in CI
-publish-jobs = ["homebrew"]
-# Which actions to run on pull requests
-pr-run-mode = "skip"
-# Path that installers should place binaries in
-install-path = "CARGO_HOME"
-# Whether to install an updater program
-install-updater = false
-
-[workspace.metadata.dist.github-custom-runners]
-aarch64-unknown-linux-gnu = "buildjet-8vcpu-ubuntu-2204-arm"
-aarch64-unknown-linux-musl = "buildjet-8vcpu-ubuntu-2204-arm"
-
-[workspace.metadata.dist.dependencies.apt]
-libfontconfig1 = "*"
-libfreetype6 = "*"
-libxcb1 = "*"
-libxrandr2 = "*"
-libdbus-1-3 = "*"

@@ -26,15 +26,6 @@ directml = ["sss_ocr/directml"]
 openvino = ["sss_ocr/openvino"]
 webgpu = ["sss_ocr/webgpu"]
 
-[package.metadata.dist]
-dist = true
-
-[package.metadata.wix]
-upgrade-guid = "CF05D879-DF84-4B30-BAEF-1B68E1DAD701"
-path-guid = "50D7445F-C399-4C23-A8FF-6BE599929DE9"
-license = false
-eula = false
-
 [dependencies]
 clap.workspace = true
 toml.workspace = true

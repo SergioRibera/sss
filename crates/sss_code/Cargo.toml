@@ -13,15 +13,6 @@ license.workspace = true
 name = "sss_code"
 path = "./src/main.rs"
 
-[package.metadata.dist]
-dist = true
-
-[package.metadata.wix]
-upgrade-guid = "5E40820B-529A-430A-974D-3573F1BBD7B5"
-path-guid = "F31CE5AA-8FD7-43C4-9E5C-306E8E323AA8"
-license = false
-eula = false
-
 [dependencies]
 toml.workspace = true
 clap.workspace = true
