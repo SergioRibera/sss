@@ -89,11 +89,26 @@ impl Outcome {
 }
 
 /// Action the user signalled before closing the overlay.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PostAction {
     pub copy: bool,
     pub save: bool,
     pub save_path_hint: Option<PathBuf>,
+    /// State of the output-border toggle when the overlay closed. The host
+    /// passes this through to `sss_lib`'s `GenerationSettings.border` so a
+    /// session-local UI toggle round-trips into the final render.
+    pub border: bool,
+}
+
+impl Default for PostAction {
+    fn default() -> Self {
+        Self {
+            copy: false,
+            save: false,
+            save_path_hint: None,
+            border: true,
+        }
+    }
 }
 
 /// Aggregate result of a [`Selector::run`] call.

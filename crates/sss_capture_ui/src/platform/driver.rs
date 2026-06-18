@@ -100,6 +100,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
             copy: false,
             save: false,
             save_path_hint: save_path_hint.clone(),
+            border: config.ui.border_enabled,
         },
     }));
     #[cfg(feature = "editor")]
@@ -116,6 +117,7 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
     if let Some(rect) = initial_area {
         canvas.set_region(Some(rect));
     }
+    let border_enabled_init = config.ui.border_enabled;
     let app = App {
         config,
         capturer,
@@ -135,7 +137,9 @@ pub fn run(sel: Selector) -> Result<Selection, SelectorError> {
             copy: false,
             save: false,
             save_path_hint,
+            border: border_enabled_init,
         },
+        border_enabled: border_enabled_init,
         mods: ModState::default(),
         #[cfg(feature = "editor")]
         gpu: None,
@@ -256,6 +260,12 @@ struct App {
     last_cursor: FPoint,
     outcome: Option<Outcome>,
     action: PostAction,
+    /// Session-local toggle for the output border (padding + background
+    /// frame that `sss_lib::generate_image` wraps the inner image with).
+    /// Initialised from `config.ui.border_enabled`, flipped by the Border
+    /// button on the side action toolbar, flushed into
+    /// `PostAction.border` at exit.
+    border_enabled: bool,
     mods: ModState,
     #[cfg(feature = "editor")]
     gpu: Option<Arc<crate::render::gpu::Gpu>>,
@@ -504,6 +514,7 @@ impl App {
             copy: self.action.copy,
             save: self.action.save,
             save_path_hint: self.action.save_path_hint.take(),
+            border: self.border_enabled,
         };
         drop(r);
         if let Some(handle) = self.clipboard_worker.take() {
@@ -1879,6 +1890,7 @@ impl App {
                         crate::render::ui::ActionToolbarConfig {
                             show_copy: self.config.show_copy,
                             show_save: self.config.show_save,
+                            border_active: self.border_enabled,
                         },
                         &mut icons,
                     );
@@ -1888,6 +1900,9 @@ impl App {
                     }
                     if out.redo {
                         self.canvas.handle(CanvasEvent::Redo);
+                    }
+                    if out.border_toggle {
+                        self.border_enabled = !self.border_enabled;
                     }
                     if out.clear_all {
                         self.canvas.clear_shapes();

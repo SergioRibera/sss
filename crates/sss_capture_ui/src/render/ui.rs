@@ -1466,6 +1466,7 @@ pub(crate) fn hit_gizmo(
 pub(crate) struct ActionToolbarOutcome {
     pub undo: bool,
     pub redo: bool,
+    pub border_toggle: bool,
     pub clear_all: bool,
     pub confirm: bool,
     pub copy: bool,
@@ -1477,6 +1478,9 @@ pub(crate) struct ActionToolbarOutcome {
 pub(crate) struct ActionToolbarConfig {
     pub show_copy: bool,
     pub show_save: bool,
+    /// Current state of the output-border toggle. Drives the selected
+    /// chrome on the Border button.
+    pub border_active: bool,
 }
 
 /// Vertical action bar pinned to the right of the region (or below it if
@@ -1498,6 +1502,7 @@ pub(crate) fn draw_action_toolbar(
     let mut entries: Vec<(crate::icons::ToolbarIcon, &str)> = vec![
         (crate::icons::ToolbarIcon::Undo, "undo"),
         (crate::icons::ToolbarIcon::Redo, "redo"),
+        (crate::icons::ToolbarIcon::Border, "border"),
         (crate::icons::ToolbarIcon::Clear, "clear"),
         (crate::icons::ToolbarIcon::Confirm, "confirm"),
     ];
@@ -1595,7 +1600,15 @@ pub(crate) fn draw_action_toolbar(
                     egui::Id::new(("sss::act_btn", *name)),
                     Sense::click(),
                 );
-                let bgc = if resp.hovered() {
+                let is_active = matches!(icon, crate::icons::ToolbarIcon::Border)
+                    && cfg.border_active;
+                let bgc = if is_active {
+                    Color32::from_rgb(
+                        chrome.button_active_bg.0[0],
+                        chrome.button_active_bg.0[1],
+                        chrome.button_active_bg.0[2],
+                    )
+                } else if resp.hovered() {
                     Color32::from_rgb(
                         chrome.button_bg.0[0].saturating_add(20),
                         chrome.button_bg.0[1].saturating_add(20),
@@ -1609,6 +1622,21 @@ pub(crate) fn draw_action_toolbar(
                     )
                 };
                 painter.rect_filled(btn_rect, 4.0, bgc);
+                if is_active {
+                    painter.rect_stroke(
+                        btn_rect,
+                        4.0,
+                        Stroke::new(
+                            1.0,
+                            Color32::from_rgb(
+                                chrome.button_active_border.0[0],
+                                chrome.button_active_border.0[1],
+                                chrome.button_active_border.0[2],
+                            ),
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 let tint = match icon {
                     crate::icons::ToolbarIcon::Cancel => [220, 90, 90],
                     crate::icons::ToolbarIcon::Confirm => [110, 200, 130],
@@ -1627,6 +1655,7 @@ pub(crate) fn draw_action_toolbar(
                     match icon {
                         crate::icons::ToolbarIcon::Undo => out.undo = true,
                         crate::icons::ToolbarIcon::Redo => out.redo = true,
+                        crate::icons::ToolbarIcon::Border => out.border_toggle = true,
                         crate::icons::ToolbarIcon::Clear => out.clear_all = true,
                         crate::icons::ToolbarIcon::Confirm => out.confirm = true,
                         crate::icons::ToolbarIcon::Copy => out.copy = true,

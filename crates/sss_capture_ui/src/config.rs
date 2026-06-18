@@ -121,6 +121,11 @@ pub struct UiConfig {
     /// Darken applied to pixels outside the active region (0..=255).
     pub background_dim: u8,
     pub chrome: ChromeColors,
+    /// Initial state of the output-border toggle in the side action
+    /// toolbar. Default `true` — the host passes `false` here when the
+    /// user launched `sss` with `--no-border`, so the session opens with
+    /// the toggle already off.
+    pub border_enabled: bool,
 }
 
 impl Default for UiConfig {
@@ -141,6 +146,7 @@ impl Default for UiConfig {
             region_outline_color: Color::WHITE,
             background_dim: 80,
             chrome: ChromeColors::default(),
+            border_enabled: true,
         }
     }
 }
