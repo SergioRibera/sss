@@ -279,9 +279,7 @@ in
       packages = with pkgs; [
           toolchain
           pkg-config
-          oranda
           cargo-edit
-          cargo-dist
           claude-code
           cargo-release
         ] ++ buildInputs ++ cudaDevDeps;
