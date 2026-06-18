@@ -72,6 +72,10 @@ pub fn run(
         ui_config.tools = ToolKind::default_list();
         ui_config.initial_tool = ToolKind::Brush;
     }
+    // Seed the in-session Border toggle from the CLI-resolved border
+    // setting so `--no-border` opens the overlay with the button already
+    // off and the user can flip it back on for just this capture.
+    ui_config.border_enabled = g.border;
 
     let mut builder = SelectorBuilder::default()
         .mode(mode)

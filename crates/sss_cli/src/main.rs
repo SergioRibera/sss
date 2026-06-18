@@ -117,6 +117,10 @@ fn main() -> Result<(), Report> {
         if pre.action.copy && !g_config.copy {
             g_config.copy = true;
         }
+        // Mirror the in-session Border toggle into the render pipeline.
+        // The CLI flag seeded the toggle on the way in (see `interactive::run`),
+        // so this overwrite is symmetric: whatever the user clicked last wins.
+        g_config.border = pre.action.border;
         if pre.action.save && (g_config.output.trim().is_empty() || g_config.output == "out.png") {
             if let Some(path) = pre
                 .action
