@@ -192,6 +192,16 @@ in
       cargoExtraArgs = "--features ${gpuCargoFeatures}";
     };
 
+    # Static docs site (Zola) — wired so `nix build .#site` produces a
+    # publishable `public/` derivation. configReference is auto-generated;
+    # releases.json defaults to an empty stub when no release fetched.
+    site = import ./site.nix {
+      inherit pkgs lib;
+      configReference = import ./gen-docs.nix { inherit pkgs lib; };
+      # Hero image is injected by CI from the latest release artifacts;
+      # local `nix build .#site` produces a placeholder.
+    };
+
     # sss artifacts
     sssDeps = craneLib.buildDepsOnly commonArgs;
 
@@ -241,6 +251,7 @@ in
       code = sssCode.pkg;
       cli = sss.pkg;
       docs = import ./gen-docs.nix { inherit pkgs lib; };
+      inherit site;
       default = cli;
     } // releaseBundles;
     # `nix develop`

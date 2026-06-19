@@ -1,0 +1,87 @@
+# Static package-manager catalog for the install page.
+# Per-binary tables: `linux.sss`, `linux.sss_code`, `macos.sss`, `macos.sss_code`.
+# Each entry: { name, kind, description, command }.
+
+[[linux.sss]]
+name = "Cargo"
+kind = "source"
+description = "Build from source — works on any Rust-supported target."
+command = "cargo install --git https://github.com/SergioRibera/sss sss_cli"
+
+[[linux.sss]]
+name = "Nix flake"
+kind = "flake"
+description = "Run without installing, or `nix profile install`."
+command = "nix run github:SergioRibera/sss#cli"
+
+[[linux.sss]]
+name = "Arch (AUR)"
+kind = "aur"
+description = "Pacman wrapper required (paru / yay)."
+command = "paru -S sss-bin"
+
+[[linux.sss]]
+name = "shell installer"
+kind = "script"
+description = "Detects glibc / musl and downloads the right tarball."
+command = "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/SergioRibera/sss/releases/latest/download/install.sh | sh"
+
+[[macos.sss]]
+name = "Homebrew"
+kind = "tap"
+description = "Latest tagged release from the SergioRibera tap."
+command = "brew install sergioribera/tap/sss_cli"
+
+[[macos.sss]]
+name = "Cargo"
+kind = "source"
+description = "Build from source — universal binary not provided."
+command = "cargo install --git https://github.com/SergioRibera/sss sss_cli"
+
+[[macos.sss]]
+name = "Nix flake"
+kind = "flake"
+description = "Works on Apple Silicon and Intel."
+command = "nix run github:SergioRibera/sss#cli"
+
+[[macos.sss]]
+name = "shell installer"
+kind = "script"
+description = "Single command, no Xcode required."
+command = "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/SergioRibera/sss/releases/latest/download/install.sh | sh"
+
+[[linux.sss_code]]
+name = "Cargo"
+kind = "source"
+description = "Build from source — works on any Rust-supported target."
+command = "cargo install --git https://github.com/SergioRibera/sss sss_code"
+
+[[linux.sss_code]]
+name = "Nix flake"
+kind = "flake"
+description = "CLI-only crate — fastest build of the workspace."
+command = "nix run github:SergioRibera/sss#code"
+
+[[linux.sss_code]]
+name = "Arch (AUR)"
+kind = "aur"
+description = "Separate package from sss-bin."
+command = "paru -S sss_code-bin"
+
+[[macos.sss_code]]
+name = "Homebrew"
+kind = "tap"
+description = "From the SergioRibera tap."
+command = "brew install sergioribera/tap/sss_code"
+
+[[macos.sss_code]]
+name = "Cargo"
+kind = "source"
+description = "Build from source — no GUI deps."
+command = "cargo install --git https://github.com/SergioRibera/sss sss_code"
+
+[[macos.sss_code]]
+name = "Nix flake"
+kind = "flake"
+description = "Pure CLI, no Wayland deps."
+command = "nix run github:SergioRibera/sss#code"

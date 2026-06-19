@@ -1,3 +1,4 @@
+{% import "macros/nav.html" as nav %}
 <!doctype html>
 <html lang="{{ lang | default(value="en") }}" data-theme="dark">
 <head>
@@ -30,7 +31,6 @@
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
-  {% import "macros/nav.html" as nav %}
   {{ nav::header(current_path=current_path | default(value="")) }}
   <main id="content">
     {% block body %}{% endblock %}

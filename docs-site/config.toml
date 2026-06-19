@@ -4,7 +4,7 @@ description = "Take pretty screenshots of your screen, your code, and build your
 default_language = "en"
 compile_sass = true
 build_search_index = false
-generate_feed = true
+generate_feeds = true
 feed_filenames = ["atom.xml"]
 
 minify_html = true
@@ -13,17 +13,15 @@ hard_link_static = false
 taxonomies = []
 
 [markdown]
-highlight_code = true
-highlight_theme = "css"
-highlight_themes_css = [
-  { theme = "base16-ocean-dark", filename = "syntax-dark.css" },
-  { theme = "base16-ocean-light", filename = "syntax-light.css" },
-]
 smart_punctuation = true
 render_emoji = false
 external_links_target_blank = true
 external_links_no_follow = false
 external_links_no_referrer = false
+
+[markdown.highlighting]
+enabled = true
+theme = "dracula"
 
 [extra]
 github_repo = "https://github.com/SergioRibera/sss"

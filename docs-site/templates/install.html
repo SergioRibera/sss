@@ -14,36 +14,13 @@
     </div>
   </header>
 
-  {% set releases = load_data(path="data/releases.json", required=false) | default(value={}) %}
+  {% set packages = load_data(path="data/packages.toml") %}
+  {% set releases = load_data(path="data/releases.json", required=false) %}
 
   <div class="install-os-grid">
-    {# ----- Linux ----- #}
-    {% set linux_pkgs = [
-      { name: "Cargo", kind: "source", description: "Build from source — works on any Rust-supported target.",
-        command: "cargo install --git " ~ config.extra.github_repo ~ " sss_cli" },
-      { name: "Nix flake", kind: "flake", description: "Run without installing, or `nix profile install`.",
-        command: "nix run " ~ config.extra.github_repo | replace(from='https://', to='') | replace(from='github.com/', to='github:') ~ "#cli" },
-      { name: "Arch (AUR)", kind: "aur", description: "Pacman wrapper required (paru / yay).",
-        command: "paru -S sss-bin" },
-      { name: "shell installer", kind: "script", description: "Detects glibc / musl and downloads the right tarball.",
-        command: "curl --proto '=https' --tlsv1.2 -LsSf " ~ config.extra.download_base ~ "/install.sh | sh" }
-    ] %}
-    {{ install::os_section(label="Linux", os_key="linux", binary="sss", package_managers=linux_pkgs, assets=[]) }}
+    {{ install::os_section(label="Linux",  os_key="linux",  binary="sss", package_managers=packages.linux.sss,  assets=[]) }}
+    {{ install::os_section(label="macOS",  os_key="macos",  binary="sss", package_managers=packages.macos.sss,  assets=[]) }}
 
-    {# ----- macOS ----- #}
-    {% set macos_pkgs = [
-      { name: "Homebrew", kind: "tap", description: "Latest tagged release from the SergioRibera tap.",
-        command: "brew install sergioribera/tap/sss_cli" },
-      { name: "Cargo", kind: "source", description: "Build from source — universal binary not provided.",
-        command: "cargo install --git " ~ config.extra.github_repo ~ " sss_cli" },
-      { name: "Nix flake", kind: "flake", description: "Works on Apple Silicon and Intel.",
-        command: "nix run " ~ config.extra.github_repo | replace(from='https://', to='') | replace(from='github.com/', to='github:') ~ "#cli" },
-      { name: "shell installer", kind: "script", description: "Single command, no Xcode required.",
-        command: "curl --proto '=https' --tlsv1.2 -LsSf " ~ config.extra.download_base ~ "/install.sh | sh" }
-    ] %}
-    {{ install::os_section(label="macOS", os_key="macos", binary="sss", package_managers=macos_pkgs, assets=[]) }}
-
-    {# ----- Windows ----- #}
     <section class="install-os-section" data-os-section="windows">
       <div class="install-os-head">
         <span class="install-os-icon">{{ ui::os_icon(os="windows") }}</span>
@@ -53,13 +30,13 @@
         <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <div class="callout-body">
           <strong>Windows builds aren't shipped yet.</strong>
-          <p>The capture stack targets Wayland, X11 and macOS today. You can still build from source — wgpu's DX12 backend works on Windows for <code>sss_code</code>. Tracking issue welcome.</p>
+          <p>The capture stack targets Wayland, X11 and macOS today. <code>sss_code</code> may cross-compile via mingw — tracking issue welcome.</p>
         </div>
       </div>
     </section>
   </div>
 
-  {% if releases.assets %}
+  {% if releases and releases.assets %}
     <section class="home-section" style="padding-left:0; padding-right:0;">
       <div class="section-header">
         <p class="section-eyebrow">artifacts</p>

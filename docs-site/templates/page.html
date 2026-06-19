@@ -10,14 +10,15 @@
 <div class="docs-layout">
   {{ docs::sidebar(active_path=page.path) }}
   <article class="docs-content {% if crate %}accent-{{ crate.accent }}{% endif %}">
-    {% set crumbs = [
-      { title: "Docs", url: "/docs/" }
-    ] %}
-    {% if crate %}
-      {% set crumbs = crumbs | concat(with={ title: crate.name, url: "/docs/" ~ crate.slug ~ "/" }) %}
-    {% endif %}
-    {% set crumbs = crumbs | concat(with={ title: page.title, url: page.permalink }) %}
-    {{ docs::breadcrumb(items=crumbs) }}
+    <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+      <a href="/docs/">Docs</a>
+      <span class="sep">/</span>
+      {% if crate %}
+        <a href="/docs/{{ crate.slug }}/">{{ crate.name }}</a>
+        <span class="sep">/</span>
+      {% endif %}
+      <span>{{ page.title }}</span>
+    </nav>
 
     <h1>{{ page.title }}</h1>
     {% if page.description %}<p class="text-muted" style="font-size:17px; margin-top: var(--space-3);">{{ page.description }}</p>{% endif %}
