@@ -1,0 +1,117 @@
+.home-section {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-5);
+}
+
+.section-header {
+  margin-bottom: var(--space-6);
+
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--c-text-muted);
+    margin-bottom: var(--space-2);
+  }
+
+  h2 { margin-top: 0; }
+
+  p {
+    color: var(--c-text-muted);
+    max-width: 60ch;
+    margin-top: var(--space-3);
+  }
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+
+  @media (max-width: 980px) { grid-template-columns: 1fr; }
+}
+
+.stats-strip {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-4) 0;
+
+  .pill { font-size: var(--fs-sm); }
+}
+
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+
+  @media (max-width: 720px) { grid-template-columns: 1fr; }
+
+  figure {
+    margin: 0;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  img {
+    width: 100%;
+    height: auto;
+    display: block;
+    background: var(--c-surface-2);
+  }
+
+  figcaption {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    border-top: 1px solid var(--c-border);
+    display: flex;
+    justify-content: space-between;
+
+    strong { color: var(--c-text); font-weight: 600; }
+  }
+}
+
+.quickstart {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: var(--space-6);
+  align-items: center;
+
+  @media (max-width: 980px) { grid-template-columns: 1fr; }
+}
+
+.cli-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+
+  @media (max-width: 720px) { grid-template-columns: 1fr; }
+
+  a {
+    padding: var(--space-4);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-fast);
+
+    &:hover { border-color: var(--c-text-muted); }
+
+    .cli-list-name {
+      font-family: var(--font-mono);
+      font-size: var(--fs-sm);
+      color: var(--c-accent);
+      margin-bottom: 4px;
+    }
+
+    .cli-list-desc {
+      color: var(--c-text-muted);
+      font-size: var(--fs-sm);
+    }
+  }
+}

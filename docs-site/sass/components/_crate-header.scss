@@ -1,0 +1,64 @@
+.crate-header {
+  position: relative;
+  padding: var(--space-6) var(--space-5);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(80% 100% at 100% 0%, var(--c-accent-soft) 0%, transparent 60%),
+    var(--c-surface);
+  border: 1px solid var(--c-border);
+  margin-bottom: var(--space-6);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-5);
+  align-items: end;
+
+  @media (max-width: 720px) {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+}
+
+.crate-header-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--c-accent);
+  margin-bottom: var(--space-2);
+}
+
+.crate-header-title {
+  font-size: var(--fs-h1);
+  font-weight: 800;
+  letter-spacing: var(--tracking-tight);
+  font-family: var(--font-mono);
+  margin: 0;
+}
+
+.crate-header-tagline {
+  color: var(--c-text-muted);
+  margin-top: var(--space-3);
+  max-width: 60ch;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.crate-header-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.crate-header-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-3);
+
+  svg { width: 28px; height: 28px; }
+}

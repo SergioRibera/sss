@@ -1,0 +1,74 @@
+@use "tokens";
+@use "reset";
+@use "typography";
+
+@use "components/badge";
+@use "components/button";
+@use "components/callout";
+@use "components/card";
+@use "components/code-block";
+@use "components/command";
+@use "components/crate-header";
+@use "components/docs-sidebar";
+@use "components/docs-toc";
+@use "components/footer";
+@use "components/hero";
+@use "components/install-block";
+@use "components/nav";
+
+@use "pages/changelog";
+@use "pages/docs";
+@use "pages/home";
+@use "pages/install";
+
+.container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 var(--space-5);
+}
+
+.container-narrow {
+  max-width: var(--container-narrow);
+  margin: 0 auto;
+  padding: 0 var(--space-5);
+}
+
+main { min-height: calc(100vh - var(--header-h) - 280px); }
+
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--c-surface-2);
+  color: var(--c-text-muted);
+  display: grid;
+  place-items: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover { background: var(--c-surface-3); color: var(--c-text); }
+
+  svg { width: 16px; height: 16px; }
+
+  .icon-sun { display: none; }
+  .icon-moon { display: block; }
+}
+
+:root[data-theme="light"] .theme-toggle {
+  .icon-sun { display: block; }
+  .icon-moon { display: none; }
+}
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  padding: 8px 14px;
+  background: var(--c-accent);
+  color: #0b0d10;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  z-index: 100;
+
+  &:focus { top: 8px; }
+}

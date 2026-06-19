@@ -1,0 +1,92 @@
+:root {
+  --c-accent-primary: #ff4f8b;
+  --c-accent-primary-soft: #ff4f8b22;
+  --c-accent-secondary: #7c3aed;
+  --c-accent-secondary-soft: #7c3aed22;
+  --c-accent-tertiary: #06b6d4;
+  --c-accent-tertiary-soft: #06b6d422;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 128px;
+
+  --container-max: 1200px;
+  --container-narrow: 880px;
+
+  --font-sans: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --fs-display: clamp(40px, 6vw, 72px);
+  --fs-h1: clamp(32px, 4.5vw, 48px);
+  --fs-h2: clamp(26px, 3.2vw, 36px);
+  --fs-h3: 22px;
+  --fs-h4: 18px;
+  --fs-body: 16px;
+  --fs-sm: 14px;
+  --fs-xs: 12px;
+
+  --lh-tight: 1.1;
+  --lh-snug: 1.3;
+  --lh-normal: 1.55;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 24px 72px rgba(0, 0, 0, 0.55);
+  --shadow-accent: 0 0 0 1px var(--c-accent-primary-soft), 0 18px 48px var(--c-accent-primary-soft);
+
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  --header-h: 64px;
+}
+
+:root[data-theme="dark"], :root {
+  color-scheme: dark;
+  --c-bg: #0b0d10;
+  --c-bg-alt: #0f1216;
+  --c-surface: #15181d;
+  --c-surface-2: #1d2128;
+  --c-surface-3: #262b33;
+  --c-border: #262b33;
+  --c-border-strong: #353c47;
+  --c-text: #e8eaee;
+  --c-text-muted: #9ba3b1;
+  --c-text-dim: #6b7280;
+  --c-code-bg: #0d1015;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --c-bg: #fafafa;
+  --c-bg-alt: #ffffff;
+  --c-surface: #ffffff;
+  --c-surface-2: #f4f5f7;
+  --c-surface-3: #e9ebef;
+  --c-border: #e1e4e9;
+  --c-border-strong: #c9ced6;
+  --c-text: #0f1216;
+  --c-text-muted: #4b5563;
+  --c-text-dim: #6b7280;
+  --c-code-bg: #f4f5f7;
+}
+
+.accent-primary   { --c-accent: var(--c-accent-primary);   --c-accent-soft: var(--c-accent-primary-soft); }
+.accent-secondary { --c-accent: var(--c-accent-secondary); --c-accent-soft: var(--c-accent-secondary-soft); }
+.accent-tertiary  { --c-accent: var(--c-accent-tertiary);  --c-accent-soft: var(--c-accent-tertiary-soft); }
+:root { --c-accent: var(--c-accent-primary); --c-accent-soft: var(--c-accent-primary-soft); }

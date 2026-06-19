@@ -1,0 +1,81 @@
+.install-layout {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+}
+
+.install-header {
+  text-align: left;
+  margin-bottom: var(--space-6);
+  padding: var(--space-6) 0;
+  border-bottom: 1px solid var(--c-border);
+
+  h1 {
+    font-size: var(--fs-h1);
+    margin: 0;
+
+    span.binary {
+      font-family: var(--font-mono);
+      color: var(--c-accent);
+    }
+  }
+
+  p {
+    margin-top: var(--space-3);
+    color: var(--c-text-muted);
+    max-width: 60ch;
+  }
+}
+
+.install-binary-toggle {
+  display: inline-flex;
+  background: var(--c-surface-2);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-5);
+
+  button {
+    padding: 8px 18px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+
+    &.is-active {
+      background: var(--c-surface);
+      color: var(--c-text);
+      box-shadow: var(--shadow-1);
+    }
+  }
+}
+
+.install-os-grid {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.install-os-section {
+  background: var(--c-bg-alt);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+
+  .install-os-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+
+    .install-os-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      background: var(--c-surface);
+      display: grid;
+      place-items: center;
+      color: var(--c-text-muted);
+    }
+
+    h2 { margin: 0; font-size: var(--fs-h3); }
+  }
+}

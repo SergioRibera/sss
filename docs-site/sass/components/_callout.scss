@@ -1,0 +1,32 @@
+.callout {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  margin: var(--space-4) 0;
+
+  .callout-icon {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    color: var(--c-text-muted);
+    margin-top: 2px;
+  }
+
+  .callout-body {
+    font-size: var(--fs-sm);
+    color: var(--c-text);
+    line-height: var(--lh-snug);
+
+    strong { display: block; margin-bottom: 4px; color: var(--c-text); }
+    p { color: var(--c-text-muted); }
+    p + p { margin-top: var(--space-2); }
+  }
+}
+
+.callout-info    .callout-icon { color: var(--c-accent-tertiary); }
+.callout-warn    .callout-icon { color: #ffb454; }
+.callout-danger  .callout-icon { color: var(--c-accent-primary); }
+.callout-success .callout-icon { color: #4ade80; }

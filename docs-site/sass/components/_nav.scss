@@ -1,0 +1,101 @@
+.site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: var(--header-h);
+  background: color-mix(in srgb, var(--c-bg) 85%, transparent);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.site-nav-inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 var(--space-5);
+}
+
+.site-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  font-size: 17px;
+  color: var(--c-text);
+
+  .site-brand-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--c-accent-primary), var(--c-accent-secondary));
+    display: grid;
+    place-items: center;
+    color: #0b0d10;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 13px;
+  }
+}
+
+.site-nav-links {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+  align-items: center;
+
+  a {
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    transition: color var(--transition-fast), background var(--transition-fast);
+
+    &:hover { color: var(--c-text); background: var(--c-surface); }
+    &.is-active { color: var(--c-text); background: var(--c-surface); }
+  }
+}
+
+.site-nav-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.mobile-nav-toggle {
+  display: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+
+@media (max-width: 880px) {
+  .site-nav-links { display: none; }
+  .mobile-nav-toggle { display: inline-flex; }
+
+  .site-nav-links.is-open {
+    display: flex;
+    position: absolute;
+    top: var(--header-h);
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    background: var(--c-bg-alt);
+    border-bottom: 1px solid var(--c-border);
+    padding: var(--space-3) var(--space-5);
+    gap: var(--space-1);
+    align-items: stretch;
+
+    a { padding: 12px 14px; }
+  }
+}

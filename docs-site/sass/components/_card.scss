@@ -1,0 +1,79 @@
+.card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  transition: border-color var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.card-hover:hover {
+  border-color: var(--c-border-strong);
+}
+
+.card-accent {
+  background:
+    radial-gradient(120% 80% at 0% 0%, var(--c-accent-soft) 0%, transparent 60%),
+    var(--c-surface);
+}
+
+.card-title {
+  font-size: var(--fs-h4);
+  font-weight: 700;
+  margin-bottom: var(--space-2);
+  letter-spacing: var(--tracking-tight);
+}
+
+.card-desc {
+  color: var(--c-text-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
+.card-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--c-accent);
+  margin-bottom: var(--space-3);
+}
+
+.card-footer {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+}
+
+.crate-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 220px;
+
+  .crate-card-icon {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-md);
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    margin-bottom: var(--space-2);
+  }
+
+  .crate-card-binary {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--c-text-dim);
+    background: var(--c-surface-2);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    align-self: flex-start;
+  }
+}

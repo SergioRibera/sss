@@ -1,0 +1,124 @@
+.install-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--c-surface-2);
+  padding: 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--c-border);
+  flex-wrap: wrap;
+}
+
+.install-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--c-text-muted);
+  transition: color var(--transition-fast), background var(--transition-fast);
+  cursor: pointer;
+
+  &:hover { color: var(--c-text); }
+  &[aria-selected="true"], &.is-active {
+    background: var(--c-surface);
+    color: var(--c-text);
+    box-shadow: var(--shadow-1);
+  }
+
+  svg { width: 16px; height: 16px; }
+}
+
+.install-pane {
+  margin-top: var(--space-4);
+  display: none;
+
+  &.is-active { display: block; }
+}
+
+.install-pane-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+
+.install-pkg {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.install-pkg-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  h4 { font-size: var(--fs-body); margin: 0; }
+}
+
+.install-assets {
+  margin-top: var(--space-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.install-assets table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.install-assets th, .install-assets td {
+  padding: 12px var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.install-assets th {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--c-text-dim);
+  background: var(--c-bg-alt);
+  font-weight: 500;
+}
+
+.install-assets tbody tr:last-child td { border-bottom: 0; }
+.install-assets tbody tr:hover { background: var(--c-bg-alt); }
+
+.install-assets .asset-sha {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-text-dim);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+[data-os="linux"]   .install-tab[data-target="linux"][data-auto],
+[data-os="macos"]   .install-tab[data-target="macos"][data-auto],
+[data-os="windows"] .install-tab[data-target="windows"][data-auto] {
+  position: relative;
+
+  &::after {
+    content: "your OS";
+    position: absolute;
+    top: -8px;
+    right: -6px;
+    background: var(--c-accent-primary);
+    color: #0b0d10;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 999px;
+  }
+}

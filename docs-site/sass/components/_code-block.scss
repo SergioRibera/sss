@@ -1,0 +1,99 @@
+pre {
+  background: var(--c-code-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  position: relative;
+  margin: var(--space-4) 0;
+
+  code {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: var(--c-text);
+    font-size: inherit;
+  }
+
+  &::-webkit-scrollbar { height: 8px; }
+  &::-webkit-scrollbar-thumb { background: var(--c-surface-3); border-radius: 4px; }
+}
+
+pre[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--c-text-dim);
+}
+
+.code-window {
+  border-radius: var(--radius-lg);
+  background: var(--c-bg-alt);
+  border: 1px solid var(--c-border);
+  overflow: hidden;
+  margin: var(--space-4) 0;
+
+  .code-window-chrome {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--c-border);
+    background: var(--c-surface);
+
+    .code-window-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--c-surface-3);
+    }
+
+    .code-window-title {
+      margin-left: var(--space-2);
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      color: var(--c-text-muted);
+    }
+  }
+
+  pre {
+    border: 0;
+    border-radius: 0;
+    margin: 0;
+  }
+}
+
+table.flag-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-4) 0;
+  font-size: var(--fs-sm);
+
+  th, td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--c-border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--c-text-dim);
+    font-weight: 500;
+    background: var(--c-bg-alt);
+  }
+
+  td code { font-size: 13px; }
+  tbody tr:hover { background: var(--c-bg-alt); }
+}

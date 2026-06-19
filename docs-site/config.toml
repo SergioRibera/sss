@@ -1,0 +1,43 @@
+base_url = "https://sergioribera.github.io/sss"
+title = "Super ScreenShot"
+description = "Take pretty screenshots of your screen, your code, and build your own annotation tooling."
+default_language = "en"
+compile_sass = true
+build_search_index = false
+generate_feed = true
+feed_filenames = ["atom.xml"]
+
+minify_html = true
+hard_link_static = false
+
+taxonomies = []
+
+[markdown]
+highlight_code = true
+highlight_theme = "css"
+highlight_themes_css = [
+  { theme = "base16-ocean-dark", filename = "syntax-dark.css" },
+  { theme = "base16-ocean-light", filename = "syntax-light.css" },
+]
+smart_punctuation = true
+render_emoji = false
+external_links_target_blank = true
+external_links_no_follow = false
+external_links_no_referrer = false
+
+[extra]
+github_repo = "https://github.com/SergioRibera/sss"
+github_owner = "SergioRibera"
+github_name = "sss"
+download_base = "https://github.com/SergioRibera/sss/releases/latest/download"
+nav = [
+  { name = "Install", url = "/install/" },
+  { name = "Docs", url = "/docs/" },
+  { name = "Changelog", url = "/changelog/" },
+  { name = "GitHub", url = "https://github.com/SergioRibera/sss", external = true },
+]
+crates = [
+  { slug = "cli", name = "sss_cli", binary = "sss", accent = "primary", tagline = "Interactive screen capture + annotation" },
+  { slug = "code", name = "sss_code", binary = "sss_code", accent = "secondary", tagline = "Source code → PNG with syntax highlighting" },
+  { slug = "capture-ui", name = "sss_capture_ui", binary = "sss-select", accent = "tertiary", tagline = "Library: build your own selector + annotator" },
+]
