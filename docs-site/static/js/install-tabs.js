@@ -54,10 +54,7 @@
     document.querySelectorAll(`[data-os-section="${detected}"] [data-os-detected]`)
       .forEach((el) => { el.hidden = false; });
 
-    // Scroll detected section to top on first load
-    const target = document.querySelector(`[data-binary-pane="sss"] [data-os-section="${detected}"]`);
-    if (target && location.hash === "") {
-      target.classList.add("is-detected");
-    }
+    document.querySelectorAll(`[data-os-section="${detected}"]`)
+      .forEach((el) => { el.classList.add("is-detected"); });
   }
 })();

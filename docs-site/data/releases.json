@@ -1,4 +1,119 @@
 {
-  "tag": null,
-  "assets": []
+  "generated_at": "2026-06-19T06:49:40Z",
+  "tags": [
+    "sss_cli/v0.1.5",
+    "sss_code/v0.2.0"
+  ],
+  "assets": [
+    {
+      "name": "sss_cli-aarch64-apple-darwin.tar.xz",
+      "tag": "sss_cli/v0.1.5",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_cli/v0.1.5/sss_cli-aarch64-apple-darwin.tar.xz",
+      "size": 2146232,
+      "size_human": "2 MB",
+      "os": "macos",
+      "binary": "sss",
+      "arch": "aarch64",
+      "format": "tar.xz"
+    },
+    {
+      "name": "sss_cli-x86_64-apple-darwin.tar.xz",
+      "tag": "sss_cli/v0.1.5",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_cli/v0.1.5/sss_cli-x86_64-apple-darwin.tar.xz",
+      "size": 2216808,
+      "size_human": "2 MB",
+      "os": "macos",
+      "binary": "sss",
+      "arch": "x86_64",
+      "format": "tar.xz"
+    },
+    {
+      "name": "sss_cli-x86_64-pc-windows-msvc.msi",
+      "tag": "sss_cli/v0.1.5",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_cli/v0.1.5/sss_cli-x86_64-pc-windows-msvc.msi",
+      "size": 6193152,
+      "size_human": "5 MB",
+      "os": "windows",
+      "binary": "sss",
+      "arch": "x86_64",
+      "format": "msi"
+    },
+    {
+      "name": "sss_cli-x86_64-pc-windows-msvc.zip",
+      "tag": "sss_cli/v0.1.5",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_cli/v0.1.5/sss_cli-x86_64-pc-windows-msvc.zip",
+      "size": 11878556,
+      "size_human": "11 MB",
+      "os": "windows",
+      "binary": "sss",
+      "arch": "x86_64",
+      "format": "zip"
+    },
+    {
+      "name": "sss_cli-x86_64-unknown-linux-gnu.tar.xz",
+      "tag": "sss_cli/v0.1.5",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_cli/v0.1.5/sss_cli-x86_64-unknown-linux-gnu.tar.xz",
+      "size": 3497576,
+      "size_human": "3 MB",
+      "os": "linux",
+      "binary": "sss",
+      "arch": "x86_64",
+      "format": "tar.xz"
+    },
+    {
+      "name": "sss_code-aarch64-apple-darwin.tar.xz",
+      "tag": "sss_code/v0.2.0",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_code/v0.2.0/sss_code-aarch64-apple-darwin.tar.xz",
+      "size": 5808956,
+      "size_human": "5 MB",
+      "os": "macos",
+      "binary": "sss_code",
+      "arch": "aarch64",
+      "format": "tar.xz"
+    },
+    {
+      "name": "sss_code-x86_64-apple-darwin.tar.xz",
+      "tag": "sss_code/v0.2.0",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_code/v0.2.0/sss_code-x86_64-apple-darwin.tar.xz",
+      "size": 6035636,
+      "size_human": "5 MB",
+      "os": "macos",
+      "binary": "sss_code",
+      "arch": "x86_64",
+      "format": "tar.xz"
+    },
+    {
+      "name": "sss_code-x86_64-pc-windows-msvc.msi",
+      "tag": "sss_code/v0.2.0",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_code/v0.2.0/sss_code-x86_64-pc-windows-msvc.msi",
+      "size": 10907648,
+      "size_human": "10 MB",
+      "os": "windows",
+      "binary": "sss_code",
+      "arch": "x86_64",
+      "format": "msi"
+    },
+    {
+      "name": "sss_code-x86_64-pc-windows-msvc.zip",
+      "tag": "sss_code/v0.2.0",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_code/v0.2.0/sss_code-x86_64-pc-windows-msvc.zip",
+      "size": 19825481,
+      "size_human": "18 MB",
+      "os": "windows",
+      "binary": "sss_code",
+      "arch": "x86_64",
+      "format": "zip"
+    },
+    {
+      "name": "sss_code-x86_64-unknown-linux-gnu.tar.xz",
+      "tag": "sss_code/v0.2.0",
+      "url": "https://github.com/SergioRibera/sss/releases/download/sss_code/v0.2.0/sss_code-x86_64-unknown-linux-gnu.tar.xz",
+      "size": 7134208,
+      "size_human": "6 MB",
+      "os": "linux",
+      "binary": "sss_code",
+      "arch": "x86_64",
+      "format": "tar.xz"
+    }
+  ]
 }

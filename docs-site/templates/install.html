@@ -17,9 +17,10 @@
     </div>
 
     {% set releases = load_data(path="data/releases.json", required=false) %}
-    {% if releases and releases.tag %}
+    {% if releases and releases.tags %}
       <p class="install-release-meta">
-        Showing artifacts from <a href="{{ config.extra.github_repo }}/releases/tag/{{ releases.tag }}" rel="noopener"><code>{{ releases.tag }}</code></a>.
+        Artifacts pulled from
+        {% for t in releases.tags %}<a href="{{ config.extra.github_repo }}/releases/tag/{{ t }}" rel="noopener"><code>{{ t }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}.
       </p>
     {% endif %}
   </header>

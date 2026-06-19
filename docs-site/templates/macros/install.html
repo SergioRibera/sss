@@ -43,27 +43,21 @@
 
     {% if assets %}
       <div role="tabpanel" data-tab-panel="dl" class="install-tab-panel {% if not package_managers %}is-active{% endif %}" {% if package_managers %}hidden{% endif %}>
-        <div class="install-assets">
-          <table>
-            <thead>
-              <tr>
-                <th>Format</th>
-                <th>File</th>
-                <th>Size</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for a in assets %}
-                <tr>
-                  <td><span class="asset-format">{{ a.format }}</span></td>
-                  <td><code>{{ a.name }}</code></td>
-                  <td class="text-muted">{{ a.size_human | default(value=a.size) }}</td>
-                  <td><a class="btn btn-soft btn-sm" href="{{ a.url }}" rel="noopener">Download</a></td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <div class="install-assets-grid">
+          {% for a in assets %}
+            <a class="install-asset" href="{{ a.url }}" rel="noopener" download
+               data-arch="{{ a.arch }}" data-format="{{ a.format }}">
+              <span class="install-asset-format">{{ a.format }}</span>
+              <div class="install-asset-body">
+                <strong class="install-asset-arch">{{ a.arch }}</strong>
+                <span class="install-asset-name"><code>{{ a.name }}</code></span>
+              </div>
+              <span class="install-asset-size">{{ a.size_human | default(value=a.size) }}</span>
+              <span class="install-asset-download" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
+              </span>
+            </a>
+          {% endfor %}
         </div>
       </div>
     {% endif %}

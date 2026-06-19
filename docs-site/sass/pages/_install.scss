@@ -151,50 +151,96 @@
 .install-tab-panel { display: none; }
 .install-tab-panel.is-active { display: block; }
 
-.install-assets {
-  overflow-x: auto;
+.install-assets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--fs-sm);
+.install-asset {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  color: var(--c-text);
+  text-decoration: none;
+  transition: border-color var(--transition-fast),
+              background var(--transition-fast),
+              transform var(--transition-fast);
 
-    th, td {
-      padding: 10px 12px;
-      text-align: left;
-      border-bottom: 1px solid var(--c-border);
-    }
+  &:hover {
+    border-color: var(--c-accent-primary);
+    background: var(--c-surface-2);
+    transform: translateY(-1px);
 
-    th {
-      font-weight: 600;
-      color: var(--c-text-muted);
-      font-size: var(--fs-xs);
-      text-transform: uppercase;
-      letter-spacing: var(--tracking-wide);
-    }
-
-    tbody tr:last-child td { border-bottom: 0; }
-    tbody tr:hover { background: var(--c-surface); }
-
-    code {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      word-break: break-all;
+    .install-asset-download {
+      color: var(--c-accent-primary);
+      background: var(--c-accent-primary-soft);
     }
   }
 }
 
-.asset-format {
-  display: inline-block;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
+.install-asset-format {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: var(--c-surface-2);
+  letter-spacing: 0.08em;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--c-bg-alt);
   color: var(--c-text);
   border: 1px solid var(--c-border);
+  white-space: nowrap;
+}
+
+.install-asset-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.install-asset-arch {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.install-asset-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  code { font-family: inherit; }
+}
+
+.install-asset-size {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+.install-asset-download {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--c-surface-2);
+  color: var(--c-text-muted);
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  svg { width: 14px; height: 14px; }
 }
 
 .install-release-meta {
@@ -207,6 +253,9 @@
 
 @media (max-width: 720px) {
   .install-os-section { padding: var(--space-4); }
-  .install-assets table th:nth-child(2),
-  .install-assets table td:nth-child(2) { display: none; }
+  .install-asset {
+    grid-template-columns: auto 1fr auto;
+    .install-asset-size { display: none; }
+  }
+  .install-asset-name { display: none; }
 }

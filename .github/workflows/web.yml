@@ -51,59 +51,15 @@ jobs:
       - name: Magic Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
 
-      # Pull the latest GitHub release manifest into the site's data tree
+      # Pull the latest GitHub release per binary into the site's data tree
       # so the install page tabulates real artifacts. Skipped on PRs from
-      # forks (no token) and when no release exists yet.
+      # forks (no token) and tolerated when no release exists yet.
       - name: Fetch latest release manifest
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p docs-site/data
-          if gh release view --json tagName,assets > /tmp/release.json 2>/dev/null; then
-            jq '{
-              tag: .tagName,
-              assets: (.assets | map({
-                name,
-                url,
-                size,
-                size_human: (
-                  if .size >= 1048576 then "\((.size / 1048576) | floor) MB"
-                  elif .size >= 1024  then "\((.size / 1024)    | floor) KB"
-                  else "\(.size) B" end
-                ),
-                os: (
-                  if   (.name | test("\\.deb$|\\.rpm$|\\.AppImage$|\\.pkg\\.tar\\.zst$|-linux\\.")) then "linux"
-                  elif (.name | test("\\.dmg$|-darwin\\.|-macos\\.|\\.rb$"))                       then "macos"
-                  else "other" end
-                ),
-                binary: (
-                  if   (.name | test("sss_code")) then "sss_code"
-                  elif (.name | test("sss_cli|^sss[-_.]"))  then "sss"
-                  else "sss" end
-                ),
-                format: (
-                  if   (.name | test("\\.deb$"))            then "deb"
-                  elif (.name | test("\\.rpm$"))            then "rpm"
-                  elif (.name | test("\\.AppImage$"))       then "AppImage"
-                  elif (.name | test("\\.pkg\\.tar\\.zst$")) then "ArchLinux"
-                  elif (.name | test("-linux\\.tar\\.gz$")) then "tar.gz"
-                  elif (.name | test("-linux\\.tar\\.zst$")) then "tar.zst"
-                  elif (.name | test("\\.dmg$"))            then "dmg"
-                  elif (.name | test("-darwin\\.pkg$"))     then "pkg"
-                  elif (.name | test("-darwin\\.tar\\.gz$")) then "tar.gz"
-                  elif (.name | test("-darwin\\.tar\\.zst$")) then "tar.zst"
-                  elif (.name | test("\\.rb$"))             then "brew"
-                  else "raw" end
-                )
-              }))
-            }' /tmp/release.json > docs-site/data/releases.json
-            echo "Wrote $(jq '.assets | length' docs-site/data/releases.json) assets from $(jq -r .tag docs-site/data/releases.json)"
-          else
-            echo "No release found; site will render with empty install table"
-            echo '{"tag": null, "assets": []}' > docs-site/data/releases.json
-          fi
+          REPO: ${{ github.repository }}
+        run: scripts/fetch-releases.sh docs-site/data/releases.json
 
       - name: Build site
         run: nix build .#site -L --print-out-paths
