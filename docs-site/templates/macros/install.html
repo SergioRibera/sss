@@ -1,78 +1,101 @@
 {% import "macros/ui.html" as ui %}
 
-{# Match an asset name to (binary, os, format). Returns "" if no match. #}
-{% macro classify(name) %}
-{%- if name is matching("\\.deb$") -%}linux:deb
-{%- elif name is matching("\\.rpm$") -%}linux:rpm
-{%- elif name is matching("\\.pkg\\.tar\\.zst$") -%}linux:archlinux
-{%- elif name is matching("\\.AppImage$") -%}linux:appimage
-{%- elif name is matching("-linux\\.tar\\.gz$") -%}linux:tar.gz
-{%- elif name is matching("-linux\\.tar\\.zst$") -%}linux:tar.zst
-{%- elif name is matching("\\.dmg$") -%}macos:dmg
-{%- elif name is matching("-darwin\\.pkg$") -%}macos:pkg
-{%- elif name is matching("-darwin\\.tar\\.gz$") -%}macos:tar.gz
-{%- elif name is matching("-darwin\\.tar\\.zst$") -%}macos:tar.zst
-{%- elif name is matching("\\.rb$") -%}macos:brew
-{%- else -%}{%- endif -%}
-{% endmacro classify %}
-
-{% macro os_section(label, os_key, binary, assets, package_managers) %}
-<section class="install-os-section accent-primary" data-os-section="{{ os_key }}">
+{% macro os_section(label, os_key, accent, binary, assets, package_managers) %}
+<section class="install-os-section accent-{{ accent }}" data-os-section="{{ os_key }}">
   <div class="install-os-head">
     <span class="install-os-icon">{{ ui::os_icon(os=os_key) }}</span>
     <h2>{{ label }}</h2>
+    <span class="install-os-detected" data-os-detected hidden>your OS</span>
   </div>
 
-  {% if package_managers %}
-    <div class="install-pane-grid">
-      {% for pm in package_managers %}
-        <div class="install-pkg">
-          <div class="install-pkg-head">
-            <h4>{{ pm.name }}</h4>
-            {{ ui::badge(text=pm.kind, kind="default") }}
-          </div>
-          <p class="text-muted">{{ pm.description }}</p>
-          {{ ui::command(text=pm.command) }}
-        </div>
-      {% endfor %}
+  <div class="install-tabs" data-install-tabs>
+    <div class="install-tabs-tablist" role="tablist">
+      {% if package_managers %}
+        <button type="button" role="tab" class="is-active" data-tab="pm" aria-selected="true">
+          Package managers
+          <span class="tab-count">{{ package_managers | length }}</span>
+        </button>
+      {% endif %}
+      {% if assets %}
+        <button type="button" role="tab" data-tab="dl" aria-selected="false" {% if not package_managers %}class="is-active"{% endif %}>
+          Direct download
+          <span class="tab-count">{{ assets | length }}</span>
+        </button>
+      {% endif %}
     </div>
-  {% endif %}
 
-  {% if assets %}
-    <div class="install-assets">
-      <table>
-        <thead>
-          <tr>
-            <th>Format</th>
-            <th>File</th>
-            <th>Size</th>
-            <th>SHA-256</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for asset in assets %}
-            <tr>
-              <td><code>{{ asset.format }}</code></td>
-              <td><code>{{ asset.name }}</code></td>
-              <td class="text-muted">{{ asset.size }}</td>
-              <td><span class="asset-sha">{{ asset.sha256 | truncate(length=16, end="…") }}</span></td>
-              <td><a class="btn btn-soft btn-sm" href="{{ asset.url }}">Download</a></td>
-            </tr>
+    {% if package_managers %}
+      <div role="tabpanel" data-tab-panel="pm" class="install-tab-panel is-active">
+        <div class="install-pane-grid">
+          {% for pm in package_managers %}
+            <div class="install-pkg">
+              <div class="install-pkg-head">
+                <h4>{{ pm.name }}</h4>
+                {{ ui::badge(text=pm.kind, kind="default") }}
+              </div>
+              <p class="text-muted">{{ pm.description }}</p>
+              {{ ui::command(text=pm.command) }}
+            </div>
           {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if assets %}
+      <div role="tabpanel" data-tab-panel="dl" class="install-tab-panel {% if not package_managers %}is-active{% endif %}" {% if package_managers %}hidden{% endif %}>
+        <div class="install-assets">
+          <table>
+            <thead>
+              <tr>
+                <th>Format</th>
+                <th>File</th>
+                <th>Size</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in assets %}
+                <tr>
+                  <td><span class="asset-format">{{ a.format }}</span></td>
+                  <td><code>{{ a.name }}</code></td>
+                  <td class="text-muted">{{ a.size_human | default(value=a.size) }}</td>
+                  <td><a class="btn btn-soft btn-sm" href="{{ a.url }}" rel="noopener">Download</a></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if not package_managers and not assets %}
+      <div class="install-tab-panel is-active">
+        <div class="callout callout-info">
+          <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+          <div class="callout-body">
+            <strong>No artifacts yet for <code>{{ binary }}</code> on {{ label }}.</strong>
+            <p>The next tagged release will populate this list automatically.</p>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
 </section>
 {% endmacro os_section %}
 
-{% macro empty_state(binary) %}
-<div class="callout callout-info">
-  <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-  <div class="callout-body">
-    <strong>No release artifacts found for <code>{{ binary }}</code> yet.</strong>
-    <p>This build will populate once the next tagged release publishes via CI. Meanwhile, you can <a href="{{ config.extra.github_repo }}#installation">build from source</a>.</p>
+{% macro windows_unsupported() %}
+<section class="install-os-section accent-secondary" data-os-section="windows">
+  <div class="install-os-head">
+    <span class="install-os-icon">{{ ui::os_icon(os="windows") }}</span>
+    <h2>Windows</h2>
+    <span class="install-os-detected" data-os-detected hidden>your OS</span>
   </div>
-</div>
-{% endmacro empty_state %}
+  <div class="callout callout-warn">
+    <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div class="callout-body">
+      <strong>Windows builds aren't shipped yet.</strong>
+      <p>Capture targets Wayland, X11 and macOS today. <code>sss_code</code> may cross-compile via mingw — issue welcome.</p>
+    </div>
+  </div>
+</section>
+{% endmacro windows_unsupported %}

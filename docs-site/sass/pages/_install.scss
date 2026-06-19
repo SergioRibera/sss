@@ -59,6 +59,12 @@
   border: 1px solid var(--c-border);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
+  position: relative;
+
+  &.is-detected {
+    border-color: var(--c-accent-primary);
+    box-shadow: 0 0 0 1px var(--c-accent-primary-soft);
+  }
 
   .install-os-head {
     display: flex;
@@ -76,6 +82,131 @@
       color: var(--c-text-muted);
     }
 
-    h2 { margin: 0; font-size: var(--fs-h3); }
+    h2 { margin: 0; font-size: var(--fs-h3); flex: 1; }
+
+    .install-os-detected {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      text-transform: uppercase;
+      letter-spacing: var(--tracking-wide);
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--c-accent-primary-soft);
+      color: var(--c-accent-primary);
+      border: 1px solid var(--c-accent-primary);
+    }
   }
+}
+
+.install-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.install-tabs-tablist {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  align-self: flex-start;
+
+  button {
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background var(--transition-fast), color var(--transition-fast);
+
+    &:hover { color: var(--c-text); }
+
+    &.is-active {
+      background: var(--c-surface-2);
+      color: var(--c-text);
+      box-shadow: var(--shadow-1);
+    }
+
+    .tab-count {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--c-surface-3);
+      color: var(--c-text-dim);
+    }
+
+    &.is-active .tab-count {
+      background: var(--c-accent-primary-soft);
+      color: var(--c-accent-primary);
+    }
+  }
+}
+
+.install-tab-panel { display: none; }
+.install-tab-panel.is-active { display: block; }
+
+.install-assets {
+  overflow-x: auto;
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-sm);
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--c-border);
+    }
+
+    th {
+      font-weight: 600;
+      color: var(--c-text-muted);
+      font-size: var(--fs-xs);
+      text-transform: uppercase;
+      letter-spacing: var(--tracking-wide);
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: var(--c-surface); }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      word-break: break-all;
+    }
+  }
+}
+
+.asset-format {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+}
+
+.install-release-meta {
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--c-text-muted);
+
+  code { font-family: var(--font-mono); }
+}
+
+@media (max-width: 720px) {
+  .install-os-section { padding: var(--space-4); }
+  .install-assets table th:nth-child(2),
+  .install-assets table td:nth-child(2) { display: none; }
 }

@@ -72,6 +72,30 @@ jobs:
                   if .size >= 1048576 then "\((.size / 1048576) | floor) MB"
                   elif .size >= 1024  then "\((.size / 1024)    | floor) KB"
                   else "\(.size) B" end
+                ),
+                os: (
+                  if   (.name | test("\\.deb$|\\.rpm$|\\.AppImage$|\\.pkg\\.tar\\.zst$|-linux\\.")) then "linux"
+                  elif (.name | test("\\.dmg$|-darwin\\.|-macos\\.|\\.rb$"))                       then "macos"
+                  else "other" end
+                ),
+                binary: (
+                  if   (.name | test("sss_code")) then "sss_code"
+                  elif (.name | test("sss_cli|^sss[-_.]"))  then "sss"
+                  else "sss" end
+                ),
+                format: (
+                  if   (.name | test("\\.deb$"))            then "deb"
+                  elif (.name | test("\\.rpm$"))            then "rpm"
+                  elif (.name | test("\\.AppImage$"))       then "AppImage"
+                  elif (.name | test("\\.pkg\\.tar\\.zst$")) then "ArchLinux"
+                  elif (.name | test("-linux\\.tar\\.gz$")) then "tar.gz"
+                  elif (.name | test("-linux\\.tar\\.zst$")) then "tar.zst"
+                  elif (.name | test("\\.dmg$"))            then "dmg"
+                  elif (.name | test("-darwin\\.pkg$"))     then "pkg"
+                  elif (.name | test("-darwin\\.tar\\.gz$")) then "tar.gz"
+                  elif (.name | test("-darwin\\.tar\\.zst$")) then "tar.zst"
+                  elif (.name | test("\\.rb$"))             then "brew"
+                  else "raw" end
                 )
               }))
             }' /tmp/release.json > docs-site/data/releases.json
