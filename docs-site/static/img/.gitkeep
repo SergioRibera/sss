@@ -1,0 +1,4 @@
+# Hero + showcase images are wired into the site at /img/hero-screenshot.png and
+# /img/showcase-*.png. Drop the actual PNGs here before publishing or the home
+# page renders broken <img> placeholders. The CI release workflow copies the
+# repo root's out.png into hero-screenshot.png automatically.

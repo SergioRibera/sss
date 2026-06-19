@@ -1,0 +1,2 @@
+# Font binaries are pulled by the nix derivation at build time from nixpkgs
+# (manrope, jetbrains-mono) and copied to /fonts/. Don't commit fonts here.
