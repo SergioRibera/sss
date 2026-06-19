@@ -16,7 +16,7 @@
 {% macro sidebar(active_path) %}
 <aside class="docs-sidebar" id="docs-sidebar">
   {% for c in config.extra.crates %}
-    {% set crate_section = get_section(path="docs/" ~ c.slug ~ "/_index.md", metadata_only=true) %}
+    {% set crate_section = get_section(path="docs/" ~ c.slug ~ "/_index.md") %}
     <div class="docs-sidebar-section">
       <h5>{{ c.name }}</h5>
       <ul>

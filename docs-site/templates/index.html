@@ -2,33 +2,28 @@
 {% import "macros/ui.html" as ui %}
 
 {% block body %}
-<section class="hero">
+<section class="hero hero-centered">
   <div class="hero-inner">
-    <div>
-      <div class="hero-eyebrow"><span class="dot"></span> Take pretty screenshots — your screen, your code, your way</div>
-      <h1 class="hero-title">Super <em>ScreenShot</em></h1>
-      <p class="hero-lead">
-        Three Rust tools in one workspace: an interactive screen capturer with annotation overlay,
-        a source-code → PNG renderer with syntax highlighting, and a library to build your own selector UI.
-      </p>
-      <div class="hero-cta">
-        <a class="btn btn-primary btn-lg" href="/install/">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
-          Install
-        </a>
-        <a class="btn btn-ghost btn-lg" href="{{ config.extra.github_repo }}" target="_blank" rel="noopener">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.69-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.76 2.69 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.17-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.14 1.18a10.9 10.9 0 0 1 5.72 0c2.18-1.49 3.13-1.18 3.13-1.18.63 1.58.23 2.75.11 3.04.73.81 1.17 1.84 1.17 3.1 0 4.43-2.69 5.41-5.26 5.69.41.36.78 1.07.78 2.16 0 1.56-.01 2.81-.01 3.2 0 .31.21.68.8.56C20.21 21.38 23.5 17.07 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
-          GitHub
-        </a>
-      </div>
-      <div class="hero-meta">
-        <span class="hero-meta-item"><strong>MIT / Apache-2.0</strong></span>
-        <span class="hero-meta-item"><strong>3</strong> binaries</span>
-        <span class="hero-meta-item"><strong>Wayland · X11 · macOS</strong></span>
-      </div>
+    <div class="hero-eyebrow"><span class="dot"></span> Take pretty screenshots — your screen, your code, your way</div>
+    <h1 class="hero-title">Super <em>ScreenShot</em></h1>
+    <p class="hero-lead">
+      Three Rust tools in one workspace: an interactive screen capturer with annotation overlay,
+      a source-code → PNG renderer with syntax highlighting, and a library to build your own selector UI.
+    </p>
+    <div class="hero-cta">
+      <a class="btn btn-primary btn-lg" href="/install/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
+        Install
+      </a>
+      <a class="btn btn-ghost btn-lg" href="{{ config.extra.github_repo }}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.69-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.76 2.69 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.17-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.14 1.18a10.9 10.9 0 0 1 5.72 0c2.18-1.49 3.13-1.18 3.13-1.18.63 1.58.23 2.75.11 3.04.73.81 1.17 1.84 1.17 3.1 0 4.43-2.69 5.41-5.26 5.69.41.36.78 1.07.78 2.16 0 1.56-.01 2.81-.01 3.2 0 .31.21.68.8.56C20.21 21.38 23.5 17.07 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
+        GitHub
+      </a>
     </div>
-    <div class="hero-visual">
-      <img src="https://i.ibb.co/kPB2FQf/Sprite-0002.png" alt="Super ScreenShot animated demo — capture, annotate, render" width="960" height="600" loading="eager">
+    <div class="hero-meta">
+      <span class="hero-meta-item"><strong>MIT / Apache-2.0</strong></span>
+      <span class="hero-meta-item"><strong>3</strong> binaries</span>
+      <span class="hero-meta-item"><strong>Wayland · X11 · macOS</strong></span>
     </div>
   </div>
 </section>
@@ -103,10 +98,6 @@
     <figure>
       <img src="https://github.com/SergioRibera/sss/assets/56278796/be74cd48-8f87-4544-98da-c7bc119753ab" alt="sss_code rendered Rust source" loading="lazy">
       <figcaption><strong>sss_code</strong><span>syntax-highlighted PNG</span></figcaption>
-    </figure>
-    <figure class="showcase-wide">
-      <img src="https://i.ibb.co/gbTvJ8WG/showcase.png" alt="Super ScreenShot composite showcase" loading="lazy">
-      <figcaption><strong>composite</strong><span>full pipeline output</span></figcaption>
     </figure>
   </div>
 </section>

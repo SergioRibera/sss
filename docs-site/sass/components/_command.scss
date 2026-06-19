@@ -10,17 +10,22 @@
   font-size: var(--fs-sm);
   position: relative;
   overflow: hidden;
+  max-width: 100%;
+  min-width: 0;
 
   .command-prompt {
     color: var(--c-text-dim);
     user-select: none;
+    flex-shrink: 0;
   }
 
   .command-body {
     color: var(--c-text);
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
     overflow-x: auto;
     white-space: pre;
+    scrollbar-width: thin;
 
     &::-webkit-scrollbar { height: 6px; }
     &::-webkit-scrollbar-thumb { background: var(--c-surface-3); border-radius: 3px; }
