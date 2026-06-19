@@ -9,8 +9,8 @@ weight = 30
 `sss_capture_ui` is the library that powers the `sss-select` binary — and `sss_cli`'s interactive overlay. It's a Cargo crate you can depend on directly if you want to embed a region selector, window picker, or annotation canvas into your own Rust GUI.
 
 <figure class="docs-figure">
-  <video src="https://github.com/user-attachments/assets/db8949c9-dc17-4690-98e7-1b9acefd004c" autoplay loop muted playsinline></video>
-  <figcaption>Selector overlay — pick a region, window or monitor, then annotate</figcaption>
+  <img src="/img/610638809-02c5766b-39a8-4ea1-88f6-77bcb99466d4.webp" alt="sss_capture_ui annotation editor — toolbar with shapes, OCR rectangle, polygon, free-hand brush and arrow over a captured page" loading="lazy">
+  <figcaption>Selector + annotation editor — toolbar, shapes, arrows, blur, free-hand</figcaption>
 </figure>
 
 The crate is built on `winit` + `egui` + `wgpu` (Sergio's forks adding wlr-layer-shell support on Wayland) and re-exports the underlying `sss_capture` types so consumers don't need two dependencies.

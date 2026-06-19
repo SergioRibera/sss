@@ -18,7 +18,7 @@ weight = 10
 `--area` drags across your **whole virtual desktop** — pull a rectangle from one monitor to another and the captured PNG stitches the frames together at the right scale, no visible cut. Works on Wayland (via `wlr-screencopy` per output + virtual-desktop math), X11 (RANDR 1.5 `GetMonitors`) and macOS (`CGGetActiveDisplayList`).
 
 <figure class="docs-figure">
-  <img src="https://github.com/user-attachments/assets/ea6c11c6-7288-43f5-8173-280cdfb70bd2" alt="phone photo of two physical monitors with a single sss selection rectangle spanning the gap between them" loading="lazy">
+  <img src="/img/610637132-ea6c11c6-7288-43f5-8173-280cdfb70bd2.webp" alt="phone photo of two physical monitors with a single sss selection rectangle spanning the gap between them" loading="lazy">
   <figcaption>Real hardware — one selection across two monitors</figcaption>
 </figure>
 
@@ -45,7 +45,7 @@ weight = 10
 The annotation overlay can pipe the captured (or selected) region through an OCR engine and hand the recognized text straight back to the clipboard. Powered by [`sss_ocr`](https://github.com/SergioRibera/sss/tree/main/crates/sss_ocr) with hardware-aware defaults (CPU / CUDA / TensorRT / CoreML / DirectML / OpenVINO / WebGPU).
 
 <figure class="docs-figure">
-  <img src="https://github.com/user-attachments/assets/96be5220-2ab7-445f-9ea8-5f7c29944ac1" alt="sss_cli OCR extracting text from a captured region" loading="lazy">
+  <img src="/img/610638783-72b4dd90-1f28-4130-aa55-d9d30037da7a.webp" alt="sss_cli OCR — text recognition boxes over a captured region" loading="lazy">
   <figcaption>OCR — select, recognize, copy</figcaption>
 </figure>
 
