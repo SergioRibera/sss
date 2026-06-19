@@ -1,0 +1,12 @@
+<figure class="code-window">
+  {% if title %}
+    <div class="code-window-chrome">
+      <span class="code-window-dot"></span>
+      <span class="code-window-dot"></span>
+      <span class="code-window-dot"></span>
+      <span class="code-window-title">{{ title }}</span>
+    </div>
+  {% endif %}
+  <img src="{{ src }}" alt="{{ alt | default(value=title | default(value='')) }}" loading="lazy">
+  {% if caption %}<figcaption style="padding: var(--space-3) var(--space-4); font-size: var(--fs-sm); color: var(--c-text-muted);">{{ caption }}</figcaption>{% endif %}
+</figure>

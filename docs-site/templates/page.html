@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "macros/docs.html" as docs %}
+
+{% block body %}
+{% set crate = false %}
+{% for c in config.extra.crates %}
+  {% if page.path is starting_with("/docs/" ~ c.slug ~ "/") %}{% set_global crate = c %}{% endif %}
+{% endfor %}
+
+<div class="docs-layout">
+  {{ docs::sidebar(active_path=page.path) }}
+  <article class="docs-content {% if crate %}accent-{{ crate.accent }}{% endif %}">
+    {% set crumbs = [
+      { title: "Docs", url: "/docs/" }
+    ] %}
+    {% if crate %}
+      {% set crumbs = crumbs | concat(with={ title: crate.name, url: "/docs/" ~ crate.slug ~ "/" }) %}
+    {% endif %}
+    {% set crumbs = crumbs | concat(with={ title: page.title, url: page.permalink }) %}
+    {{ docs::breadcrumb(items=crumbs) }}
+
+    <h1>{{ page.title }}</h1>
+    {% if page.description %}<p class="text-muted" style="font-size:17px; margin-top: var(--space-3);">{{ page.description }}</p>{% endif %}
+
+    {{ page.content | safe }}
+
+    {{ docs::page_nav(prev=page.lower, next=page.higher) }}
+  </article>
+  {{ docs::toc(page=page) }}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ get_url(path='js/docs-toc.js') | safe }}" defer></script>
+{% endblock %}

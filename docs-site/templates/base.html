@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="{{ lang | default(value="en") }}" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="generator" content="Zola">
+  {% set page_title = page.title | default(value=section.title | default(value="")) %}
+  <title>{% if page_title %}{{ page_title }} — {{ config.title }}{% else %}{{ config.title }}{% endif %}</title>
+  {% set page_description = page.description | default(value=section.description | default(value=config.description)) %}
+  <meta name="description" content="{{ page_description }}">
+  <meta property="og:title" content="{% if page_title %}{{ page_title }} — {% endif %}{{ config.title }}">
+  <meta property="og:description" content="{{ page_description }}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ current_url | default(value=config.base_url) | safe }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ get_url(path='main.css') | safe }}">
+  <link rel="stylesheet" href="{{ get_url(path='syntax-dark.css') | safe }}" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="{{ get_url(path='syntax-light.css') | safe }}" media="(prefers-color-scheme: light)">
+  <link rel="alternate" type="application/atom+xml" title="{{ config.title }}" href="{{ get_url(path='atom.xml', trailing_slash=false) | safe }}">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sss-theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    })();
+  </script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  {% import "macros/nav.html" as nav %}
+  {{ nav::header(current_path=current_path | default(value="")) }}
+  <main id="content">
+    {% block body %}{% endblock %}
+  </main>
+  {{ nav::footer() }}
+  <script src="{{ get_url(path='js/os-detect.js') | safe }}" defer></script>
+  <script src="{{ get_url(path='js/copy-cmd.js') | safe }}" defer></script>
+  <script src="{{ get_url(path='js/mobile-nav.js') | safe }}" defer></script>
+  <script src="{{ get_url(path='js/theme-toggle.js') | safe }}" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

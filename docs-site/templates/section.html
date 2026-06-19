@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+{% import "macros/docs.html" as docs %}
+
+{% block body %}
+{% set is_docs_root = section.path == "/docs/" %}
+{% set crate = false %}
+{% for c in config.extra.crates %}
+  {% if section.path == "/docs/" ~ c.slug ~ "/" %}{% set_global crate = c %}{% endif %}
+{% endfor %}
+
+{% if is_docs_root %}
+  <div class="install-layout">
+    <header class="install-header">
+      <h1>Documentation</h1>
+      <p class="text-muted">Three projects, one shared toolkit. Pick a crate to dig in.</p>
+    </header>
+
+    <div class="docs-hub-grid">
+      {% for c in config.extra.crates %}
+        <a class="docs-hub-card accent-{{ c.accent }}" href="/docs/{{ c.slug }}/">
+          <span class="docs-hub-card-binary">$ {{ c.binary }}</span>
+          <h3>{{ c.name }}</h3>
+          <p>{{ c.tagline }}</p>
+          <span class="docs-hub-card-cta">Open docs <span aria-hidden="true">→</span></span>
+        </a>
+      {% endfor %}
+    </div>
+
+    <div class="home-section" style="padding-left:0; padding-right:0;">
+      <div class="section-header">
+        <p class="section-eyebrow">reference</p>
+        <h2>Config reference</h2>
+        <p>Every TOML key, generated from the Nix option modules. Use this when wiring Home Manager or hand-editing <code>~/.config/sss/config.toml</code>.</p>
+      </div>
+      <a class="btn btn-ghost" href="/docs/config-reference/">Open reference →</a>
+    </div>
+  </div>
+{% else %}
+  <div class="docs-layout">
+    {{ docs::sidebar(active_path=section.path) }}
+    <article class="docs-content {% if crate %}accent-{{ crate.accent }}{% endif %}">
+      {% if crate %}
+        {{ docs::crate_header(crate=crate) }}
+      {% else %}
+        <h1>{{ section.title }}</h1>
+      {% endif %}
+
+      {{ section.content | safe }}
+
+      {% if section.pages | length > 0 %}
+        <div class="section-header" style="margin-top: var(--space-7);">
+          <p class="section-eyebrow">pages</p>
+          <h2>In this section</h2>
+        </div>
+        <div class="feature-grid">
+          {% for p in section.pages %}
+            <a class="card card-hover" href="{{ p.permalink | safe }}">
+              <h3 class="card-title">{{ p.title }}</h3>
+              <p class="card-desc">{{ p.description | default(value="") }}</p>
+            </a>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </article>
+    {{ docs::toc(page=section) }}
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ get_url(path='js/docs-toc.js') | safe }}" defer></script>
+{% endblock %}

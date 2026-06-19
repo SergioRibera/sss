@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+{% import "macros/install.html" as install %}
+
+{% block body %}
+<div class="install-layout">
+  <header class="install-header">
+    <h1>Install <span class="binary" data-binary-label>sss</span></h1>
+    <p class="text-muted">Pick a package manager or grab a raw artifact. The tab marked <em>your OS</em> is auto-selected from your browser.</p>
+
+    <div class="install-binary-toggle" data-binary-toggle>
+      <button type="button" class="is-active" data-binary="sss">sss</button>
+      <button type="button" data-binary="sss_code">sss_code</button>
+    </div>
+  </header>
+
+  {% set releases = load_data(path="data/releases.json", required=false) | default(value={}) %}
+
+  <div class="install-os-grid">
+    {# ----- Linux ----- #}
+    {% set linux_pkgs = [
+      { name: "Cargo", kind: "source", description: "Build from source — works on any Rust-supported target.",
+        command: "cargo install --git " ~ config.extra.github_repo ~ " sss_cli" },
+      { name: "Nix flake", kind: "flake", description: "Run without installing, or `nix profile install`.",
+        command: "nix run " ~ config.extra.github_repo | replace(from='https://', to='') | replace(from='github.com/', to='github:') ~ "#cli" },
+      { name: "Arch (AUR)", kind: "aur", description: "Pacman wrapper required (paru / yay).",
+        command: "paru -S sss-bin" },
+      { name: "shell installer", kind: "script", description: "Detects glibc / musl and downloads the right tarball.",
+        command: "curl --proto '=https' --tlsv1.2 -LsSf " ~ config.extra.download_base ~ "/install.sh | sh" }
+    ] %}
+    {{ install::os_section(label="Linux", os_key="linux", binary="sss", package_managers=linux_pkgs, assets=[]) }}
+
+    {# ----- macOS ----- #}
+    {% set macos_pkgs = [
+      { name: "Homebrew", kind: "tap", description: "Latest tagged release from the SergioRibera tap.",
+        command: "brew install sergioribera/tap/sss_cli" },
+      { name: "Cargo", kind: "source", description: "Build from source — universal binary not provided.",
+        command: "cargo install --git " ~ config.extra.github_repo ~ " sss_cli" },
+      { name: "Nix flake", kind: "flake", description: "Works on Apple Silicon and Intel.",
+        command: "nix run " ~ config.extra.github_repo | replace(from='https://', to='') | replace(from='github.com/', to='github:') ~ "#cli" },
+      { name: "shell installer", kind: "script", description: "Single command, no Xcode required.",
+        command: "curl --proto '=https' --tlsv1.2 -LsSf " ~ config.extra.download_base ~ "/install.sh | sh" }
+    ] %}
+    {{ install::os_section(label="macOS", os_key="macos", binary="sss", package_managers=macos_pkgs, assets=[]) }}
+
+    {# ----- Windows ----- #}
+    <section class="install-os-section" data-os-section="windows">
+      <div class="install-os-head">
+        <span class="install-os-icon">{{ ui::os_icon(os="windows") }}</span>
+        <h2>Windows</h2>
+      </div>
+      <div class="callout callout-warn">
+        <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div class="callout-body">
+          <strong>Windows builds aren't shipped yet.</strong>
+          <p>The capture stack targets Wayland, X11 and macOS today. You can still build from source — wgpu's DX12 backend works on Windows for <code>sss_code</code>. Tracking issue welcome.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  {% if releases.assets %}
+    <section class="home-section" style="padding-left:0; padding-right:0;">
+      <div class="section-header">
+        <p class="section-eyebrow">artifacts</p>
+        <h2>Direct downloads</h2>
+        <p>Pinned to the latest tagged release. SHA-256 truncated; click an asset for the full sum.</p>
+      </div>
+      <div class="install-assets">
+        <table>
+          <thead><tr><th>File</th><th>Size</th><th></th></tr></thead>
+          <tbody>
+            {% for asset in releases.assets %}
+              <tr>
+                <td><code>{{ asset.name }}</code></td>
+                <td class="text-muted">{{ asset.size_human | default(value=asset.size) }}</td>
+                <td><a class="btn btn-soft btn-sm" href="{{ asset.url }}">Download</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ get_url(path='js/install-tabs.js') | safe }}" defer></script>
+{% endblock %}

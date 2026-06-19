@@ -1,0 +1,78 @@
+{% import "macros/ui.html" as ui %}
+
+{# Match an asset name to (binary, os, format). Returns "" if no match. #}
+{% macro classify(name) %}
+{%- if name is matching("\\.deb$") -%}linux:deb
+{%- elif name is matching("\\.rpm$") -%}linux:rpm
+{%- elif name is matching("\\.pkg\\.tar\\.zst$") -%}linux:archlinux
+{%- elif name is matching("\\.AppImage$") -%}linux:appimage
+{%- elif name is matching("-linux\\.tar\\.gz$") -%}linux:tar.gz
+{%- elif name is matching("-linux\\.tar\\.zst$") -%}linux:tar.zst
+{%- elif name is matching("\\.dmg$") -%}macos:dmg
+{%- elif name is matching("-darwin\\.pkg$") -%}macos:pkg
+{%- elif name is matching("-darwin\\.tar\\.gz$") -%}macos:tar.gz
+{%- elif name is matching("-darwin\\.tar\\.zst$") -%}macos:tar.zst
+{%- elif name is matching("\\.rb$") -%}macos:brew
+{%- else -%}{%- endif -%}
+{% endmacro classify %}
+
+{% macro os_section(label, os_key, binary, assets, package_managers) %}
+<section class="install-os-section accent-primary" data-os-section="{{ os_key }}">
+  <div class="install-os-head">
+    <span class="install-os-icon">{{ ui::os_icon(os=os_key) }}</span>
+    <h2>{{ label }}</h2>
+  </div>
+
+  {% if package_managers %}
+    <div class="install-pane-grid">
+      {% for pm in package_managers %}
+        <div class="install-pkg">
+          <div class="install-pkg-head">
+            <h4>{{ pm.name }}</h4>
+            {{ ui::badge(text=pm.kind, kind="default") }}
+          </div>
+          <p class="text-muted">{{ pm.description }}</p>
+          {{ ui::command(text=pm.command) }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if assets %}
+    <div class="install-assets">
+      <table>
+        <thead>
+          <tr>
+            <th>Format</th>
+            <th>File</th>
+            <th>Size</th>
+            <th>SHA-256</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for asset in assets %}
+            <tr>
+              <td><code>{{ asset.format }}</code></td>
+              <td><code>{{ asset.name }}</code></td>
+              <td class="text-muted">{{ asset.size }}</td>
+              <td><span class="asset-sha">{{ asset.sha256 | truncate(length=16, end="…") }}</span></td>
+              <td><a class="btn btn-soft btn-sm" href="{{ asset.url }}">Download</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</section>
+{% endmacro os_section %}
+
+{% macro empty_state(binary) %}
+<div class="callout callout-info">
+  <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+  <div class="callout-body">
+    <strong>No release artifacts found for <code>{{ binary }}</code> yet.</strong>
+    <p>This build will populate once the next tagged release publishes via CI. Meanwhile, you can <a href="{{ config.extra.github_repo }}#installation">build from source</a>.</p>
+  </div>
+</div>
+{% endmacro empty_state %}

@@ -1,0 +1,2 @@
+{% import "macros/ui.html" as ui %}
+{{ ui::command(text=text | default(value=body), prompt=prompt | default(value="$")) }}

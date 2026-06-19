@@ -1,0 +1,71 @@
+{% macro header(current_path) %}
+<header class="site-nav">
+  <div class="site-nav-inner">
+    <a class="site-brand" href="/">
+      <span class="site-brand-mark">sss</span>
+      <span>Super ScreenShot</span>
+    </a>
+    <nav class="site-nav-links" id="nav-links" aria-label="Primary">
+      {% for item in config.extra.nav %}
+        {% set is_active = current_path is starting_with(item.url) and item.url != "/" %}
+        <a href="{{ item.url }}"
+           {% if item.external %}target="_blank" rel="noopener"{% endif %}
+           class="{% if is_active %}is-active{% endif %}">
+          {{ item.name }}
+        </a>
+      {% endfor %}
+    </nav>
+    <div class="site-nav-actions">
+      <button class="theme-toggle" type="button" aria-label="Toggle theme" data-theme-toggle>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+      <button class="mobile-nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="nav-links" data-mobile-nav>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+{% endmacro header %}
+
+{% macro footer() %}
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <div class="site-footer-brand">
+      <a class="site-brand" href="/">
+        <span class="site-brand-mark">sss</span>
+        <span>Super ScreenShot</span>
+      </a>
+      <p>{{ config.description }}</p>
+    </div>
+    <div class="site-footer-col">
+      <h5>Project</h5>
+      <ul>
+        <li><a href="/install/">Install</a></li>
+        <li><a href="/docs/">Documentation</a></li>
+        <li><a href="/changelog/">Changelog</a></li>
+      </ul>
+    </div>
+    <div class="site-footer-col">
+      <h5>Crates</h5>
+      <ul>
+        {% for c in config.extra.crates %}
+          <li><a href="/docs/{{ c.slug }}/">{{ c.name }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="site-footer-col">
+      <h5>Community</h5>
+      <ul>
+        <li><a href="{{ config.extra.github_repo }}" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="{{ config.extra.github_repo }}/issues" target="_blank" rel="noopener">Issues</a></li>
+        <li><a href="{{ config.extra.github_repo }}/releases" target="_blank" rel="noopener">Releases</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="site-footer-meta">
+    <span>© {{ now() | date(format='%Y') }} Sergio Ribera. MIT / Apache-2.0.</span>
+    <span>Built with Zola. No tracking.</span>
+  </div>
+</footer>
+{% endmacro footer %}

@@ -1,0 +1,115 @@
+{% import "macros/ui.html" as ui %}
+
+{% macro breadcrumb(items) %}
+<nav class="docs-breadcrumb" aria-label="Breadcrumb">
+  {% for item in items %}
+    {% if loop.last %}
+      <span>{{ item.title }}</span>
+    {% else %}
+      <a href="{{ item.url }}">{{ item.title }}</a>
+      <span class="sep">/</span>
+    {% endif %}
+  {% endfor %}
+</nav>
+{% endmacro breadcrumb %}
+
+{% macro sidebar(active_path) %}
+<aside class="docs-sidebar" id="docs-sidebar">
+  {% for c in config.extra.crates %}
+    {% set crate_section = get_section(path="docs/" ~ c.slug ~ "/_index.md", metadata_only=true) %}
+    <div class="docs-sidebar-section">
+      <h5>{{ c.name }}</h5>
+      <ul>
+        <li>
+          <a href="/docs/{{ c.slug }}/"
+             class="{% if active_path == '/docs/' ~ c.slug ~ '/' %}is-active{% endif %}">
+            Overview
+          </a>
+        </li>
+        {% if crate_section.pages %}
+          {% for p in crate_section.pages %}
+            <li>
+              <a href="{{ p.permalink | safe }}"
+                 class="{% if active_path == p.path %}is-active{% endif %}">
+                {{ p.title }}
+              </a>
+            </li>
+          {% endfor %}
+        {% endif %}
+      </ul>
+    </div>
+  {% endfor %}
+
+  <div class="docs-sidebar-section">
+    <h5>Reference</h5>
+    <ul>
+      <li>
+        <a href="/docs/config-reference/"
+           class="{% if active_path == '/docs/config-reference/' %}is-active{% endif %}">
+          Config reference
+        </a>
+      </li>
+    </ul>
+  </div>
+</aside>
+{% endmacro sidebar %}
+
+{% macro toc(page) %}
+{% if page.toc and page.toc | length > 0 %}
+<aside class="docs-toc" aria-label="On this page">
+  <div class="docs-toc-label">On this page</div>
+  <ul>
+    {% for h in page.toc %}
+      <li>
+        <a href="#{{ h.id }}" data-toc-link>{{ h.title }}</a>
+        {% if h.children %}
+          <ul>
+            {% for sub in h.children %}
+              <li><a href="#{{ sub.id }}" data-toc-link>{{ sub.title }}</a></li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</aside>
+{% endif %}
+{% endmacro toc %}
+
+{% macro page_nav(prev, next) %}
+{% if prev or next %}
+<nav class="docs-page-nav" aria-label="Page navigation">
+  {% if prev %}
+    <a href="{{ prev.permalink | safe }}" class="is-prev">
+      <span class="docs-page-nav-label">← Previous</span>
+      <span class="docs-page-nav-title">{{ prev.title }}</span>
+    </a>
+  {% else %}<span></span>{% endif %}
+  {% if next %}
+    <a href="{{ next.permalink | safe }}" class="is-next">
+      <span class="docs-page-nav-label">Next →</span>
+      <span class="docs-page-nav-title">{{ next.title }}</span>
+    </a>
+  {% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{% endmacro page_nav %}
+
+{% macro crate_header(crate) %}
+<header class="crate-header accent-{{ crate.accent }}">
+  <div>
+    <div class="crate-header-icon">{{ ui::crate_icon(slug=crate.slug) }}</div>
+    <div class="crate-header-eyebrow">crate / {{ crate.slug }}</div>
+    <h1 class="crate-header-title">{{ crate.name }}</h1>
+    <p class="crate-header-tagline">{{ crate.tagline }}</p>
+  </div>
+  <div class="crate-header-badges">
+    {{ ui::badge(text="bin " ~ crate.binary, kind="version") }}
+    {{ ui::badge(text="latest", kind="accent") }}
+  </div>
+</header>
+{% endmacro crate_header %}
+
+{% macro mobile_sidebar_toggle() %}
+<button class="docs-mobile-toggle" type="button" data-sidebar-toggle aria-controls="docs-sidebar">Documentation menu</button>
+{% endmacro mobile_sidebar_toggle %}
