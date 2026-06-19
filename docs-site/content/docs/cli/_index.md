@@ -13,6 +13,15 @@ weight = 10
   <figcaption>Annotation overlay — arrows, shapes, blur, text</figcaption>
 </figure>
 
+### Multi-monitor, no seams
+
+`--area` drags across your **whole virtual desktop** — pull a rectangle from one monitor to another and the captured PNG stitches the frames together at the right scale, no visible cut. Works on Wayland (via `wlr-screencopy` per output + virtual-desktop math), X11 (RANDR 1.5 `GetMonitors`) and macOS (`CGGetActiveDisplayList`).
+
+<figure class="docs-figure">
+  <img src="https://github.com/user-attachments/assets/ea6c11c6-7288-43f5-8173-280cdfb70bd2" alt="phone photo of two physical monitors with a single sss selection rectangle spanning the gap between them" loading="lazy">
+  <figcaption>Real hardware — one selection across two monitors</figcaption>
+</figure>
+
 ## At a glance
 
 - Three target modes: **screen**, **window**, **area** — each with an interactive picker or a direct selector.
