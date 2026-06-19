@@ -8,6 +8,11 @@ weight = 20
 
 `sss_code` is a CLI-only renderer: feed it a source file or `stdin`, get back a PNG with syntax highlighting, line numbers, gradients, and optional macOS-style window chrome.
 
+<figure class="docs-figure">
+  <img src="https://github.com/SergioRibera/sss/assets/56278796/be74cd48-8f87-4544-98da-c7bc119753ab" alt="sss_code rendering a Rust source file to a PNG with syntax highlighting" loading="lazy">
+  <figcaption>Rust source rendered with the default theme + gradient background</figcaption>
+</figure>
+
 It bundles every `syntect` language and theme out of the box, so you can render Rust, TS, Go, Python, Nix, Markdown — anything with a Sublime Text `.sublime-syntax` definition.
 
 ## At a glance
