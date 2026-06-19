@@ -6,7 +6,7 @@ Super ScreenShot is a set of libraries and tools for building screenshots in a s
 
 <img src="https://i.ibb.co/gbTvJ8WG/showcase.png">
 
-[selector_ui_preview.webm](https://github.com/user-attachments/assets/db8949c9-dc17-4690-98e7-1b9acefd004c)
+[selector_ui_preview.webm](https://github.com/user-attachments/assets/7222278f-6738-4edd-b4c2-51330f90dfa1)
 
 ## 🧩 Workspace
 
