@@ -25,6 +25,12 @@
         var t = localStorage.getItem("sss-theme");
         if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
       } catch (e) {}
+      var ua = navigator.userAgent || "";
+      var p = navigator.platform || "";
+      var os = "linux";
+      if (/Mac|iPhone|iPad/i.test(ua) || /mac/i.test(p)) os = "macos";
+      else if (/Win/i.test(ua) || /win/i.test(p)) os = "windows";
+      document.documentElement.dataset.os = os;
     })();
   </script>
   {% block head %}{% endblock %}
@@ -36,7 +42,6 @@
     {% block body %}{% endblock %}
   </main>
   {{ nav::footer() }}
-  <script src="{{ get_url(path='js/os-detect.js') | safe }}" defer></script>
   <script src="{{ get_url(path='js/copy-cmd.js') | safe }}" defer></script>
   <script src="{{ get_url(path='js/mobile-nav.js') | safe }}" defer></script>
   <script src="{{ get_url(path='js/theme-toggle.js') | safe }}" defer></script>

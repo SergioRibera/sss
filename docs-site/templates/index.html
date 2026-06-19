@@ -2,6 +2,29 @@
 {% import "macros/ui.html" as ui %}
 
 {% block body %}
+{% set releases = load_data(path="data/releases.json", required=false) %}
+{% set all_assets = [] %}
+{% if releases and releases.assets %}{% set all_assets = releases.assets %}{% endif %}
+
+{% set linux_assets = all_assets | filter(attribute="os", value="linux") | filter(attribute="binary", value="sss") %}
+{% set macos_assets = all_assets | filter(attribute="os", value="macos") | filter(attribute="binary", value="sss") %}
+
+{% set linux_primary = 0 %}
+{% for fmt in ["deb", "AppImage", "rpm", "tar.xz"] %}
+  {% if linux_primary == 0 %}
+    {% set hit = linux_assets | filter(attribute="format", value=fmt) %}
+    {% if hit | length > 0 %}{% set_global linux_primary = hit | first %}{% endif %}
+  {% endif %}
+{% endfor %}
+
+{% set macos_primary = 0 %}
+{% for fmt in ["dmg", "pkg", "tar.xz"] %}
+  {% if macos_primary == 0 %}
+    {% set hit = macos_assets | filter(attribute="format", value=fmt) %}
+    {% if hit | length > 0 %}{% set_global macos_primary = hit | first %}{% endif %}
+  {% endif %}
+{% endfor %}
+
 <section class="hero hero-centered">
   <div class="hero-inner">
     <div class="hero-eyebrow"><span class="dot"></span> Take pretty screenshots — your screen, your code, your way</div>
@@ -10,16 +33,120 @@
       Three Rust tools in one workspace: an interactive screen capturer with annotation overlay,
       a source-code → PNG renderer with syntax highlighting, and a library to build your own selector UI.
     </p>
-    <div class="hero-cta">
-      <a class="btn btn-primary btn-lg" href="/install/">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
-        Install
-      </a>
-      <a class="btn btn-ghost btn-lg" href="{{ config.extra.github_repo }}" target="_blank" rel="noopener">
+
+    <div class="hero-cta hero-download" data-hero-download>
+      {# ---------- Linux ---------- #}
+      <div class="hero-download-pane" data-os-pane="linux">
+        {% if linux_primary %}
+          <div class="hero-download-split">
+            <a class="btn btn-primary btn-lg hero-download-main" href="{{ linux_primary.url }}" download>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
+              <span class="hero-download-label">
+                <span class="hero-download-line">Download for Linux</span>
+                <span class="hero-download-sub">{{ linux_primary.format }} · {{ linux_primary.arch }} · {{ linux_primary.size_human }}</span>
+              </span>
+            </a>
+            <details class="hero-download-more">
+              <summary aria-label="Other Linux downloads">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </summary>
+              <div class="hero-download-menu" role="menu">
+                <p class="hero-download-menu-title">All Linux artifacts</p>
+                <ul>
+                  {% for a in linux_assets %}
+                    <li>
+                      <a href="{{ a.url }}" download role="menuitem">
+                        <span class="hero-download-menu-fmt">{{ a.format }}</span>
+                        <span class="hero-download-menu-arch">{{ a.arch }}</span>
+                        <span class="hero-download-menu-size">{{ a.size_human }}</span>
+                      </a>
+                    </li>
+                  {% endfor %}
+                </ul>
+                <a class="hero-download-menu-link" href="/install/#linux">All installers (PM, source) →</a>
+              </div>
+            </details>
+          </div>
+        {% else %}
+          <a class="btn btn-primary btn-lg" href="/install/#linux">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
+            Install on Linux
+          </a>
+        {% endif %}
+        <div class="hero-download-pm">
+          <span class="hero-download-pm-or">or with</span>
+          {{ ui::command(text="paru -S sss-bin") }}
+        </div>
+      </div>
+
+      {# ---------- macOS ---------- #}
+      <div class="hero-download-pane" data-os-pane="macos">
+        {% if macos_primary %}
+          <div class="hero-download-split">
+            <a class="btn btn-primary btn-lg hero-download-main" href="{{ macos_primary.url }}" download>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
+              <span class="hero-download-label">
+                <span class="hero-download-line">Download for macOS</span>
+                <span class="hero-download-sub">{{ macos_primary.format }} · {{ macos_primary.arch }} · {{ macos_primary.size_human }}</span>
+              </span>
+            </a>
+            <details class="hero-download-more">
+              <summary aria-label="Other macOS downloads">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </summary>
+              <div class="hero-download-menu" role="menu">
+                <p class="hero-download-menu-title">All macOS artifacts</p>
+                <ul>
+                  {% for a in macos_assets %}
+                    <li>
+                      <a href="{{ a.url }}" download role="menuitem">
+                        <span class="hero-download-menu-fmt">{{ a.format }}</span>
+                        <span class="hero-download-menu-arch">{{ a.arch }}</span>
+                        <span class="hero-download-menu-size">{{ a.size_human }}</span>
+                      </a>
+                    </li>
+                  {% endfor %}
+                </ul>
+                <a class="hero-download-menu-link" href="/install/#macos">All installers (PM, source) →</a>
+              </div>
+            </details>
+          </div>
+        {% else %}
+          <a class="btn btn-primary btn-lg" href="/install/#macos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
+            Install on macOS
+          </a>
+        {% endif %}
+        <p class="hero-download-pm">
+          <span class="hero-download-pm-or">or with</span>
+          {{ ui::command(text="brew install sergioribera/tap/sss_cli") }}
+        </p>
+      </div>
+
+      {# ---------- Windows: no binaries shipped ---------- #}
+      <div class="hero-download-pane" data-os-pane="windows">
+        <div class="hero-download-windows">
+          <p class="hero-download-windows-title">No Windows build yet.</p>
+          <p class="hero-download-windows-body">
+            sss targets Wayland · X11 · macOS today. Build from source, or
+            <a href="{{ config.extra.github_repo }}/issues" target="_blank" rel="noopener">open a PR</a> to help port it.
+          </p>
+          {{ ui::command(text="cargo install --git https://github.com/SergioRibera/sss sss_cli") }}
+        </div>
+      </div>
+
+      <a class="btn btn-ghost btn-lg hero-cta-github" href="{{ config.extra.github_repo }}" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.69-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.76 2.69 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.17-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.14 1.18a10.9 10.9 0 0 1 5.72 0c2.18-1.49 3.13-1.18 3.13-1.18.63 1.58.23 2.75.11 3.04.73.81 1.17 1.84 1.17 3.1 0 4.43-2.69 5.41-5.26 5.69.41.36.78 1.07.78 2.16 0 1.56-.01 2.81-.01 3.2 0 .31.21.68.8.56C20.21 21.38 23.5 17.07 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
         GitHub
       </a>
     </div>
+
+    {% if releases and releases.tags %}
+      <p class="hero-release-meta">
+        Latest: {% for t in releases.tags %}<a href="{{ config.extra.github_repo }}/releases/tag/{{ t }}" rel="noopener"><code>{{ t }}</code></a>{% if not loop.last %} · {% endif %}{% endfor %}
+      </p>
+    {% endif %}
+
     <div class="hero-meta">
       <span class="hero-meta-item"><strong>MIT / Apache-2.0</strong></span>
       <span class="hero-meta-item"><strong>3</strong> binaries</span>
@@ -48,38 +175,6 @@
         </div>
       </a>
     {% endfor %}
-  </div>
-</section>
-
-<section class="home-section">
-  <div class="quickstart">
-    <div>
-      <p class="section-eyebrow">quickstart</p>
-      <h2>One command. Pick your OS.</h2>
-      <p class="text-muted">Installers auto-detect your OS. Tap copy and paste into your terminal.</p>
-
-      <div class="cli-list">
-        <a href="/install/#linux">
-          <div class="cli-list-name">linux</div>
-          <div class="cli-list-desc">.deb · .rpm · AUR · AppImage · Nix</div>
-        </a>
-        <a href="/install/#macos">
-          <div class="cli-list-name">macos</div>
-          <div class="cli-list-desc">Homebrew · .dmg · .pkg · tarball</div>
-        </a>
-        <a href="/install/#cargo">
-          <div class="cli-list-name">cargo</div>
-          <div class="cli-list-desc">From source · cross-platform</div>
-        </a>
-      </div>
-    </div>
-
-    <div class="command-stack">
-      {{ ui::command(text="brew install sergioribera/tap/sss_cli", prompt="$") }}
-      {{ ui::command(text="paru -S sss-bin", prompt="$") }}
-      {{ ui::command(text="nix run github:SergioRibera/sss#cli", prompt="$") }}
-      {{ ui::command(text="cargo install --git https://github.com/SergioRibera/sss sss_cli", prompt="$") }}
-    </div>
   </div>
 </section>
 
