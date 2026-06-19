@@ -181,11 +181,15 @@
 <section class="home-section">
   <div class="section-header">
     <p class="section-eyebrow">showcase</p>
-    <h2>Outputs from the wild</h2>
-    <p>Real captures rendered with the default pipeline — no post-processing.</p>
+    <h2>See it in action</h2>
+    <p>Pick · annotate · render — the full flow, no post-processing.</p>
   </div>
 
   <div class="showcase-grid">
+    <figure class="showcase-wide">
+      <video src="{{ get_url(path='img/selector_ui_preview.webm') | safe }}" autoplay loop muted playsinline></video>
+      <figcaption><strong>sss + sss-select</strong><span>pick · annotate · save — full sss_cli flow</span></figcaption>
+    </figure>
     <figure>
       <img src="https://github.com/SergioRibera/sss/assets/56278796/945f224c-96ec-48b6-a738-50ac2c9cfb90" alt="sss_cli annotated screenshot example" loading="lazy">
       <figcaption><strong>sss_cli</strong><span>annotation overlay</span></figcaption>
