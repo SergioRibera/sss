@@ -8,12 +8,21 @@ Super ScreenShot is a set of libraries and tools for building screenshots in a s
 
 [selector_ui_preview.webm](https://github.com/user-attachments/assets/db8949c9-dc17-4690-98e7-1b9acefd004c)
 
-## 🧩 Libraries
-It provides different options depending on your needs.
+## 🧩 Workspace
 
-- [sss_lib](./crates/sss_lib): The base library for screenshot generation, providing the core functionality for the other tools.
-- [sss_code](./crates/sss_code): A terminal tool specifically designed to take screenshots of your code, making it easy to share and showcase your snippets.
-- [sss](./crates/sss_cli): A versatile terminal tool that allows you to capture screenshots of your entire screen or specific regions.
+The repo is a workspace of focused crates. Pick the layer you need — or compose them.
+
+**Capture stack** (low-level, no third-party capture wrappers):
+
+- [sss_capture](./crates/sss_capture): Cross-platform screen / monitor / window / region capture. Pure-Rust backends written from scratch on top of canonical OS bindings — Wayland (`wlr-screencopy` + portal fallback), X11 (`x11rb`, no `libxcb.so`), Win32 GDI `BitBlt`, macOS CoreGraphics.
+- [sss_capture_ui](./crates/sss_capture_ui): Interactive **region / monitor / window picker** (`slurp`-class flow) **and** an **annotation editor** with brush, line, arrow, rectangle, ellipse, blur rectangle, eraser, numbered steps and text — every committed shape stays editable through the Pointer tool. Ships the `sss-select` binary, a drop-in `slurp` replacement.
+- [sss_ocr](./crates/sss_ocr): OCR engine over [`oar-ocr`](https://crates.io/crates/oar-ocr) with tiered models, hardware-aware defaults (CPU / CUDA / TensorRT / CoreML / DirectML / OpenVINO / WebGPU) and a non-blocking model-download worker.
+
+**Render stack** (composes the capture stack):
+
+- [sss_lib](./crates/sss_lib): Base library for screenshot generation — shadows, gradient backgrounds, rounded corners, watermarks. Powers the other tools.
+- [sss_code](./crates/sss_code): Terminal tool to render **source code → PNG** with syntax highlighting (themes from Sublime / VSCode).
+- [sss](./crates/sss_cli): Main terminal tool — capture full screen / region / window, annotate, watermark, save or pipe.
 
 ## 🚀 Installation
 > [!IMPORTANT]
