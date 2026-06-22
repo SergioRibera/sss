@@ -26,7 +26,7 @@ webgpu = ["oar-ocr/webgpu"]
 sss_core = { path = "../sss_core", features = ["serde"] }
 oar-ocr = { version = "0.7", default-features = false, features = ["simd", "auto-download"] }
 image = { version = "0.25", default-features = false, features = ["rayon"] }
-sysinfo = { version = "0.32", default-features = false, features = ["system"] }
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 num_cpus = "1.16"
 directories.workspace = true
 serde = { workspace = true, features = ["derive"] }
