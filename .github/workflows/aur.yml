@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   publish_aur:
-    name: Push to AUR
+    name: Push ${{ matrix.aur_pkg }} to AUR
     runs-on: ubuntu-latest
     container: archlinux:multilib-devel
     if: >
@@ -34,13 +34,17 @@ jobs:
         github.event_name == 'workflow_dispatch'
         || github.event.workflow_run.conclusion == 'success'
       }}
+    strategy:
+      fail-fast: false
+      matrix:
+        aur_pkg: [sss-bin, sss-no-ocr-bin, sss_code-bin]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Resolve tag + AUR package name
+      - name: Resolve tag + filter package
         id: plan
         shell: bash
         run: |
@@ -52,18 +56,27 @@ jobs:
             tag="${{ github.event.workflow_run.head_branch }}"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [[ "$tag" == sss_code/v* ]]; then
-            aur_pkg="sss_code-bin"
-          else
-            aur_pkg="sss-bin"
+          # Each AUR pkg only matches one tag stream:
+          #   v*           → sss-bin, sss-no-ocr-bin
+          #   sss_code/v*  → sss_code-bin
+          # Set `skip=true` for jobs that don't match the current tag.
+          aur_pkg="${{ matrix.aur_pkg }}"
+          skip=true
+          if [[ "$tag" == sss_code/v* ]] && [ "$aur_pkg" = "sss_code-bin" ]; then
+            skip=false
+          elif [[ "$tag" == v* ]] && [ "$aur_pkg" != "sss_code-bin" ]; then
+            skip=false
           fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "aur_pkg=$aur_pkg" >> "$GITHUB_OUTPUT"
 
       - name: Install bootstrap tools
+        if: steps.plan.outputs.skip == 'false'
         run: |
           pacman -Syu --noconfirm git base-devel openssh pacman-contrib curl jq
 
       - name: Download AUR tarball from release
+        if: steps.plan.outputs.skip == 'false'
         id: download
         shell: bash
         run: |
@@ -92,6 +105,7 @@ jobs:
           fi
 
       - name: Configure SSH for AUR
+        if: steps.plan.outputs.skip == 'false'
         shell: bash
         run: |
           useradd -m builder
@@ -103,6 +117,7 @@ jobs:
           chown -R builder:builder /home/builder/.ssh
 
       - name: Push to AUR
+        if: steps.plan.outputs.skip == 'false'
         shell: bash
         run: |
           aur_pkg="${{ steps.plan.outputs.aur_pkg }}"

@@ -40,9 +40,16 @@ in
     # right EP for its host. Users wanting the full GPU lib pick the
     # purpose-built variants (`cli-cuda`, `cli-cuda-tensorrt`, `cli-rocm`)
     # which set the runtime flag in addition.
-    cudaSupport ? (stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isx86_64),
-    coreMLSupport ? stdenv.hostPlatform.isDarwin,
-    directMLSupport ? stdenv.hostPlatform.isWindows,
+    # Master OCR toggle. When false the workspace builds with
+    # `--no-default-features` (sss_cli `ocr` feature off), the produced
+    # binary has zero references to sss_ocr / onnxruntime, and we skip
+    # bundling libonnxruntime + the CUDA stack. Distro packages can still
+    # offer OCR via the system's onnxruntime — declared per-distro in
+    # `nix/release.nix` `info.depends` as a recommendation.
+    ocrSupport ? true,
+    cudaSupport ? (ocrSupport && stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isx86_64),
+    coreMLSupport ? (ocrSupport && stdenv.hostPlatform.isDarwin),
+    directMLSupport ? (ocrSupport && stdenv.hostPlatform.isWindows),
     tensorrtSupport ? false,
     openvinoSupport ? false,
     # Default to swapping libonnxruntime for the CUDA-enabled build
@@ -57,26 +64,38 @@ in
     rocmRuntime ? false,
     ...
   }: let
+    # When `ocrSupport=false` every OCR knob collapses to off — the
+    # cargo build skips sss_ocr entirely and the bundler stops carrying
+    # libonnxruntime + the CUDA stack into the artifact.
+    realCudaSupport = ocrSupport && cudaSupport;
+    realCudaRuntime = ocrSupport && cudaRuntime;
+    realRocmRuntime = ocrSupport && rocmRuntime;
+    realTensorrtSupport = ocrSupport && tensorrtSupport;
+    realCoreMLSupport = ocrSupport && coreMLSupport;
+    realDirectMLSupport = ocrSupport && directMLSupport;
+    realOpenvinoSupport = ocrSupport && openvinoSupport;
     # Swap the system onnxruntime for one with GPU EPs compiled in. We
     # only override when the runtime flag is set; the cargo feature on
     # its own doesn't need a new lib (the stock CPU build still exposes
     # all the binding entry points; calls to CUDA EP just fall back).
     onnxruntime =
-      if cudaRuntime || rocmRuntime
+      if realCudaRuntime || realRocmRuntime
       then
         pkgs.onnxruntime.override (lib.filterAttrs (_: v: v != null) {
-          cudaSupport = if cudaRuntime then true else null;
-          rocmSupport = if rocmRuntime then true else null;
+          cudaSupport = if realCudaRuntime then true else null;
+          rocmSupport = if realRocmRuntime then true else null;
         })
       else pkgs.onnxruntime;
     # Cargo features handed to crane via `cargoExtraArgs`. Order is the
     # auto-pick preference: GPU EPs first, CPU implicit at the tail.
+    # `ocr` is the master switch; when off we pass `--no-default-features`
+    # below and the EP list collapses to empty.
     gpuCargoFeatures = lib.concatStringsSep "," (
-      lib.optionals cudaSupport ["cuda"]
-      ++ lib.optionals tensorrtSupport ["tensorrt"]
-      ++ lib.optionals coreMLSupport ["coreml"]
-      ++ lib.optionals directMLSupport ["directml"]
-      ++ lib.optionals openvinoSupport ["openvino"]
+      lib.optionals realCudaSupport ["cuda"]
+      ++ lib.optionals realTensorrtSupport ["tensorrt"]
+      ++ lib.optionals realCoreMLSupport ["coreml"]
+      ++ lib.optionals realDirectMLSupport ["directml"]
+      ++ lib.optionals realOpenvinoSupport ["openvino"]
     );
     # fenix: rustup replacement for reproducible builds
     toolchain = fenix.${system}.fromToolchainFile {
@@ -131,6 +150,7 @@ in
       wayland-protocols
       wayland-scanner
       dbus.dev
+    ] ++ lib.optionals ocrSupport [
       # onnxruntime for sss_ocr — the ort crate dlopens libonnxruntime
       # at runtime when `ORT_PREFER_DYNAMIC_LINK=1` is set (see below).
       # Substituted with a CUDA / ROCm build when those flags are on.
@@ -157,8 +177,9 @@ in
       vulkan-loader
       libglvnd
       mesa
+    ] ++ lib.optionals ocrSupport [
       onnxruntime
-    ] ++ lib.optionals cudaRuntime [
+    ] ++ lib.optionals realCudaRuntime [
       # CUDA runtime libraries that onnxruntime dlopens. Pulled from the
       # same cudaPackages set the override picks; ship them so the binary
       # finds libcudart / libcudnn etc. at runtime.
@@ -182,14 +203,18 @@ in
         ];
         runtimeDependencies = lib.optionals stdenv.hostPlatform.isLinux runtimeDeps;
       inherit buildInputs;
+    } // lib.optionalAttrs ocrSupport {
       # ort-sys needs to find the system onnxruntime instead of trying
       # to fetch a prebuilt blob (which fails in Nix's sandbox).
       # `ORT_PREFER_DYNAMIC_LINK=1` flips ort to dlopen-at-runtime mode;
       # `ORT_LIB_LOCATION` points it at the nixpkgs build.
       ORT_LIB_LOCATION = "${onnxruntime}/lib";
       ORT_PREFER_DYNAMIC_LINK = "1";
-    } // lib.optionalAttrs (gpuCargoFeatures != "") {
+    } // lib.optionalAttrs (ocrSupport && gpuCargoFeatures != "") {
       cargoExtraArgs = "--features ${gpuCargoFeatures}";
+    } // lib.optionalAttrs (!ocrSupport) {
+      # No `ocr` feature → kill the default features that pull sss_ocr.
+      cargoExtraArgs = "--no-default-features";
     };
 
     # Static docs site (Zola) — wired so `nix build .#site` produces a
@@ -235,7 +260,7 @@ in
       if bundler == null
       then {}
       else import ./release.nix {
-        inherit pkgs lib system bundler craneLib commonArgs;
+        inherit pkgs lib system bundler craneLib commonArgs ocrSupport;
         sssPkg = sss.pkg;
         sssCodePkg = sssCode.pkg;
       };
@@ -272,21 +297,22 @@ in
     # NVIDIA driver provides it through the system loader cache.
     devShells.default = let
       devOnnxruntime =
-        if cudaSupport
+        if realCudaSupport
         then pkgs.onnxruntime.override { cudaSupport = true; }
         else onnxruntime;
-      cudaDevDeps = lib.optionals cudaSupport [
+      cudaDevDeps = lib.optionals realCudaSupport [
         pkgs.cudaPackages.cudatoolkit
         pkgs.cudaPackages.cudnn
         pkgs.cudaPackages.libcublas
       ];
-      cudaDevLibPath = lib.optionals (cudaSupport && stdenv.hostPlatform.isLinux) [
+      cudaDevLibPath = lib.optionals (realCudaSupport && stdenv.hostPlatform.isLinux) [
         # NVIDIA proprietary driver lives outside the Nix store. On NixOS
         # the open-source loader symlinks the driver into this prefix;
         # adding it to LD_LIBRARY_PATH lets `libcuda.so.1` resolve.
         "/run/opengl-driver/lib"
       ];
-    in craneLib.devShell {
+      ocrLibPath = lib.optionals ocrSupport [ devOnnxruntime ];
+    in craneLib.devShell ({
       packages = with pkgs; [
           toolchain
           pkg-config
@@ -295,7 +321,7 @@ in
           cargo-release
         ] ++ buildInputs ++ cudaDevDeps;
       LD_LIBRARY_PATH = lib.concatStringsSep ":" (
-        [ (lib.makeLibraryPath (runtimeDeps ++ cudaDevDeps ++ [ devOnnxruntime ])) ]
+        [ (lib.makeLibraryPath (runtimeDeps ++ cudaDevDeps ++ ocrLibPath)) ]
         ++ cudaDevLibPath
       );
       PKG_CONFIG_PATH = lib.concatStringsSep ":" [
@@ -305,11 +331,12 @@ in
         "${pkgs.dbus.dev}/lib/pkgconfig"
         "${pkgs.libxcb.dev}/lib/pkgconfig"
       ];
+    } // lib.optionalAttrs ocrSupport {
       # See `commonArgs` above — sss_ocr needs onnxruntime via ort's
       # dynamic-link path, and the same env vars must be visible to
       # `cargo build` inside the dev shell. Point at the CUDA-enabled
       # build when the host is set up for it.
       ORT_LIB_LOCATION = "${devOnnxruntime}/lib";
       ORT_PREFER_DYNAMIC_LINK = "1";
-    };
+    });
   }

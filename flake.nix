@@ -3,9 +3,11 @@
 
   nixConfig = {
     extra-substituters = [
+      "https://cache.sergioribera.rs/main"
       "https://cache.nixos-cuda.org"
     ];
     extra-trusted-public-keys = [
+      "main:vFI3N1JP9edRFwBwdk9ebUKTIPWK9R1ECbkdA7Q593M="
       "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M="
     ];
   };
@@ -46,6 +48,15 @@
         sssBundle = import ./nix {
           inherit pkgs system crane fenix bundler;
         };
+        # OCR-less variant. Same Rust crate but built with
+        # `--no-default-features` (sss_cli `ocr` off), so the binary has
+        # no sss_ocr code paths AND the bundler skips libonnxruntime +
+        # CUDA stack. Distro packages can still recommend the system's
+        # `onnxruntime` via per-distro `info.depends` (see release.nix).
+        sssBundleNoOcr = import ./nix {
+          inherit pkgs system crane fenix bundler;
+          ocrSupport = false;
+        };
         # GPU-accelerated variants. Each one rebuilds the workspace with
         # the matching `sss_cli` feature on AND swaps the bundled
         # onnxruntime for one compiled with the matching EP, so the
@@ -72,6 +83,8 @@
       in {
         inherit (sssBundle) apps devShells;
         packages = sssBundle.packages // {
+          cli-no-ocr = sssBundleNoOcr.packages.cli;
+          release-sss-no-ocr = sssBundleNoOcr.packages.release-sss;
           cli-cuda = sssBundleCuda.packages.cli;
           cli-cuda-tensorrt = sssBundleCudaTrt.packages.cli;
           cli-rocm = sssBundleRocm.packages.cli;

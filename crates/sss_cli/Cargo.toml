@@ -15,16 +15,19 @@ name = "sss"
 path = "./src/main.rs"
 
 [features]
-default = []
-# Forward to `sss_ocr` to compile in the matching ORT execution provider.
-# The user still has to point ORT at a libonnxruntime built with that EP
-# (`ORT_LIB_LOCATION` on Nix; system package on others).
-cuda = ["sss_ocr/cuda"]
-tensorrt = ["sss_ocr/tensorrt"]
-coreml = ["sss_ocr/coreml"]
-directml = ["sss_ocr/directml"]
-openvino = ["sss_ocr/openvino"]
-webgpu = ["sss_ocr/webgpu"]
+default = ["ocr"]
+# Compile in the OCR pipeline (sss_ocr + onnxruntime dlopen path). Turning
+# this off drops every OCR config field, CLI flag and runtime worker —
+# binary stays a pure screenshot tool, no libonnxruntime needed at runtime.
+ocr = ["dep:sss_ocr"]
+# Execution-provider features only make sense alongside `ocr`; they imply
+# it so a stray `--features cuda` still produces a working binary.
+cuda = ["ocr", "sss_ocr/cuda"]
+tensorrt = ["ocr", "sss_ocr/tensorrt"]
+coreml = ["ocr", "sss_ocr/coreml"]
+directml = ["ocr", "sss_ocr/directml"]
+openvino = ["ocr", "sss_ocr/openvino"]
+webgpu = ["ocr", "sss_ocr/webgpu"]
 
 [dependencies]
 clap.workspace = true
@@ -40,4 +43,4 @@ mouse_position = { git = "https://github.com/SergioRibera/mouse_position", branc
 sss_lib = { path = "../sss_lib" }
 sss_capture = { path = "../sss_capture" }
 sss_capture_ui = { path = "../sss_capture_ui" }
-sss_ocr = { path = "../sss_ocr" }
+sss_ocr = { path = "../sss_ocr", optional = true }

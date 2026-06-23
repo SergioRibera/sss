@@ -48,8 +48,12 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
 
-      - name: Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Attic cache
+        uses: ryanccn/attic-action@v0
+        with:
+          endpoint: https://cache.sergioribera.rs
+          cache: main
+          token: ${{ secrets.ATTIC_TOKEN }}
 
       # Pull the latest GitHub release per binary into the site's data tree
       # so the install page tabulates real artifacts. Skipped on PRs from

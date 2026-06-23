@@ -70,15 +70,21 @@ jobs:
   # Per-runner slice builds. Each runner only emits what it can produce
   # natively (or via pkgsCross on the linux host); the publish job stitches
   # every artifact into a single release.
+  #
+  # `variant` axis: every `sss` (sss_cli) tag releases TWO sets of bundles
+  # in parallel — the full build (default features, ships libonnxruntime +
+  # CUDA stack inside the bundle) and a `no-ocr` build (`--no-default-features`,
+  # no OCR code, distro packages list `onnxruntime` as a recommendation).
+  # `sss_code` only ships in one flavour; the matrix is filtered below.
   bundles:
-    name: Build bundles (${{ matrix.label }})
+    name: Build bundles (${{ matrix.label }} ${{ matrix.variant }})
     needs: plan
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        include:
+        slice:
           - label: linux-x86_64
             runner: ubuntu-latest
             slice: linux-x86_64
@@ -91,44 +97,69 @@ jobs:
           - label: macos-aarch64
             runner: macos-14
             slice: darwin-aarch64
+        variant: [full, no-ocr]
+        exclude:
+          # sss_code has no OCR pipeline — skip the no-ocr leg for it via
+          # a runtime guard further down (a static exclude can't read the
+          # plan output). The `no-ocr` jobs short-circuit after the
+          # checkout step when binary != sss.
+        include: []
     steps:
       - name: Checkout
+        if: needs.plan.outputs.binary == 'sss' || matrix.variant == 'full'
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.tag }}
           fetch-depth: 0
 
       - name: Install Nix
+        if: needs.plan.outputs.binary == 'sss' || matrix.variant == 'full'
         uses: DeterminateSystems/nix-installer-action@main
         with:
           extra-conf: |
             experimental-features = nix-command flakes
             accept-flake-config = true
 
-      - name: Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+      # Attic-backed binary cache hosted at cache.sergioribera.rs (`main`).
+      # The action wires the cache up as a substituter (so the build can pull
+      # nixpkgs + workspace artifacts that were already pushed) and uploads
+      # any new store paths created during the job in its post step.
+      - name: Attic cache
+        if: needs.plan.outputs.binary == 'sss' || matrix.variant == 'full'
+        uses: ryanccn/attic-action@v0
+        with:
+          endpoint: https://cache.sergioribera.rs
+          cache: main
+          token: ${{ secrets.ATTIC_TOKEN }}
 
       - name: Build release slice
+        if: needs.plan.outputs.binary == 'sss' || matrix.variant == 'full'
         run: |
           attr="release-${{ needs.plan.outputs.binary }}"
+          if [ "${{ matrix.variant }}" = "no-ocr" ]; then
+            attr="release-${{ needs.plan.outputs.binary }}-no-ocr"
+          fi
           nix build ".#$attr" -L --print-out-paths
 
       - name: Stage artifacts
+        if: needs.plan.outputs.binary == 'sss' || matrix.variant == 'full'
         run: |
           mkdir -p dist
           cp -L --no-preserve=mode,ownership -r result/* dist/
-          # Per-slice INSTALL.md/install.sh — kept as fragments; the
-          # publish job merges them into a single unified release.
-          mv dist/INSTALL.md "dist/INSTALL-${{ matrix.slice }}.md" 2>/dev/null || true
-          mv dist/install.sh "dist/install-${{ matrix.slice }}.sh" 2>/dev/null || true
-          mv dist/install.ps1 "dist/install-${{ matrix.slice }}.ps1" 2>/dev/null || true
-          mv dist/SHA256SUMS "dist/SHA256SUMS-${{ matrix.slice }}" 2>/dev/null || true
+          # Per-slice + per-variant INSTALL.md/install.sh fragments —
+          # the publish job merges them into a single unified release.
+          tag="${{ matrix.slice }}-${{ matrix.variant }}"
+          mv dist/INSTALL.md "dist/INSTALL-${tag}.md" 2>/dev/null || true
+          mv dist/install.sh "dist/install-${tag}.sh" 2>/dev/null || true
+          mv dist/install.ps1 "dist/install-${tag}.ps1" 2>/dev/null || true
+          mv dist/SHA256SUMS "dist/SHA256SUMS-${tag}" 2>/dev/null || true
           ls -la dist
 
       - name: Upload slice
+        if: needs.plan.outputs.binary == 'sss' || matrix.variant == 'full'
         uses: actions/upload-artifact@v4
         with:
-          name: bundles-${{ matrix.slice }}
+          name: bundles-${{ matrix.slice }}-${{ matrix.variant }}
           path: dist/
           if-no-files-found: error
           retention-days: 1
@@ -147,12 +178,46 @@ jobs:
           ref: ${{ needs.plan.outputs.tag }}
           fetch-depth: 0
 
+      # Download each (slice, variant) artifact into its own subdir so the
+      # variant-specific `aur/` layouts don't clobber each other (their
+      # filenames inside `aur/` are the same `PKGBUILD` / `.SRCINFO`,
+      # only the content differs). Then flatten the non-AUR pieces into
+      # `dist/` — variant disambiguation lives in the bundle filename
+      # (`sss-*` vs `sss-no-ocr-*`) so no collisions there.
       - name: Download all bundles
         uses: actions/download-artifact@v4
         with:
           pattern: bundles-*
-          path: dist
-          merge-multiple: true
+          path: bundles_raw
+
+      - name: Flatten non-AUR artifacts into dist/
+        run: |
+          mkdir -p dist aur_full aur_no_ocr
+          shopt -s nullglob
+          for sub in bundles_raw/*/; do
+            slice_dir="${sub%/}"
+            name=$(basename "$slice_dir")
+            variant=no-ocr
+            case "$name" in
+              *-full)   variant=full ;;
+              *-no-ocr) variant=no-ocr ;;
+            esac
+            # Pull the AUR source layout aside per variant.
+            if [ -d "$slice_dir/aur" ]; then
+              if [ "$variant" = "no-ocr" ]; then
+                cp -r "$slice_dir/aur/." aur_no_ocr/ || true
+              else
+                cp -r "$slice_dir/aur/." aur_full/ || true
+              fi
+              rm -rf "$slice_dir/aur"
+            fi
+            # Everything else flattens straight in. Brew formulas (.rb)
+            # stay per-slice because the homebrew job needs to merge
+            # them by arch — we copy them into dist/ keyed by source
+            # subdir name.
+            cp -r "$slice_dir/." "dist/"
+          done
+          ls -la dist | head -50
 
       - name: Generate unified SHA256SUMS
         working-directory: dist
@@ -192,22 +257,29 @@ jobs:
           rm -f INSTALL-*.md install-*.sh install-*.ps1
           head -60 INSTALL.md
 
-      - name: Pack AUR layout for downstream workflow
+      - name: Pack AUR layouts for downstream workflow
         id: aur_detect
-        working-directory: dist
         run: |
           # The archlinux format emits the AUR layout in `aur/` next to
           # the .pkg.tar.zst. The AUR push workflow expects a single
-          # uploadable tarball so it doesn't have to figure out individual
-          # filenames.
-          if [ -d aur ]; then
-            pkg="${{ needs.plan.outputs.binary }}-bin"
-            ver="${{ needs.plan.outputs.version }}"
-            tar czf "${pkg}-${ver}-aur.tar.gz" -C aur .
-            echo "has_aur=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_aur=false" >> "$GITHUB_OUTPUT"
+          # uploadable tarball per variant so it doesn't have to figure
+          # out individual filenames. The full + no-ocr variants ship as
+          # two distinct AUR packages (`sss-bin` and `sss-no-ocr-bin`).
+          ver="${{ needs.plan.outputs.version }}"
+          binary="${{ needs.plan.outputs.binary }}"
+          has_any=false
+          if [ "$binary" = "sss" ] && [ -d aur_full ] && [ -n "$(ls -A aur_full)" ]; then
+            tar czf "dist/${binary}-bin-${ver}-aur.tar.gz" -C aur_full .
+            has_any=true
+          elif [ "$binary" = "sss_code" ] && [ -d aur_full ] && [ -n "$(ls -A aur_full)" ]; then
+            tar czf "dist/${binary}-bin-${ver}-aur.tar.gz" -C aur_full .
+            has_any=true
           fi
+          if [ "$binary" = "sss" ] && [ -d aur_no_ocr ] && [ -n "$(ls -A aur_no_ocr)" ]; then
+            tar czf "dist/sss-no-ocr-bin-${ver}-aur.tar.gz" -C aur_no_ocr .
+            has_any=true
+          fi
+          echo "has_aur=$has_any" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog with git-cliff
         uses: orhun/git-cliff-action@v4
@@ -291,15 +363,20 @@ jobs:
           # ruby class, installed binary). The brew test stanza needs the
           # ACTUAL binary that lands in $bin, not the formula stem.
           rename = {
-              "sss":      ("sss_cli",  "SssCli",  "sss"),
-              "sss_code": ("sss_code", "SssCode", "sss_code"),
+              "sss":         ("sss_cli",        "SssCli",      "sss"),
+              "sss-no-ocr":  ("sss_cli_no_ocr", "SssCliNoOcr", "sss"),
+              "sss_code":    ("sss_code",       "SssCode",     "sss_code"),
           }
 
           slices = collections.defaultdict(dict)   # name -> {arch: (url, sha)}
           fields = {}                              # name -> shared metadata
 
+          # Slice dir name is `bundles-darwin-<arch>-<variant>`. We only
+          # care about <arch> for the merge axis — the formula stem
+          # already disambiguates the variant via `meta.name`.
           for slice_dir in sorted(glob.glob("dist/bundles-darwin-*")):
-              arch = "arm" if slice_dir.endswith("aarch64") else "intel"
+              base = pathlib.Path(slice_dir).name
+              arch = "arm" if "aarch64" in base else "intel"
               os_label = "darwin"
               for rb in glob.glob(f"{slice_dir}/*.rb"):
                   text = pathlib.Path(rb).read_text()

@@ -1,12 +1,19 @@
+#[cfg(feature = "ocr")]
 use std::sync::{Arc, Mutex};
 
 use color_eyre::eyre::Report;
-use config::{get_config, OcrConfig};
+use config::get_config;
+#[cfg(feature = "ocr")]
+use config::OcrConfig;
 use img::Screenshot;
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-use sss_capture_ui::{OcrPipeline, SelectorMode};
+use sss_capture_ui::SelectorMode;
+#[cfg(feature = "ocr")]
+use sss_capture_ui::OcrPipeline;
 use sss_lib::generate_image;
+#[cfg(feature = "ocr")]
 use sss_lib::image::RgbaImage;
+#[cfg(feature = "ocr")]
 use sss_ocr::{GpuMode, Language, OcrEngine, PrewarmHandle, PrewarmStatus, PrewarmWaiter};
 use tracing_subscriber::EnvFilter;
 
@@ -54,8 +61,10 @@ fn main() -> Result<(), Report> {
         cli: config,
         lib: mut g_config,
         ui: ui_config,
+        #[cfg(feature = "ocr")]
         ocr: ocr_config,
     } = get_config()?;
+    #[cfg(feature = "ocr")]
     tracing::info!(
         enabled = ocr_config.is_enabled(),
         tier = ?ocr_config.effective_tier(),
@@ -64,8 +73,12 @@ fn main() -> Result<(), Report> {
         gpu = ?ocr_config.gpu(),
         "OCR configuration"
     );
+    #[cfg(feature = "ocr")]
     let prewarm = start_prewarm(&ocr_config);
+    #[cfg(feature = "ocr")]
     let ocr_pipeline = build_ocr_pipeline(&ocr_config, prewarm.as_ref().map(|h| h.waiter()));
+    #[cfg(not(feature = "ocr"))]
+    let ocr_pipeline: Option<sss_capture_ui::OcrPipeline> = None;
     if config.verbose {
         // Re-init at info level by overriding the existing filter. We do
         // that lazily here so the verbose flag is read after parsing.
@@ -108,6 +121,7 @@ fn main() -> Result<(), Report> {
                 // thread keeps running until the first download is done"
                 // requirement: block on the prewarm worker before
                 // exiting with the cancellation status code.
+                #[cfg(feature = "ocr")]
                 finish_prewarm(prewarm);
                 std::process::exit(1);
             }
@@ -132,6 +146,7 @@ fn main() -> Result<(), Report> {
             }
         }
         let result = generate_image(g_config, Screenshot::pre_rendered(pre.image));
+        #[cfg(feature = "ocr")]
         finish_prewarm(prewarm);
         return Ok(result?);
     }
@@ -140,6 +155,7 @@ fn main() -> Result<(), Report> {
         g_config,
         Screenshot::from_target(direct.unwrap(), config.show_cursor),
     );
+    #[cfg(feature = "ocr")]
     finish_prewarm(prewarm);
     Ok(result?)
 }
@@ -150,6 +166,7 @@ fn main() -> Result<(), Report> {
 /// Honours `[ocr].models-dir` from the config file: when set, the worker
 /// downloads into that directory instead of the default XDG cache. The
 /// path is committed to `OAR_HOME` for the lifetime of the process.
+#[cfg(feature = "ocr")]
 fn start_prewarm(ocr: &OcrConfig) -> Option<PrewarmHandle> {
     if !ocr.is_enabled() {
         return None;
@@ -172,6 +189,7 @@ fn start_prewarm(ocr: &OcrConfig) -> Option<PrewarmHandle> {
 ///
 /// Returning `None` keeps the selector's OCR rx empty (and the canvas
 /// reports zero detections), which is the disabled-OCR path.
+#[cfg(feature = "ocr")]
 fn build_ocr_pipeline(
     ocr: &OcrConfig,
     waiter: Option<PrewarmWaiter>,
@@ -222,6 +240,7 @@ fn build_ocr_pipeline(
 /// `(tier, language, formula)`. The first caller pays the cold-start cost;
 /// every subsequent caller — e.g. a re-OCR triggered by the user resizing
 /// the selection region — just clones the `Arc`.
+#[cfg(feature = "ocr")]
 fn get_or_build_engine(
     cache: &Arc<Mutex<Option<Arc<OcrEngine>>>>,
     tier: sss_ocr::Tier,
@@ -259,6 +278,7 @@ fn get_or_build_engine(
 /// file behind, which is what the user asked for ("si se cierra sss el
 /// hilo de descarga siga hasta terminar y recien se cierra el proceso de
 /// sss completo").
+#[cfg(feature = "ocr")]
 fn finish_prewarm(prewarm: Option<PrewarmHandle>) {
     let Some(handle) = prewarm else {
         return;

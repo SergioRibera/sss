@@ -6,6 +6,7 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use sss_capture_ui::UiConfig;
 use sss_lib::config_loader::{load_with_imports, HasImports, LoadError};
 use sss_lib::{default_bool, swap_option, RootArgs};
+#[cfg(feature = "ocr")]
 use sss_ocr::{GpuMode, Language, Tier};
 
 use crate::error::Configuration as ConfigurationError;
@@ -140,6 +141,7 @@ struct ClapConfig {
     #[serde(default, rename = "capture-ui")]
     #[merge(strategy = swap_option)]
     pub capture_ui: Option<UiConfig>,
+    #[cfg(feature = "ocr")]
     #[clap(flatten)]
     #[serde(default, rename = "ocr")]
     #[merge(strategy = recursive)]
@@ -347,6 +349,7 @@ impl CliConfig {
 /// Everything except `enable` lives in the config file only — the surface
 /// (tier, language list, model overrides) is wider than what's pleasant on
 /// the command line and these settings rarely change between captures.
+#[cfg(feature = "ocr")]
 #[derive(Clone, Debug, Default, Deserialize, Merge, Parser, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct OcrConfig {
@@ -414,10 +417,12 @@ pub struct OcrConfig {
     pub gpu: GpuMode,
 }
 
+#[cfg(feature = "ocr")]
 fn default_gpu() -> GpuMode {
     GpuMode::Auto
 }
 
+#[cfg(feature = "ocr")]
 fn parse_gpu_mode(s: &str) -> Result<GpuMode, String> {
     match s.to_ascii_lowercase().as_str() {
         "auto" => Ok(GpuMode::Auto),
@@ -436,22 +441,26 @@ fn parse_gpu_mode(s: &str) -> Result<GpuMode, String> {
 
 /// Preserve a non-`Auto` GPU mode from one side; `Auto` never overrides
 /// an explicit choice from the other layer.
+#[cfg(feature = "ocr")]
 fn overwrite_gpu(dst: &mut GpuMode, src: &mut GpuMode) {
     if !matches!(*src, GpuMode::Auto) {
         *dst = *src;
     }
 }
 
+#[cfg(feature = "ocr")]
 fn default_tier() -> Tier {
     Tier::Auto
 }
 
+#[cfg(feature = "ocr")]
 fn default_languages() -> Vec<String> {
     vec!["auto".to_string()]
 }
 
 /// Overwrite `dst` with `src` unless `src` is `Auto` and `dst` is set —
 /// preserves a "stronger" tier coming from the CLI override.
+#[cfg(feature = "ocr")]
 fn overwrite_tier(dst: &mut Tier, src: &mut Tier) {
     if !matches!(*src, Tier::Auto) {
         *dst = *src;
@@ -460,12 +469,14 @@ fn overwrite_tier(dst: &mut Tier, src: &mut Tier) {
 
 /// Replace the language list when the override is non-empty; otherwise
 /// keep the existing list. Mirrors how single-value `Option` merges work.
+#[cfg(feature = "ocr")]
 fn merge_languages(dst: &mut Vec<String>, src: &mut Vec<String>) {
     if !src.is_empty() {
         *dst = std::mem::take(src);
     }
 }
 
+#[cfg(feature = "ocr")]
 impl OcrConfig {
     /// Returns `true` when OCR is enabled. Defaults to **true** when the
     /// field is missing from both the config file and the CLI — matching
@@ -514,6 +525,7 @@ pub struct ResolvedConfig {
     pub cli: CliConfig,
     pub lib: sss_lib::GenerationSettings,
     pub ui: UiConfig,
+    #[cfg(feature = "ocr")]
     pub ocr: OcrConfig,
 }
 
@@ -554,6 +566,7 @@ pub fn get_config() -> Result<ResolvedConfig, ConfigurationError> {
         cli: merged.cli.unwrap_or_default(),
         lib: merged.lib_config.into(),
         ui: merged.capture_ui.unwrap_or_default(),
+        #[cfg(feature = "ocr")]
         ocr: merged.ocr.unwrap_or_default(),
     })
 }
