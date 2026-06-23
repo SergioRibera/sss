@@ -55,16 +55,23 @@
         # `onnxruntime` via per-distro `info.depends` (see release.nix).
         sssBundleNoOcr = import ./nix {
           inherit pkgs system crane fenix bundler;
-          ocrSupport = false;
+          variant = "no-ocr";
         };
-        # GPU-accelerated variants. Each one rebuilds the workspace with
-        # the matching `sss_cli` feature on AND swaps the bundled
+        # ROCm/AMD GPU variant. Rebuilds onnxruntime with rocmSupport=true
+        # and bundles the rocm-hip-runtime userspace into /opt/sss-rocm/lib/.
+        # Hosts AMD users on Linux-x86_64 (RX 6000+ / MI series). Surfaces
+        # as `cli-rocm` for ad-hoc builds and `release-sss-rocm` for CI.
+        sssBundleRocm = import ./nix {
+          inherit pkgs system crane fenix bundler;
+          variant = "rocm";
+        };
+        # GPU-accelerated dev variants. Each one rebuilds the workspace
+        # with the matching `sss_cli` feature on AND swaps the bundled
         # onnxruntime for one compiled with the matching EP, so the
         # produced binary's `libonnxruntime.so` actually exposes the
         # provider at runtime. Selected by:
         #   nix build .#cli-cuda
         #   nix build .#cli-cuda-tensorrt
-        #   nix build .#cli-rocm
         sssBundleCuda = import ./nix {
           inherit pkgs system crane fenix bundler;
           cudaSupport = true;
@@ -76,18 +83,15 @@
           tensorrtSupport = true;
           cudaRuntime = true;
         };
-        sssBundleRocm = import ./nix {
-          inherit pkgs system crane fenix bundler;
-          rocmRuntime = true;
-        };
       in {
         inherit (sssBundle) apps devShells;
         packages = sssBundle.packages // {
           cli-no-ocr = sssBundleNoOcr.packages.cli;
           release-sss-no-ocr = sssBundleNoOcr.packages.release-sss;
+          cli-rocm = sssBundleRocm.packages.cli;
+          release-sss-rocm = sssBundleRocm.packages.release-sss;
           cli-cuda = sssBundleCuda.packages.cli;
           cli-cuda-tensorrt = sssBundleCudaTrt.packages.cli;
-          cli-rocm = sssBundleRocm.packages.cli;
         };
       }
     )) // (flake-utils.lib.eachDefaultSystemPassThrough (system: let

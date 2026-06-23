@@ -40,14 +40,20 @@ in
     # right EP for its host. Users wanting the full GPU lib pick the
     # purpose-built variants (`cli-cuda`, `cli-cuda-tensorrt`, `cli-rocm`)
     # which set the runtime flag in addition.
-    # Master OCR toggle. When false the workspace builds with
-    # `--no-default-features` (sss_cli `ocr` feature off), the produced
-    # binary has zero references to sss_ocr / onnxruntime, and we skip
-    # bundling libonnxruntime + the CUDA stack. Distro packages can still
-    # offer OCR via the system's onnxruntime — declared per-distro in
-    # `nix/release.nix` `info.depends` as a recommendation.
-    ocrSupport ? true,
-    cudaSupport ? (ocrSupport && stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isx86_64),
+    # Release variant selector. Drives the bundle name (`sss`, `sss-no-ocr`,
+    # `sss-rocm`), what OCR code paths are compiled in, and which GPU EP
+    # gets bundled. Values:
+    #   "full"   — default. OCR on; on linux-x86_64 also pulls CUDA runtime
+    #              (NVIDIA users get acceleration, AMD/Intel fall back to CPU).
+    #   "no-ocr" — OCR compiled out entirely; no libonnxruntime payload.
+    #              Distro packages list system onnxruntime as a recommendation.
+    #   "rocm"   — OCR on; libonnxruntime + ROCm runtime libs bundled so AMD
+    #              GPU users get acceleration. Linux-only.
+    variant ? "full",
+    # Derived OCR + EP flags. Defaults respect `variant`; callers can still
+    # override individually for ad-hoc `nix build .#cli-*` (cli-cuda etc).
+    ocrSupport ? (variant != "no-ocr"),
+    cudaSupport ? (ocrSupport && variant == "full" && stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isx86_64),
     coreMLSupport ? (ocrSupport && stdenv.hostPlatform.isDarwin),
     directMLSupport ? (ocrSupport && stdenv.hostPlatform.isWindows),
     tensorrtSupport ? false,
@@ -61,7 +67,7 @@ in
     # substituter misses, builds fall back to compiling onnxruntime from
     # source — set `cudaRuntime = false` explicitly to skip.
     cudaRuntime ? cudaSupport,
-    rocmRuntime ? false,
+    rocmRuntime ? (ocrSupport && variant == "rocm"),
     ...
   }: let
     # When `ocrSupport=false` every OCR knob collapses to off — the
@@ -260,7 +266,7 @@ in
       if bundler == null
       then {}
       else import ./release.nix {
-        inherit pkgs lib system bundler craneLib commonArgs ocrSupport;
+        inherit pkgs lib system bundler craneLib commonArgs variant;
         sssPkg = sss.pkg;
         sssCodePkg = sssCode.pkg;
       };

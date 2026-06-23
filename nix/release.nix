@@ -18,11 +18,10 @@
   commonArgs,
   sssPkg,
   sssCodePkg,
-  # When false, the sss bundle is renamed to `sss-no-ocr` so deb/rpm/arch
-  # packages can sit alongside the full `sss` package, and per-distro
-  # `depends` lists the system onnxruntime as a recommendation so users
-  # who want OCR can opt in via their distro's package manager.
-  ocrSupport ? true,
+  # Release variant. Drives package naming + description + per-distro
+  # depends. Values: "full" | "no-ocr" | "rocm". Mirrors the same arg
+  # in `nix/default.nix`; this file only consumes the naming side.
+  variant ? "full",
 }:
 let
   cliCargo = builtins.fromTOML (builtins.readFile ./../crates/sss_cli/Cargo.toml);
@@ -33,12 +32,19 @@ let
   repo = "SergioRibera/sss";
   maintainer = "Sergio Ribera <sergioalejandroriberacosta@gmail.com>";
 
-  # Package name swaps between the two variants. Drives bundle filename,
-  # install prefix (`/opt/<name>/bin/sss`), bundleId, AUR pkg, and brew
-  # formula filename. Binary basename stays `sss` regardless — the
-  # bundler's symlink fallback in `_common-linux.nix` walks the `/bin`
-  # contents when `meta.name` doesn't match a binary name.
-  sssPkgName = if ocrSupport then "sss" else "sss-no-ocr";
+  ocrSupport = variant != "no-ocr";
+  rocmVariant = variant == "rocm";
+
+  # Package name swaps per variant. Drives bundle filename, install prefix
+  # (`/opt/<name>/bin/sss`), bundleId, AUR pkg, and brew formula filename.
+  # Binary basename stays `sss` regardless — the bundler's symlink
+  # fallback in `_common-linux.nix` walks the `/bin` contents when
+  # `meta.name` doesn't match a binary name.
+  sssPkgName = {
+    "full" = "sss";
+    "no-ocr" = "sss-no-ocr";
+    "rocm" = "sss-rocm";
+  }.${variant} or (throw "release.nix: unknown variant '${variant}'");
 
   # Shared info defaults; per-binary specifics override.
   baseInfo = {
@@ -66,30 +72,52 @@ let
     brew = [ "onnxruntime" ];
   };
 
+  # ROCm runtime userspace components users need on the host: the binary
+  # bundles libonnxruntime + the rocm runtime libs, but the kernel-level
+  # AMDGPU driver + ROCm userspace loader (libamdhip64 / libhsa-runtime)
+  # ship with the distro. We advertise them as Recommends so a user
+  # installing the `sss-rocm` package gets nudged towards the right deps.
+  rocmRuntimeDepends = {
+    deb = [ "libamdhip64-5 | libamdhip64" "rocm-smi" ];
+    rpm = [ "rocm-hip-runtime" "rocm-smi" ];
+    archlinux = [ "rocm-hip-runtime" "rocm-smi-lib" ];
+  };
+
+  variantSummary = {
+    "full" = "Take pretty screenshots of your screen with annotations";
+    "no-ocr" = "Take pretty screenshots of your screen with annotations (no OCR)";
+    "rocm" = "Take pretty screenshots of your screen with annotations (ROCm/AMD GPU)";
+  };
+
+  variantLongDescription = {
+    "full" = ''
+      sss (Super ScreenShot) — interactive screen-region selector with a
+      built-in annotation overlay (shapes, arrows, text, blur, pipette).
+      Native Wayland (wlr-layer-shell) + X11 backends; wgpu-accelerated
+      preview canvas; exports to PNG / clipboard.
+    '';
+    "no-ocr" = ''
+      sss (Super ScreenShot) — OCR-less variant. Same selector + annotation
+      toolkit as the full `sss` package, minus the on-device OCR pipeline
+      and its libonnxruntime / CUDA runtime payload. Install your distro's
+      `onnxruntime` package and pick the full `sss` build if you want OCR
+      recognition over selections.
+    '';
+    "rocm" = ''
+      sss (Super ScreenShot) — ROCm/AMD GPU variant. Same selector +
+      annotation toolkit as the full build, with the OCR pipeline routed
+      through onnxruntime's ROCm execution provider. Requires an AMD GPU
+      with ROCm support (RX 6000+ / MI series). Distro-shipped ROCm
+      userspace + AMDGPU kernel driver must be installed on the host.
+    '';
+  };
+
   sssInfo = baseInfo // {
     name = sssPkgName;
     version = sssVersion;
-    summary =
-      if ocrSupport
-      then "Take pretty screenshots of your screen with annotations"
-      else "Take pretty screenshots of your screen with annotations (no OCR)";
-    description =
-      if ocrSupport
-      then "Take pretty screenshots of your screen with annotations"
-      else "Take pretty screenshots of your screen with annotations (OCR-less build)";
-    longDescription =
-      if ocrSupport then ''
-        sss (Super ScreenShot) — interactive screen-region selector with a
-        built-in annotation overlay (shapes, arrows, text, blur, pipette).
-        Native Wayland (wlr-layer-shell) + X11 backends; wgpu-accelerated
-        preview canvas; exports to PNG / clipboard.
-      '' else ''
-        sss (Super ScreenShot) — OCR-less variant. Same selector + annotation
-        toolkit as the full `sss` package, minus the on-device OCR pipeline
-        and its libonnxruntime / CUDA runtime payload. Install your distro's
-        `onnxruntime` package and pick the full `sss` build if you want OCR
-        recognition over selections.
-      '';
+    summary = variantSummary.${variant};
+    description = variantSummary.${variant};
+    longDescription = variantLongDescription.${variant};
     bundleId = "rs.sergioribera.${sssPkgName}";
     downloadUrl =
       "https://github.com/${repo}/releases/download/v${sssVersion}";
@@ -97,10 +125,7 @@ let
       {
         name = sssPkgName;
         exec = "/opt/${sssPkgName}/bin/sss";
-        comment =
-          if ocrSupport
-          then "Take pretty screenshots of your screen"
-          else "Take pretty screenshots of your screen (OCR-less)";
+        comment = variantSummary.${variant};
         categories = [ "Graphics" "Utility" ];
       }
     ];
@@ -116,6 +141,15 @@ let
       rpmRecommends = ocrRuntimeDepends.rpm;
       archlinuxOptional = ocrRuntimeDepends.archlinux;
       brew = ocrRuntimeDepends.brew;
+    };
+  } // lib.optionalAttrs rocmVariant {
+    # ROCm needs the AMDGPU driver + the rocm-hip-runtime userspace from
+    # the host distro to resolve `libamdhip64.so` / kernel devices. We
+    # ship libonnxruntime + the rocm-enabled EP in the bundle.
+    depends = {
+      debRecommends = rocmRuntimeDepends.deb;
+      rpmRecommends = rocmRuntimeDepends.rpm;
+      archlinuxOptional = rocmRuntimeDepends.archlinux;
     };
   };
 
@@ -177,10 +211,19 @@ let
     in
       linuxX86 // linuxArmHost // darwinX86 // darwinArm;
 
-  sssMatrix = matrixFor {
-    drvName = "sss";
-    hostDrv = sssPkg;
-  };
+  # ROCm bundles are linux-x86_64 only: ROCm has no Apple Silicon / Darwin
+  # support and AMD's aarch64 server stack isn't a realistic distribution
+  # target for this app. On any other host the matrix collapses to empty
+  # and `releaseOrSkip` emits a NOTES placeholder.
+  rocmEligible = system == "x86_64-linux";
+
+  sssMatrix =
+    if rocmVariant && !rocmEligible
+    then {}
+    else matrixFor {
+      drvName = "sss";
+      hostDrv = sssPkg;
+    };
   sssCodeMatrix = matrixFor {
     drvName = "sss_code";
     hostDrv = sssCodePkg;

@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        aur_pkg: [sss-bin, sss-no-ocr-bin, sss_code-bin]
+        aur_pkg: [sss-bin, sss-no-ocr-bin, sss-rocm-bin, sss_code-bin]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
