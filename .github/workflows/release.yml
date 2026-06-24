@@ -97,15 +97,18 @@ jobs:
           - label: macos-aarch64
             runner: macos-14
             slice: darwin-aarch64
-        variant: [full, no-ocr, rocm]
+        variant: [system, nvidia, rocm, noocr]
         exclude:
           # Static excludes can't read `needs.plan.outputs.binary` (the
           # binary name resolves only at job time). Per-variant eligibility
           # is computed in the `Plan slice` step below and gates every
           # subsequent step. Skipped combinations:
-          #   - `sss_code` × {no-ocr, rocm}: sss_code has no OCR pipeline.
+          #   - `sss_code` × {nvidia, rocm, noocr}: sss_code has no OCR.
+          #     It only ships under the `system` variant (which maps to
+          #     `sss_code-bin` rather than `sss-bin`).
+          #   - any slice × `nvidia` on macOS: no CUDA stack on Apple.
           #   - any slice × `rocm` except linux-x86_64: ROCm targets only
-          #     AMD on Linux-x86_64; aarch64 / darwin slices skip.
+          #     AMD on Linux-x86_64.
         include: []
     steps:
       - name: Plan slice
@@ -117,9 +120,19 @@ jobs:
           binary="${{ needs.plan.outputs.binary }}"
           slice="${{ matrix.slice.slice }}"
           case "$variant" in
-            full) eligible=true ;;
-            no-ocr) [ "$binary" = "sss" ] && eligible=true ;;
-            rocm) [ "$binary" = "sss" ] && [ "$slice" = "linux-x86_64" ] && eligible=true ;;
+            system)
+              eligible=true ;;
+            nvidia|rocm|noocr)
+              [ "$binary" != "sss" ] && eligible=false || eligible=true ;;
+          esac
+          # Per-variant slice restrictions on top of the binary gate.
+          case "$variant" in
+            nvidia)
+              # CUDA only ships on Linux.
+              [[ "$slice" != linux-* ]] && eligible=false ;;
+            rocm)
+              # ROCm only on linux-x86_64.
+              [ "$slice" != "linux-x86_64" ] && eligible=false ;;
           esac
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
           echo "Plan: variant=$variant binary=$binary slice=$slice → eligible=$eligible"
@@ -154,11 +167,13 @@ jobs:
       - name: Build release slice
         if: steps.pin.outputs.eligible == 'true'
         run: |
+          # `system` variant for `sss` maps to the bare `release-sss`
+          # flake output; all other variants suffix the variant name.
+          # `sss_code` only ever uses the bare `release-sss_code` output.
           attr="release-${{ needs.plan.outputs.binary }}"
-          case "${{ matrix.variant }}" in
-            no-ocr) attr="release-${{ needs.plan.outputs.binary }}-no-ocr" ;;
-            rocm)   attr="release-${{ needs.plan.outputs.binary }}-rocm" ;;
-          esac
+          if [ "${{ needs.plan.outputs.binary }}" = "sss" ] && [ "${{ matrix.variant }}" != "system" ]; then
+            attr="release-sss-${{ matrix.variant }}"
+          fi
           nix build ".#$attr" -L --print-out-paths
 
       - name: Stage artifacts
@@ -212,26 +227,23 @@ jobs:
 
       - name: Flatten non-AUR artifacts into dist/
         run: |
-          mkdir -p dist aur_full aur_no_ocr aur_rocm
+          mkdir -p dist aur_system aur_nvidia aur_rocm aur_noocr
           shopt -s nullglob
           for sub in bundles_raw/*/; do
             slice_dir="${sub%/}"
             name=$(basename "$slice_dir")
-            variant=full
+            variant=system
             case "$name" in
-              *-full)   variant=full ;;
-              *-no-ocr) variant=no-ocr ;;
+              *-system) variant=system ;;
+              *-nvidia) variant=nvidia ;;
               *-rocm)   variant=rocm ;;
+              *-noocr)  variant=noocr ;;
             esac
-            # Pull the AUR source layout aside per variant so the three
+            # Pull the AUR source layout aside per variant so the four
             # PKGBUILD/.SRCINFO sets don't clobber each other (filenames
             # are identical inside `aur/`, only content differs).
             if [ -d "$slice_dir/aur" ]; then
-              case "$variant" in
-                no-ocr) cp -r "$slice_dir/aur/." aur_no_ocr/ || true ;;
-                rocm)   cp -r "$slice_dir/aur/." aur_rocm/   || true ;;
-                full)   cp -r "$slice_dir/aur/." aur_full/   || true ;;
-              esac
+              cp -r "$slice_dir/aur/." "aur_${variant}/" || true
               rm -rf "$slice_dir/aur"
             fi
             # Everything else flattens straight in. Brew formulas (.rb)
@@ -284,28 +296,27 @@ jobs:
         id: aur_detect
         run: |
           # The archlinux format emits the AUR layout in `aur/` next to
-          # the .pkg.tar.zst. The AUR push workflow expects a single
-          # uploadable tarball per variant so it doesn't have to figure
-          # out individual filenames. For `sss` we ship up to three
-          # AUR packages: `sss-bin`, `sss-no-ocr-bin`, `sss-rocm-bin`.
-          # `sss_code` only has the `full` variant.
+          # the .pkg.tar.zst. The AUR push workflow expects one tarball
+          # per AUR package. For `sss` we ship four: `sss-bin`,
+          # `sss-nvidia-bin`, `sss-rocm-bin`, `sss-noocr-bin`.
+          # `sss_code` only ships one: `sss_code-bin`.
           ver="${{ needs.plan.outputs.version }}"
           binary="${{ needs.plan.outputs.binary }}"
           has_any=false
-          if [ "$binary" = "sss" ] && [ -d aur_full ] && [ -n "$(ls -A aur_full)" ]; then
-            tar czf "dist/${binary}-bin-${ver}-aur.tar.gz" -C aur_full .
-            has_any=true
-          elif [ "$binary" = "sss_code" ] && [ -d aur_full ] && [ -n "$(ls -A aur_full)" ]; then
-            tar czf "dist/${binary}-bin-${ver}-aur.tar.gz" -C aur_full .
-            has_any=true
-          fi
-          if [ "$binary" = "sss" ] && [ -d aur_no_ocr ] && [ -n "$(ls -A aur_no_ocr)" ]; then
-            tar czf "dist/sss-no-ocr-bin-${ver}-aur.tar.gz" -C aur_no_ocr .
-            has_any=true
-          fi
-          if [ "$binary" = "sss" ] && [ -d aur_rocm ] && [ -n "$(ls -A aur_rocm)" ]; then
-            tar czf "dist/sss-rocm-bin-${ver}-aur.tar.gz" -C aur_rocm .
-            has_any=true
+          pack() {
+            local dir=$1 pkg=$2
+            if [ -d "$dir" ] && [ -n "$(ls -A "$dir")" ]; then
+              tar czf "dist/${pkg}-${ver}-aur.tar.gz" -C "$dir" .
+              has_any=true
+            fi
+          }
+          if [ "$binary" = "sss" ]; then
+            pack aur_system sss-bin
+            pack aur_nvidia sss-nvidia-bin
+            pack aur_rocm   sss-rocm-bin
+            pack aur_noocr  sss-noocr-bin
+          elif [ "$binary" = "sss_code" ]; then
+            pack aur_system sss_code-bin
           fi
           echo "has_aur=$has_any" >> "$GITHUB_OUTPUT"
 
@@ -390,10 +401,12 @@ jobs:
           # internal-name (from meta.name) -> (formula filename stem,
           # ruby class, installed binary). The brew test stanza needs the
           # ACTUAL binary that lands in $bin, not the formula stem.
+          # Only the `system` and `noocr` variants ship on macOS — nvidia
+          # and rocm are Linux-only and never produce a brew formula.
           rename = {
-              "sss":         ("sss_cli",        "SssCli",      "sss"),
-              "sss-no-ocr":  ("sss_cli_no_ocr", "SssCliNoOcr", "sss"),
-              "sss_code":    ("sss_code",       "SssCode",     "sss_code"),
+              "sss":        ("sss_cli",        "SssCli",      "sss"),
+              "sss-noocr":  ("sss_cli_noocr",  "SssCliNoocr", "sss"),
+              "sss_code":   ("sss_code",       "SssCode",     "sss_code"),
           }
 
           slices = collections.defaultdict(dict)   # name -> {arch: (url, sha)}

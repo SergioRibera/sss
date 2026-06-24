@@ -22,52 +22,47 @@ in
     fenix,
     bundler ? null,
     stdenv ? pkgs.stdenv,
-    # GPU execution-provider knobs for sss_ocr. Two independent things:
+    # Release variant selector. Drives the bundle name, which cargo features
+    # land in the binary, and which onnxruntime package the distro PM is
+    # told to install. NONE of the variants bundle libonnxruntime or GPU
+    # runtime libs anymore — the binary uses `ORT_PREFER_DYNAMIC_LINK=1`
+    # and dlopens libonnxruntime.so from the system loader path at runtime,
+    # so the user's distro package is the one in play. See `nix/release.nix`
+    # for the per-distro `Recommends` declarations.
     #
-    # 1. **Cargo feature** (`cudaSupport` / `coreMLSupport` / ...): compiles
-    #    the EP bindings into the produced binary. Cheap (no SDK build),
-    #    just toggles Rust code paths. The binary advertises support for
-    #    that EP at runtime; if `libonnxruntime` doesn't actually ship it,
-    #    ORT silently falls back to CPU.
-    #
-    # 2. **Lib swap** (`cudaRuntime` / `rocmRuntime`): rebuilds `onnxruntime`
-    #    with the EP fused into the `.so` itself. EXPENSIVE — pulls in the
-    #    CUDA toolkit, builds onnxruntime from source, easily hours of
-    #    compile time and gigabytes of store.
-    #
-    # Defaults flip ONLY the cargo features per platform, so a stock
-    # `nix build .#cli` is fast and the resulting binary recognises the
-    # right EP for its host. Users wanting the full GPU lib pick the
-    # purpose-built variants (`cli-cuda`, `cli-cuda-tensorrt`, `cli-rocm`)
-    # which set the runtime flag in addition.
-    # Release variant selector. Drives the bundle name (`sss`, `sss-no-ocr`,
-    # `sss-rocm`), what OCR code paths are compiled in, and which GPU EP
-    # gets bundled. Values:
-    #   "full"   — default. OCR on; on linux-x86_64 also pulls CUDA runtime
-    #              (NVIDIA users get acceleration, AMD/Intel fall back to CPU).
-    #   "no-ocr" — OCR compiled out entirely; no libonnxruntime payload.
-    #              Distro packages list system onnxruntime as a recommendation.
-    #   "rocm"   — OCR on; libonnxruntime + ROCm runtime libs bundled so AMD
-    #              GPU users get acceleration. Linux-only.
-    variant ? "full",
-    # Derived OCR + EP flags. Defaults respect `variant`; callers can still
-    # override individually for ad-hoc `nix build .#cli-*` (cli-cuda etc).
-    ocrSupport ? (variant != "no-ocr"),
-    cudaSupport ? (ocrSupport && variant == "full" && stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isx86_64),
+    # Values:
+    #   "system" — default. OCR on; no GPU cargo features; depends on the
+    #              distro's `onnxruntime` (CPU) package at runtime.
+    #   "nvidia" — OCR on + `cuda` cargo feature; depends on a CUDA-enabled
+    #              onnxruntime (distro-specific package name).
+    #   "rocm"   — OCR on; no cargo feature toggles (ROCm is an
+    #              onnxruntime build flag, not a cargo flag); depends on a
+    #              ROCm-enabled onnxruntime. Linux-only.
+    #   "noocr"  — OCR compiled out entirely; binary has no sss_ocr code.
+    variant ? "system",
+    # Derived flags. Callers can override individually for ad-hoc builds
+    # (e.g. `cli-cuda-bundled` style dev derivations with bundleRuntime=true).
+    ocrSupport ? (variant != "noocr"),
+    cudaSupport ? (ocrSupport && variant == "nvidia"),
     coreMLSupport ? (ocrSupport && stdenv.hostPlatform.isDarwin),
     directMLSupport ? (ocrSupport && stdenv.hostPlatform.isWindows),
     tensorrtSupport ? false,
     openvinoSupport ? false,
-    # Default to swapping libonnxruntime for the CUDA-enabled build
-    # whenever the cargo feature is on. Without this the binary
-    # advertises CUDA but the .so doesn't ship the EP, so ORT logs
-    # "CUDA execution provider is not enabled in this build" and falls
-    # back to CPU silently. The heavy paths come from
-    # `cache.nixos-cuda.org` (declared in flake.nix `nixConfig`); if the
-    # substituter misses, builds fall back to compiling onnxruntime from
-    # source — set `cudaRuntime = false` explicitly to skip.
-    cudaRuntime ? cudaSupport,
-    rocmRuntime ? (ocrSupport && variant == "rocm"),
+    # When false, libonnxruntime + CUDA/ROCm libs are NOT added to
+    # `runtimeDeps` (autoPatchelfHook leaves them out of RPATH). The binary
+    # still has ORT bindings compiled in via `ORT_PREFER_DYNAMIC_LINK=1`
+    # and resolves `libonnxruntime.so` from the system loader cache at
+    # runtime. Distro packages declare the right onnxruntime variant as a
+    # `Recommends` so a standard `apt install sss` / `pacman -S sss-bin`
+    # also pulls in the runtime.
+    #
+    # Set true only for self-contained dev builds you want to run outside
+    # any distro PM (`nix build .#cli` for hacking, AppImage-like usage).
+    # When true, `cudaRuntime`/`rocmRuntime` light up by default so the
+    # bundled libonnxruntime gets a matching build.
+    bundleRuntime ? false,
+    cudaRuntime ? (bundleRuntime && cudaSupport),
+    rocmRuntime ? (bundleRuntime && variant == "rocm"),
     ...
   }: let
     # When `ocrSupport=false` every OCR knob collapses to off — the
@@ -157,9 +152,11 @@ in
       wayland-scanner
       dbus.dev
     ] ++ lib.optionals ocrSupport [
-      # onnxruntime for sss_ocr — the ort crate dlopens libonnxruntime
-      # at runtime when `ORT_PREFER_DYNAMIC_LINK=1` is set (see below).
-      # Substituted with a CUDA / ROCm build when those flags are on.
+      # onnxruntime is a BUILD-TIME dep regardless of `bundleRuntime`: the
+      # ort crate needs the headers + a stub libonnxruntime.so to link
+      # against (`ORT_LIB_LOCATION` points here). The bundle-vs-system
+      # split is enforced in `runtimeDeps` below — that's the list
+      # autoPatchelfHook walks to bake the RPATH.
       onnxruntime
     ];
 
@@ -168,6 +165,12 @@ in
     # resolves them by SONAME at runtime), so autoPatchelfHook has no
     # way of inferring them — we hand them in explicitly and the hook
     # appends each one's `/lib` to the binary's RPATH.
+    #
+    # libonnxruntime + the GPU runtime libs are gated on `bundleRuntime`.
+    # Default-off: the produced bundle does NOT carry libonnxruntime.so,
+    # and the binary dlopens it from the system loader cache at runtime
+    # (distro PM installs the right onnxruntime variant via the
+    # per-distro `Recommends` declared in `release.nix`).
     runtimeDeps = with pkgs; [
       wayland
       libxkbcommon
@@ -183,7 +186,7 @@ in
       vulkan-loader
       libglvnd
       mesa
-    ] ++ lib.optionals ocrSupport [
+    ] ++ lib.optionals (ocrSupport && bundleRuntime) [
       onnxruntime
     ] ++ lib.optionals realCudaRuntime [
       # CUDA runtime libraries that onnxruntime dlopens. Pulled from the
@@ -212,8 +215,12 @@ in
     } // lib.optionalAttrs ocrSupport {
       # ort-sys needs to find the system onnxruntime instead of trying
       # to fetch a prebuilt blob (which fails in Nix's sandbox).
-      # `ORT_PREFER_DYNAMIC_LINK=1` flips ort to dlopen-at-runtime mode;
-      # `ORT_LIB_LOCATION` points it at the nixpkgs build.
+      # `ORT_PREFER_DYNAMIC_LINK=1` keeps the linker in dynamic-link mode;
+      # `ORT_LIB_LOCATION` points it at the nixpkgs build for header /
+      # stub discovery. The binary ends up with a DT_NEEDED entry for
+      # `libonnxruntime.so.1` — that's intentional, but for the no-bundle
+      # release variants we strip the matching RPATH entry in `postFixup`
+      # below so the loader falls through to the system path.
       ORT_LIB_LOCATION = "${onnxruntime}/lib";
       ORT_PREFER_DYNAMIC_LINK = "1";
     } // lib.optionalAttrs (ocrSupport && gpuCargoFeatures != "") {
@@ -221,6 +228,36 @@ in
     } // lib.optionalAttrs (!ocrSupport) {
       # No `ocr` feature → kill the default features that pull sss_ocr.
       cargoExtraArgs = "--no-default-features";
+    } // lib.optionalAttrs (stdenv.hostPlatform.isLinux && ocrSupport && !bundleRuntime) {
+      # Strip the bundled onnxruntime / CUDA / ROCm store paths from the
+      # final binary's RPATH. autoPatchelfHook (which runs IN fixupPhase
+      # via postFixupHooks) bakes them in because the binary has a
+      # DT_NEEDED for `libonnxruntime.so.1`. The no-bundle release model
+      # wants the distro PM's `onnxruntime` package to provide the .so
+      # via the system loader cache instead, so we run a custom phase
+      # AFTER fixup (via `postPhases`) to drop the matching RPATH entry.
+      # DT_NEEDED is preserved so ld.so still tries to load the lib —
+      # just from `/etc/ld.so.cache` rather than the embedded RPATH.
+      postPhases = [ "stripBundledRuntimeRpath" ];
+      stripBundledRuntimeRpath = ''
+        # nix store paths look like `/nix/store/<hash>-<name>-<ver>/lib`.
+        # Match `<name>` against the ML runtime list. The `-` before the
+        # name is the store-path separator, NOT a slash.
+        for binary in $out/bin/*; do
+          [ -f "$binary" ] || continue
+          old=$(patchelf --print-rpath "$binary" 2>/dev/null || true)
+          [ -n "$old" ] || continue
+          new=$(printf '%s' "$old" \
+            | tr ':' '\n' \
+            | grep -vE -- '-(onnxruntime|cuda[-_]|cudnn|cublas|libcublas|libcudart|rocm|hip|miopen|hsa-runtime|nccl|nvjitlink|cufft|curand|cusolver|cusparse|libnpp|cudatoolkit)' \
+            || true)
+          new=$(printf '%s' "$new" | tr '\n' ':' | sed 's/:$//')
+          if [ "$old" != "$new" ]; then
+            patchelf --set-rpath "$new" "$binary"
+            echo "  stripped ML runtime from RPATH: $binary"
+          fi
+        done
+      '';
     };
 
     # Static docs site (Zola) — wired so `nix build .#site` produces a

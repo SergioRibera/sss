@@ -46,7 +46,9 @@ jobs:
       matrix:
         package:
           - cli
-          - cli-no-ocr
+          - cli-nvidia
+          - cli-rocm
+          - cli-noocr
           - code
     steps:
       - uses: easimon/maximize-build-space@v8

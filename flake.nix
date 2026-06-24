@@ -45,53 +45,58 @@
         };
         crane = inputs.crane.mkLib pkgs;
         bundler = nix-bundle-app.lib.mkLib pkgs;
+        # Default `system` variant: OCR compiled in (CPU EP), runtime
+        # libonnxruntime expected from the distro PM. See `nix/release.nix`
+        # for the per-variant naming + recommends model.
         sssBundle = import ./nix {
           inherit pkgs system crane fenix bundler;
         };
-        # OCR-less variant. Same Rust crate but built with
-        # `--no-default-features` (sss_cli `ocr` off), so the binary has
-        # no sss_ocr code paths AND the bundler skips libonnxruntime +
-        # CUDA stack. Distro packages can still recommend the system's
-        # `onnxruntime` via per-distro `info.depends` (see release.nix).
-        sssBundleNoOcr = import ./nix {
+        # NVIDIA/CUDA variant: cargo feature `cuda` baked in; distro
+        # packages recommend a CUDA-enabled onnxruntime.
+        sssBundleNvidia = import ./nix {
           inherit pkgs system crane fenix bundler;
-          variant = "no-ocr";
+          variant = "nvidia";
         };
-        # ROCm/AMD GPU variant. Rebuilds onnxruntime with rocmSupport=true
-        # and bundles the rocm-hip-runtime userspace into /opt/sss-rocm/lib/.
-        # Hosts AMD users on Linux-x86_64 (RX 6000+ / MI series). Surfaces
-        # as `cli-rocm` for ad-hoc builds and `release-sss-rocm` for CI.
+        # ROCm/AMD GPU variant: distro packages recommend a ROCm-enabled
+        # onnxruntime + rocm-hip-runtime userspace.
         sssBundleRocm = import ./nix {
           inherit pkgs system crane fenix bundler;
           variant = "rocm";
         };
-        # GPU-accelerated dev variants. Each one rebuilds the workspace
-        # with the matching `sss_cli` feature on AND swaps the bundled
-        # onnxruntime for one compiled with the matching EP, so the
-        # produced binary's `libonnxruntime.so` actually exposes the
-        # provider at runtime. Selected by:
-        #   nix build .#cli-cuda
-        #   nix build .#cli-cuda-tensorrt
-        sssBundleCuda = import ./nix {
+        # OCR-stripped variant: built with `--no-default-features`, no
+        # sss_ocr code in the binary, no runtime recommendation.
+        sssBundleNoOcr = import ./nix {
           inherit pkgs system crane fenix bundler;
-          cudaSupport = true;
-          cudaRuntime = true;
+          variant = "noocr";
         };
-        sssBundleCudaTrt = import ./nix {
+        # Self-contained dev convenience builds. These flip
+        # `bundleRuntime=true` so the produced binary carries
+        # libonnxruntime + the matching GPU runtime libs in its RPATH,
+        # useful when hacking outside any distro PM (`nix run .#cli-cuda`).
+        # NOT exposed as release variants — release matrix uses the
+        # variant-named bundles above instead.
+        sssBundleCudaDev = import ./nix {
           inherit pkgs system crane fenix bundler;
-          cudaSupport = true;
-          tensorrtSupport = true;
-          cudaRuntime = true;
+          variant = "nvidia";
+          bundleRuntime = true;
+        };
+        sssBundleRocmDev = import ./nix {
+          inherit pkgs system crane fenix bundler;
+          variant = "rocm";
+          bundleRuntime = true;
         };
       in {
         inherit (sssBundle) apps devShells;
         packages = sssBundle.packages // {
-          cli-no-ocr = sssBundleNoOcr.packages.cli;
-          release-sss-no-ocr = sssBundleNoOcr.packages.release-sss;
+          cli-nvidia = sssBundleNvidia.packages.cli;
           cli-rocm = sssBundleRocm.packages.cli;
+          cli-noocr = sssBundleNoOcr.packages.cli;
+          release-sss-nvidia = sssBundleNvidia.packages.release-sss;
           release-sss-rocm = sssBundleRocm.packages.release-sss;
-          cli-cuda = sssBundleCuda.packages.cli;
-          cli-cuda-tensorrt = sssBundleCudaTrt.packages.cli;
+          release-sss-noocr = sssBundleNoOcr.packages.release-sss;
+          # Dev-only self-contained builds.
+          cli-cuda-bundled = sssBundleCudaDev.packages.cli;
+          cli-rocm-bundled = sssBundleRocmDev.packages.cli;
         };
       }
     )) // (flake-utils.lib.eachDefaultSystemPassThrough (system: let
