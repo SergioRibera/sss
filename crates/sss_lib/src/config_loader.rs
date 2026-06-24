@@ -98,6 +98,7 @@ where
 
     let mut acc: Option<T> = None;
     for imp in imports {
+        let imp = expand_user(&imp);
         let imp = if imp.is_absolute() {
             imp
         } else {
@@ -127,5 +128,74 @@ fn expand_user(path: &Path) -> PathBuf {
     match std::env::var_os("HOME") {
         Some(home) => PathBuf::from(home).join(rest),
         None => path.to_path_buf(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use merge2::Merge;
+    use serde::Deserialize;
+    use std::fs;
+
+    #[derive(Default, Deserialize)]
+    struct Cfg {
+        value: Option<String>,
+        #[serde(default)]
+        imports: Vec<PathBuf>,
+    }
+
+    impl Merge for Cfg {
+        fn merge(&mut self, other: &mut Self) {
+            if other.value.is_some() {
+                self.value = other.value.take();
+            }
+        }
+    }
+
+    impl HasImports for Cfg {
+        fn take_imports(&mut self) -> Vec<PathBuf> {
+            std::mem::take(&mut self.imports)
+        }
+    }
+
+    fn parse(s: &str) -> Result<Cfg, toml::de::Error> {
+        toml::from_str(s)
+    }
+
+    #[test]
+    fn relative_dotdot_imports_resolve_against_base_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp.path().join("a/b");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(tmp.path().join("base.toml"), "value = \"from-base\"\n").unwrap();
+        let main = nested.join("main.toml");
+        fs::write(&main, "imports = [\"../../base.toml\"]\n").unwrap();
+
+        let cfg = load_with_imports(&main, &parse).unwrap().unwrap();
+        assert_eq!(cfg.value.as_deref(), Some("from-base"));
+    }
+
+    #[test]
+    fn tilde_imports_expand_home() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fake_home = tmp.path().join("home");
+        fs::create_dir_all(fake_home.join(".themes")).unwrap();
+        fs::write(
+            fake_home.join(".themes/colors.toml"),
+            "value = \"from-home\"\n",
+        )
+        .unwrap();
+        let main = tmp.path().join("main.toml");
+        fs::write(&main, "imports = [\"~/.themes/colors.toml\"]\n").unwrap();
+
+        let prev = std::env::var_os("HOME");
+        std::env::set_var("HOME", &fake_home);
+        let cfg = load_with_imports(&main, &parse).unwrap().unwrap();
+        match prev {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+        assert_eq!(cfg.value.as_deref(), Some("from-home"));
     }
 }

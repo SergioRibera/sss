@@ -42,3 +42,7 @@ notify-rust = { version = "4.17", features = ["images"] }
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 rustix = { version = "1", features = ["event"] }
+
+[dev-dependencies]
+tempfile = "3"
+toml = "0.8"
