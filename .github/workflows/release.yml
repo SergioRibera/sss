@@ -98,17 +98,16 @@ jobs:
             runner: macos-14
             slice: darwin-aarch64
         variant: [system, nvidia, rocm, noocr]
-        exclude:
-          # Static excludes can't read `needs.plan.outputs.binary` (the
-          # binary name resolves only at job time). Per-variant eligibility
-          # is computed in the `Plan slice` step below and gates every
-          # subsequent step. Skipped combinations:
-          #   - `sss_code` × {nvidia, rocm, noocr}: sss_code has no OCR.
-          #     It only ships under the `system` variant (which maps to
-          #     `sss_code-bin` rather than `sss-bin`).
-          #   - any slice × `nvidia` on macOS: no CUDA stack on Apple.
-          #   - any slice × `rocm` except linux-x86_64: ROCm targets only
-          #     AMD on Linux-x86_64.
+        # Static excludes can't read `needs.plan.outputs.binary` (the
+        # binary name resolves only at job time). Per-variant eligibility
+        # is computed in the `Plan slice` step below and gates every
+        # subsequent step. Skipped combinations:
+        #   - `sss_code` × {nvidia, rocm, noocr}: sss_code has no OCR.
+        #     It only ships under the `system` variant (which maps to
+        #     `sss_code-bin` rather than `sss-bin`).
+        #   - any slice × `nvidia` on macOS: no CUDA stack on Apple.
+        #   - any slice × `rocm` except linux-x86_64: ROCm targets only
+        #     AMD on Linux-x86_64.
         include: []
     steps:
       - name: Plan slice
