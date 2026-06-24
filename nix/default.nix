@@ -139,6 +139,11 @@ in
     buildInputs = with pkgs; [
       fontconfig.dev
       freetype
+    ] ++ lib.optionals stdenv.hostPlatform.isLinux [
+      # All of these are Linux-only graphics / IPC libs. wayland is
+      # explicitly marked badPlatforms = [aarch64-darwin x86_64-darwin]
+      # in nixpkgs, so including it on macOS makes evaluation refuse
+      # to even produce the derivation.
       libxkbcommon.dev
       libxkbcommon
       libxcb
