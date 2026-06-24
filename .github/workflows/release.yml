@@ -1,4 +1,5 @@
 name: Release
+run-name: Release ${{ github.event.inputs.tag || github.ref_name }}
 
 # Two parallel tag streams trigger this workflow:
 #   sss_cli/v0.2.1   → releases the `sss` binary (sss_cli)

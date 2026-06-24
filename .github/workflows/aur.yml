@@ -1,4 +1,6 @@
 name: Publish to AUR
+run-name: |
+  Publish to AUR ${{ github.event.inputs.tag || github.event.workflow_run.head_branch || github.ref_name }}
 
 # Picks up after a successful Release run. Determines which binary was
 # released from the tag and pushes the corresponding -bin package to AUR:
