@@ -14,8 +14,22 @@ name: Web
 
 on:
   pull_request:
+    paths:
+      - "docs-site/**"
+      - "docs/**"
+      - "nix/site.nix"
+      - "nix/gen-docs.nix"
+      - "scripts/fetch-releases.sh"
+      - ".github/workflows/web.yml"
   push:
     branches: [main]
+    paths:
+      - "docs-site/**"
+      - "docs/**"
+      - "nix/site.nix"
+      - "nix/gen-docs.nix"
+      - "scripts/fetch-releases.sh"
+      - ".github/workflows/web.yml"
   workflow_run:
     workflows: ["Release"]
     types: [completed]
