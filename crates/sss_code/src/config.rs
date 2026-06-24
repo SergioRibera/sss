@@ -120,6 +120,14 @@ pub struct CodeConfig {
     #[merge(strategy = overwrite_false)]
     #[serde(default = "default_bool")]
     pub line_numbers: bool,
+    #[clap(
+        long,
+        default_value = "false",
+        help = "Number lines relative to capture start (1..N) instead of absolute file position. Requires --line-numbers."
+    )]
+    #[merge(strategy = overwrite_false)]
+    #[serde(default = "default_bool")]
+    pub relative_line_numbers: bool,
     #[clap(long, help = "Tab width")]
     #[merge(strategy = swap_option)]
     pub tab_width: Option<u8>,
@@ -152,6 +160,7 @@ impl Default for CodeConfig {
                 end: usize::MAX,
             }),
             line_numbers: true,
+            relative_line_numbers: false,
             tab_width: Some(4),
             indent_chars: Vec::new(),
             hidden_chars: Vec::new(),

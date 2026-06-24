@@ -2,6 +2,7 @@
 with lib; {
   enable = mkEnableOption "cli to take screenshots of source code";
   line-numbers = mkEnableOption "Show line numbers";
+  relative-line-numbers = mkEnableOption "Number lines relative to capture start (1..N) instead of absolute file position. Requires `line-numbers`";
   code-background = mkOption {
     type = types.str;
     default = "";

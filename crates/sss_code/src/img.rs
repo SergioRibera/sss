@@ -170,9 +170,14 @@ impl<'a> ImageCode<'a> {
             c
         };
         for (i, l) in lines.clone().enumerate() {
+            let displayed = if self.config.relative_line_numbers {
+                i + 1
+            } else {
+                l + 1
+            };
             let line_mumber = format!(
                 "{:>width$}",
-                l + 1,
+                displayed,
                 width = lineno.checked_ilog10().unwrap_or_default() as usize + 1
             );
             self.font.draw_text_mut(
