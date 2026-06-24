@@ -23,7 +23,7 @@
 
     <div class="docs-hub-grid">
       {% for c in config.extra.crates %}
-        <a class="docs-hub-card accent-{{ c.accent }}" href="/docs/{{ c.slug }}/">
+        <a class="docs-hub-card accent-{{ c.accent }}" href="{{ get_url(path='/docs/' ~ c.slug ~ '/') }}">
           <span class="docs-hub-card-binary">$ {{ c.binary }}</span>
           <h3>{{ c.name }}</h3>
           <p>{{ c.tagline }}</p>
@@ -38,7 +38,7 @@
         <h2>Config reference</h2>
         <p>Every TOML key, generated from the Nix option modules. Use this when wiring Home Manager or hand-editing <code>~/.config/sss/config.toml</code>.</p>
       </div>
-      <a class="btn btn-ghost" href="/docs/config-reference/">Open reference →</a>
+      <a class="btn btn-ghost" href="{{ get_url(path='/docs/config-reference/') }}">Open reference →</a>
     </div>
   </div>
 {% else %}

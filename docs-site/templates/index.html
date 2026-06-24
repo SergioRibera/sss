@@ -63,12 +63,12 @@
                     </li>
                   {% endfor %}
                 </ul>
-                <a class="hero-download-menu-link" href="/install/#linux">All installers (PM, source) →</a>
+                <a class="hero-download-menu-link" href="{{ get_url(path='/install/') }}#linux">All installers (PM, source) →</a>
               </div>
             </details>
           </div>
         {% else %}
-          <a class="btn btn-primary btn-lg" href="/install/#linux">
+          <a class="btn btn-primary btn-lg" href="{{ get_url(path='/install/') }}#linux">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
             Install on Linux
           </a>
@@ -107,12 +107,12 @@
                     </li>
                   {% endfor %}
                 </ul>
-                <a class="hero-download-menu-link" href="/install/#macos">All installers (PM, source) →</a>
+                <a class="hero-download-menu-link" href="{{ get_url(path='/install/') }}#macos">All installers (PM, source) →</a>
               </div>
             </details>
           </div>
         {% else %}
-          <a class="btn btn-primary btn-lg" href="/install/#macos">
+          <a class="btn btn-primary btn-lg" href="{{ get_url(path='/install/') }}#macos">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 12l7 7 7-7M5 21h14"/></svg>
             Install on macOS
           </a>
@@ -164,7 +164,7 @@
 
   <div class="feature-grid">
     {% for c in config.extra.crates %}
-      <a class="card card-hover card-accent crate-card accent-{{ c.accent }}" href="/docs/{{ c.slug }}/">
+      <a class="card card-hover card-accent crate-card accent-{{ c.accent }}" href="{{ get_url(path='/docs/' ~ c.slug ~ '/') }}">
         <div class="crate-card-icon">{{ ui::crate_icon(slug=c.slug) }}</div>
         <span class="crate-card-binary">$ {{ c.binary }}</span>
         <h3 class="card-title">{{ c.name }}</h3>

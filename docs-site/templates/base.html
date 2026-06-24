@@ -14,7 +14,7 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="{{ current_url | default(value=config.base_url) | safe }}">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="{{ get_url(path='favicon.svg') | safe }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ get_url(path='main.css') | safe }}">
   <link rel="stylesheet" href="{{ get_url(path='syntax-dark.css') | safe }}" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="{{ get_url(path='syntax-light.css') | safe }}" media="(prefers-color-scheme: light)">

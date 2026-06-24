@@ -1,13 +1,13 @@
 {% macro header(current_path) %}
 <header class="site-nav">
   <div class="site-nav-inner">
-    <a class="site-brand" href="/">
+    <a class="site-brand" href="{{ get_url(path='/') }}">
       <span>Super ScreenShot</span>
     </a>
     <nav class="site-nav-links" id="nav-links" aria-label="Primary">
       {% for item in config.extra.nav %}
         {% set is_active = current_path is starting_with(item.url) and item.url != "/" %}
-        <a href="{{ item.url }}"
+        <a href="{% if item.external %}{{ item.url }}{% else %}{{ get_url(path=item.url) }}{% endif %}"
            {% if item.external %}target="_blank" rel="noopener"{% endif %}
            class="{% if is_active %}is-active{% endif %}">
           {{ item.name }}
@@ -31,7 +31,7 @@
 <footer class="site-footer">
   <div class="site-footer-inner">
     <div class="site-footer-brand">
-      <a class="site-brand" href="/">
+      <a class="site-brand" href="{{ get_url(path='/') }}">
         <span>Super ScreenShot</span>
       </a>
       <p>{{ config.description }}</p>
@@ -39,16 +39,16 @@
     <div class="site-footer-col">
       <h5>Project</h5>
       <ul>
-        <li><a href="/install/">Install</a></li>
-        <li><a href="/docs/">Documentation</a></li>
-        <li><a href="/changelog/">Changelog</a></li>
+        <li><a href="{{ get_url(path='/install/') }}">Install</a></li>
+        <li><a href="{{ get_url(path='/docs/') }}">Documentation</a></li>
+        <li><a href="{{ get_url(path='/changelog/') }}">Changelog</a></li>
       </ul>
     </div>
     <div class="site-footer-col">
       <h5>Crates</h5>
       <ul>
         {% for c in config.extra.crates %}
-          <li><a href="/docs/{{ c.slug }}/">{{ c.name }}</a></li>
+          <li><a href="{{ get_url(path='/docs/' ~ c.slug ~ '/') }}">{{ c.name }}</a></li>
         {% endfor %}
       </ul>
     </div>

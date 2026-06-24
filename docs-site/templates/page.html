@@ -11,10 +11,10 @@
   {{ docs::sidebar(active_path=page.path) }}
   <article class="docs-content {% if crate %}accent-{{ crate.accent }}{% endif %}">
     <nav class="docs-breadcrumb" aria-label="Breadcrumb">
-      <a href="/docs/">Docs</a>
+      <a href="{{ get_url(path='/docs/') }}">Docs</a>
       <span class="sep">/</span>
       {% if crate %}
-        <a href="/docs/{{ crate.slug }}/">{{ crate.name }}</a>
+        <a href="{{ get_url(path='/docs/' ~ crate.slug ~ '/') }}">{{ crate.name }}</a>
         <span class="sep">/</span>
       {% endif %}
       <span>{{ page.title }}</span>

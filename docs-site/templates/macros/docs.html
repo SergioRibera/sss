@@ -21,7 +21,7 @@
       <h5>{{ c.name }}</h5>
       <ul>
         <li>
-          <a href="/docs/{{ c.slug }}/"
+          <a href="{{ get_url(path='/docs/' ~ c.slug ~ '/') }}"
              class="{% if active_path == '/docs/' ~ c.slug ~ '/' %}is-active{% endif %}">
             Overview
           </a>
@@ -44,7 +44,7 @@
     <h5>Reference</h5>
     <ul>
       <li>
-        <a href="/docs/config-reference/"
+        <a href="{{ get_url(path='/docs/config-reference/') }}"
            class="{% if active_path == '/docs/config-reference/' %}is-active{% endif %}">
           Config reference
         </a>
