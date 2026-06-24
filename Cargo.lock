@@ -4663,7 +4663,7 @@ dependencies = [
 
 [[package]]
 name = "sss_capture"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "core-foundation 0.10.1",
  "core-graphics 0.25.0",
