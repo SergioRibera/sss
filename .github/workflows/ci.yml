@@ -25,9 +25,27 @@ on:
       - "**/*.nix"
 
 jobs:
-  # Run cargo clippy -- -D warnings
+  # Cheap sanity check that runs on every push to main and on PRs.
+  # Avoids the heavy clippy matrix on each merge — that one is PR-only.
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Run cargo check
+        uses: actions-rs/cargo@v1.0.1
+        with:
+          command: check
+          args: --workspace --all-targets
+
+  # Full clippy on every supported host. PR-only so pushes to main don't
+  # burn three runners per merge.
   clippy_check:
     name: Clippy
+    if: github.event_name == 'pull_request'
     strategy:
       matrix:
         os:
@@ -46,9 +64,11 @@ jobs:
           command: clippy
           args: -- -D warnings
 
-  # Run cargo fmt --all -- --check
+  # Format check. PR-only — once the merge landed `cargo fmt` was already
+  # green; rerunning on main adds no signal.
   format:
     name: Format
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
