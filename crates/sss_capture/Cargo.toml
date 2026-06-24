@@ -9,6 +9,11 @@ edition.workspace = true
 license.workspace = true
 keywords = ["screen", "monitor", "window", "capture", "image"]
 
+# Library crate — bumps version + commit via cargo-release, but never tags.
+# Only sss_cli + sss_code emit tags (those drive the Release workflow).
+[package.metadata.release]
+tag = false
+
 [features]
 default = []
 # Force every public symbol to be available unconditionally; if a backend

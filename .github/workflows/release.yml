@@ -1,20 +1,25 @@
 name: Release
 
 # Two parallel tag streams trigger this workflow:
-#   v0.1.5            → releases the `sss` binary (sss_cli)
-#   sss_code/v0.2.0   → releases the `sss_code` binary
+#   sss_cli/v0.2.1   → releases the `sss` binary (sss_cli)
+#   sss_code/v0.3.0  → releases the `sss_code` binary
+#
+# Library crates (sss_core, sss_lib, sss_ocr, sss_capture, sss_capture_ui)
+# have `tag = false` in their per-crate release metadata so cargo-release
+# bumps their version + commit but never tags them — only the two binary
+# crates fan into this workflow.
 #
 # `workflow_dispatch` lets you force a release from a tag too.
 
 on:
   push:
     tags:
-      - "v*"
+      - "sss_cli/v*"
       - "sss_code/v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.1.5 or sss_code/v0.2.0)."
+        description: "Tag to release (e.g. sss_cli/v0.2.1 or sss_code/v0.3.0)."
         required: true
         type: string
 
@@ -48,15 +53,19 @@ jobs:
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [[ "$tag" == sss_code/v* ]]; then
-            binary=sss_code
-            version="${tag#sss_code/v}"
-            crate=crates/sss_code/Cargo.toml
-          else
-            binary=sss
-            version="${tag#v}"
-            crate=crates/sss_cli/Cargo.toml
-          fi
+          case "$tag" in
+            sss_code/v*)
+              binary=sss_code
+              version="${tag#sss_code/v}"
+              crate=crates/sss_code/Cargo.toml ;;
+            sss_cli/v*)
+              binary=sss
+              version="${tag#sss_cli/v}"
+              crate=crates/sss_cli/Cargo.toml ;;
+            *)
+              echo "::error::tag '$tag' does not match sss_cli/v* or sss_code/v*"
+              exit 1 ;;
+          esac
           echo "binary=$binary" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "release_name=$binary v$version" >> "$GITHUB_OUTPUT"

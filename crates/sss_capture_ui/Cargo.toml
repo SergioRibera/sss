@@ -9,6 +9,11 @@ edition.workspace = true
 license.workspace = true
 keywords = ["screenshot", "selection", "annotation", "overlay", "slurp"]
 
+# Library crate — bumps version + commit via cargo-release, but never tags.
+# Only sss_cli + sss_code emit tags (those drive the Release workflow).
+[package.metadata.release]
+tag = false
+
 [features]
 default = ["editor", "serde"]
 editor = ["dep:egui", "dep:egui-winit", "dep:egui-wgpu", "dep:wgpu", "dep:pollster"]

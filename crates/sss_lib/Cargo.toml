@@ -8,6 +8,11 @@ homepage.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# Library crate — bumps version + commit via cargo-release, but never tags.
+# Only sss_cli + sss_code emit tags (those drive the Release workflow).
+[package.metadata.release]
+tag = false
+
 [dependencies]
 sss_core = { path = "../sss_core" }
 clap.workspace = true

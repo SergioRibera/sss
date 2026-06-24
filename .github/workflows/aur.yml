@@ -2,7 +2,7 @@ name: Publish to AUR
 
 # Picks up after a successful Release run. Determines which binary was
 # released from the tag and pushes the corresponding -bin package to AUR:
-#   v*              → sss-bin
+#   sss_cli/v*      → sss-bin / sss-nvidia-bin / sss-rocm-bin / sss-noocr-bin
 #   sss_code/v*     → sss_code-bin
 #
 # The PKGBUILD + .SRCINFO + source tarball are produced by the archlinux
@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to push to AUR (e.g. v0.1.5 or sss_code/v0.2.0)."
+        description: "Tag to push to AUR (e.g. sss_cli/v0.2.1 or sss_code/v0.3.0)."
         required: true
         type: string
   workflow_run:
@@ -57,14 +57,14 @@ jobs:
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           # Each AUR pkg only matches one tag stream:
-          #   v*           → sss-bin, sss-no-ocr-bin
+          #   sss_cli/v*   → sss-bin, sss-nvidia-bin, sss-rocm-bin, sss-noocr-bin
           #   sss_code/v*  → sss_code-bin
           # Set `skip=true` for jobs that don't match the current tag.
           aur_pkg="${{ matrix.aur_pkg }}"
           skip=true
           if [[ "$tag" == sss_code/v* ]] && [ "$aur_pkg" = "sss_code-bin" ]; then
             skip=false
-          elif [[ "$tag" == v* ]] && [ "$aur_pkg" != "sss_code-bin" ]; then
+          elif [[ "$tag" == sss_cli/v* ]] && [ "$aur_pkg" != "sss_code-bin" ]; then
             skip=false
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
@@ -122,7 +122,7 @@ jobs:
         run: |
           aur_pkg="${{ steps.plan.outputs.aur_pkg }}"
           tag="${{ steps.plan.outputs.tag }}"
-          version="${tag#v}"
+          version="${tag#sss_cli/v}"
           version="${version#sss_code/v}"
 
           chown -R builder:builder "$PWD"
