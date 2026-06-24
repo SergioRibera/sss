@@ -101,12 +101,18 @@ let
       # Vendor name varies (`libonnxruntime-gpu`, `libonnxruntime1.20-gpu`,
       # etc). Use a wide alternation; the AUR side has a concrete package.
       deb = [ "libonnxruntime-gpu | libonnxruntime1.20-gpu | libonnxruntime" ];
-      rpm = [ "onnxruntime-cuda | onnxruntime" ];
+      # RPM `Recommends:` does not support `|` alternation. Fedora/RHEL
+      # ships a single `onnxruntime` package (CPU only); CUDA builds come
+      # from NVIDIA's own repos with no canonical RPM name. List the one
+      # name the distro repo can resolve and leave CUDA detection to the
+      # binary's runtime EP probe (it falls back to CPU EP gracefully).
+      rpm = [ "onnxruntime" ];
       archlinux = [ "onnxruntime-cuda" ];
     };
     rocm = {
       deb = [ "libonnxruntime-rocm | libonnxruntime" "libamdhip64-5 | libamdhip64" ];
-      rpm = [ "onnxruntime-rocm | onnxruntime" "rocm-hip-runtime" ];
+      # See cuda.rpm note above re: `|` not being valid in RPM Recommends.
+      rpm = [ "onnxruntime" "rocm-hip-runtime" ];
       archlinux = [ "onnxruntime-rocm" "rocm-hip-runtime" ];
     };
   };
