@@ -285,8 +285,34 @@ in
       pkg = craneLib.buildPackage (packageArgs name);
       app = {
         type = "app";
-        program = "${pkg}${pkg.passthru.exePath or "/bin/${pkg.pname or pkg.name}"}";
+        program = "${wrappedPkg}${wrappedPkg.passthru.exePath or "/bin/${pkg.pname or pkg.name}"}";
       };
+      # User-facing wrapper: when OCR is on and we did NOT bundle the
+      # runtime into RPATH, the binary still dlopens libonnxruntime.so by
+      # SONAME at runtime. On distros with a global loader cache the user's
+      # PM install of `onnxruntime` resolves that; on Nix there is no such
+      # cache, so we inject onnxruntime's lib dir via LD_LIBRARY_PATH for
+      # consumers of `nix run` / `packages.{cli,code}` / the HM + NixOS
+      # modules. Release tarballs build off `pkg` directly via `release.nix`
+      # and stay unwrapped — they keep relying on the target distro's PM.
+      wrappedPkg =
+        if ocrSupport && !bundleRuntime && stdenv.hostPlatform.isLinux
+        then
+          pkgs.symlinkJoin {
+            name = "${pkg.pname or pkg.name}-wrapped";
+            paths = [ pkg ];
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            postBuild = ''
+              for bin in $out/bin/*; do
+                # Skip files makeWrapper already produced this pass.
+                case "$(basename "$bin")" in .*-wrapped) continue ;; esac
+                wrapProgram "$bin" \
+                  --prefix LD_LIBRARY_PATH : ${onnxruntime}/lib
+              done
+            '';
+            passthru = pkg.passthru or {};
+          }
+        else pkg;
     };
     # Build packages and `nix run` apps
     sss = genBuild "sss";
@@ -316,8 +342,8 @@ in
     };
     # `nix build`
     packages = rec {
-      code = sssCode.pkg;
-      cli = sss.pkg;
+      code = sssCode.wrappedPkg;
+      cli = sss.wrappedPkg;
       docs = import ./gen-docs.nix { inherit pkgs lib; };
       inherit site;
       default = cli;
