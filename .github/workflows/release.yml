@@ -86,9 +86,9 @@ jobs:
   # no OCR code, distro packages list `onnxruntime` as a recommendation).
   # `sss_code` only ships in one flavour; the matrix is filtered below.
   bundles:
-    name: Build bundles (${{ matrix.label }} ${{ matrix.variant }})
+    name: Build bundles (${{ matrix.slice.label }} ${{ matrix.variant }})
     needs: plan
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.slice.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
