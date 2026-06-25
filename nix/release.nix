@@ -231,12 +231,6 @@ let
   # AppImage dropped: by design the binary expects a distro-installed
   # `libonnxruntime.so`, which breaks AppImage's portability promise.
   linuxFormats = [ "deb" "rpm" "archlinux" "tar.gz" "tar.zst" ];
-  # `sss_code` contains an underscore in its name, which dpkg-deb refuses
-  # (deb pkg names must match [a-z0-9][-+.a-z0-9]*). Rather than splitting
-  # the upstream name (breaking AUR `sss_code-bin`, brew `sss_code.rb`),
-  # we just don't produce a .deb for it — distro coverage stays via rpm
-  # + archlinux + plain tarballs.
-  sssCodeLinuxFormats = [ "rpm" "archlinux" "tar.gz" "tar.zst" ];
   darwinFormats = [ "tar.gz" "tar.zst" "pkg" "dmg" "brew" ];
 
   # Cross-arch slices are intentionally omitted: native runners per arch
@@ -246,20 +240,24 @@ let
 
   # Build the matrix entry set for a given binary, gated on what the
   # current `system` can produce. Each runner sees only its own slice.
-  # `linuxFmt` lets sss_code opt out of `deb` (its name has an underscore
-  # which dpkg-deb rejects).
-  matrixFor = { drvName, hostDrv, linuxFmt ? linuxFormats }:
+  matrixFor = { drvName, hostDrv }:
     let
       linuxX86 = lib.optionalAttrs (system == "x86_64-linux") {
         "x86_64-linux" = {
           drv = hostDrv;
-          formats = linuxFmt;
+          formats = linuxFormats;
         };
       };
       linuxArmHost = lib.optionalAttrs (system == "aarch64-linux") {
         "aarch64-linux" = {
           drv = hostDrv;
-          formats = linuxFmt;
+          formats = linuxFormats;
+        };
+      };
+      darwinX86 = lib.optionalAttrs (system == "x86_64-darwin") {
+        "x86_64-darwin" = {
+          drv = hostDrv;
+          formats = darwinFormats;
         };
       };
       darwinArm = lib.optionalAttrs (system == "aarch64-darwin") {
@@ -269,7 +267,7 @@ let
         };
       };
     in
-      linuxX86 // linuxArmHost // darwinArm;
+      linuxX86 // linuxArmHost // darwinX86 // darwinArm;
 
   # Per-variant slice eligibility. `system` + `noocr` ship on every
   # platform we build for. `nvidia` is Linux-only (no CUDA stack on
@@ -292,7 +290,6 @@ let
   sssCodeMatrix = matrixFor {
     drvName = "sss_code";
     hostDrv = sssCodePkg;
-    linuxFmt = sssCodeLinuxFormats;
   };
 
   # Don't call bundler.release with an empty matrix — emit a placeholder.
