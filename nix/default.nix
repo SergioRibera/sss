@@ -278,19 +278,34 @@ in
     # sss artifacts
     sssDeps = craneLib.buildDepsOnly commonArgs;
 
-    # Lambda for build packages with cached artifacts
+    # Lambda for build packages with cached artifacts.
+    # `--bin ${targetName}` narrows the workspace build to one bin so each
+    # derivation ships exactly its target binary (otherwise crane builds
+    # every workspace bin and every `packages.<x>` ends up with `sss`,
+    # `sss_code`, `sss-select` — colliding when more than one is installed
+    # into the same env). `pname` differs per target so the wrapper
+    # symlinkJoin name doesn't collide either.
     packageArgs = targetName:
+      let
+        binFlag = "--bin ${targetName}";
+        existingExtra = commonArgs.cargoExtraArgs or "";
+        mergedExtra =
+          if existingExtra == ""
+          then binFlag
+          else "${existingExtra} ${binFlag}";
+      in
       commonArgs
       // {
         cargoArtifacts = sssDeps;
-        workspaceTargetName = targetName;
+        pname = "sss-${targetName}";
+        cargoExtraArgs = mergedExtra;
       };
 
     genBuild = name:  rec {
       pkg = craneLib.buildPackage (packageArgs name);
       app = {
         type = "app";
-        program = "${wrappedPkg}${wrappedPkg.passthru.exePath or "/bin/${pkg.pname or pkg.name}"}";
+        program = "${wrappedPkg}${wrappedPkg.passthru.exePath or "/bin/${name}"}";
       };
       # User-facing wrapper: when OCR is on and we did NOT bundle the
       # runtime into RPATH, the binary still dlopens libonnxruntime.so by
