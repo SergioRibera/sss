@@ -17,6 +17,9 @@ tag = false
 [features]
 default = ["editor", "serde"]
 editor = ["dep:egui", "dep:egui-winit", "dep:egui-wgpu", "dep:wgpu", "dep:pollster"]
+# `editor` activates the optional cross-platform deps (egui/wgpu/pollster)
+# plus the per-target egui-winit + egui-wgpu, so the same feature works
+# whether the crate is built on Linux, Windows or macOS.
 serde = ["dep:serde"]
 
 [dependencies]
@@ -35,6 +38,15 @@ resvg = { version = "0.47", default-features = false }
 usvg = { version = "0.47", default-features = false }
 tiny-skia = "0.12"
 
+# Editor stack — kept cross-platform because the `editor` feature is part
+# of the default set and the module tree (`render/`, `icons.rs`, …)
+# references these crates unconditionally. Per-target egui-winit /
+# egui-wgpu feature lists below only flip the windowing backend the egui
+# fork compiles in; the crates themselves resolve everywhere.
+egui       = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
+wgpu       = { version = "25", optional = true }
+pollster   = { version = "0.4", optional = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # Windowing — winit fork with native wlr-layer-shell support.
 winit = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell", default-features = false, features = [
@@ -46,18 +58,18 @@ winit = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell",
 # shells / other setups where the SONAME isn't on LD_LIBRARY_PATH.
 winit-wayland = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell", default-features = false, features = ["csd-adwaita"] }
 
-# Optional editor stack — egui fork wired to the winit fork above.
-egui       = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
 egui-winit = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["clipboard", "wayland", "x11"] }
 egui-wgpu  = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["wayland", "x11"] }
-wgpu       = { version = "25", optional = true }
-pollster   = { version = "0.4", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winit = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell" }
+egui-winit = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["clipboard"] }
+egui-wgpu  = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 winit = { git = "https://github.com/SergioRibera/winit", branch = "layer_shell" }
+egui-winit = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["clipboard"] }
+egui-wgpu  = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false }
 
 [[example]]
 name = "select_region"

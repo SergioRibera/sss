@@ -377,7 +377,13 @@ jobs:
           draft: false
           prerelease: ${{ contains(needs.plan.outputs.tag, '-') }}
           body_path: RELEASE_BODY.md
-          fail_on_unmatched_files: true
+          # The globs below cover every format nix-bundle-app may emit,
+          # but most releases only produce a subset (sss_code skips deb
+          # variants on some slices, darwin doesn't produce .deb / .rpm,
+          # etc). `fail_on_unmatched_files: false` lets the publish
+          # succeed against whichever shape this release happened to
+          # produce; the SHA256SUMS still pins the full asset list.
+          fail_on_unmatched_files: false
           # Exclude the `aur/` subdir from the release upload — it's the
           # source layout for the AUR repo, not a user-installable artifact.
           # AppImage intentionally absent: dropped in release.nix because
@@ -389,7 +395,6 @@ jobs:
             dist/*.rpm
             dist/*.pkg.tar.zst
             dist/*.tar.gz
-            dist/*.tar.xz
             dist/*.tar.zst
             dist/*.dmg
             dist/*.pkg
