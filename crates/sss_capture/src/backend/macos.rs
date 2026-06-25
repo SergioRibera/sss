@@ -5,19 +5,22 @@
 use std::sync::Mutex;
 
 use core_foundation::array::CFArray;
-use core_foundation::base::{CFType, ItemRef, TCFType};
-use core_foundation::dictionary::CFDictionary;
+use core_foundation::base::{CFGetTypeID, CFType, ItemRef, TCFType};
+use core_foundation::dictionary::{CFDictionary, CFDictionaryGetTypeID};
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_graphics::display::{
-    kCGNullWindowID, kCGWindowImageBoundsIgnoreFraming, kCGWindowImageDefault,
-    kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, CFArrayRef,
-    CGDirectDisplayID, CGDisplay, CGDisplayBounds, CGError, CGGetActiveDisplayList,
-    CGMainDisplayID, CGPoint, CGRect, CGSize, CGWindowID, CGWindowListCopyWindowInfo,
-    CGWindowListCreateImage,
+    CFArrayRef, CGDirectDisplayID, CGDisplay, CGDisplayBounds, CGGetActiveDisplayList,
+    CGMainDisplayID, CGPoint, CGRect, CGSize,
 };
 use core_graphics::geometry::CG_ZERO_RECT;
 use core_graphics::image::CGImage;
+use core_graphics::window::{
+    kCGNullWindowID, kCGWindowImageBoundsIgnoreFraming, kCGWindowImageDefault,
+    kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, CGWindowID,
+    CGWindowListCopyWindowInfo, CGWindowListCreateImage,
+};
+use foreign_types::ForeignType;
 use image::RgbaImage;
 
 use crate::backend::compose;
@@ -163,17 +166,17 @@ impl Backend for MacOsBackend {
     }
 
     fn cursor_position(&self) -> Result<Point> {
-        use objc2::msg_send_id;
         use objc2::runtime::AnyClass;
         use objc2_foundation::NSPoint;
 
-        let cls = AnyClass::get("NSEvent")
+        // `AnyClass::get` requires a CStr in objc2 0.6+. C-string literals
+        // (`c"..."`) need rustc 1.77+, which the workspace targets.
+        let cls = AnyClass::get(c"NSEvent")
             .ok_or_else(|| CaptureError::CursorUnavailable("NSEvent class missing".into()))?;
         // SAFETY: NSEvent.mouseLocation is a class method returning NSPoint.
         let point: NSPoint = unsafe { objc2::msg_send![cls, mouseLocation] };
         // Cocoa origin is at bottom-left of main display; flip Y.
         let main_bounds = unsafe { CGDisplayBounds(CGMainDisplayID()) };
-        let _ = msg_send_id::<()>;
         Ok(Point::new(
             point.x as i32,
             (main_bounds.size.height - point.y) as i32,
@@ -267,7 +270,9 @@ fn enumerate_windows() -> Result<Vec<Window>> {
         };
         let title = string_value(&item, "kCGWindowName").unwrap_or_default();
         let app = string_value(&item, "kCGWindowOwnerName").unwrap_or_default();
-        let window_id = number_value::<u64>(&item, "kCGWindowNumber").unwrap_or(0);
+        let window_id = number_value::<i64>(&item, "kCGWindowNumber")
+            .map(|n| n.max(0) as u64)
+            .unwrap_or(0);
         let bounds = bounds_value(&item).unwrap_or_default();
         out.push(Window {
             id: WindowId(window_id),
@@ -300,7 +305,18 @@ fn number_value<T: From<i64>>(dict: &CFDictionary<CFString, CFType>, key: &str) 
 fn bounds_value(dict: &CFDictionary<CFString, CFType>) -> Option<Rect> {
     let cf_key = CFString::new("kCGWindowBounds");
     let val = dict.find(&cf_key)?;
-    let bdict: CFDictionary<CFString, CFType> = val.downcast::<CFDictionary<CFString, CFType>>()?;
+    // core-foundation 0.10 only implements `ConcreteCFType` for the raw
+    // `CFDictionary<*const c_void, *const c_void>` shape, so `val.downcast`
+    // against the typed `<CFString, CFType>` form refuses to compile. Do
+    // the type-id check by hand and re-wrap with the typed pointers, which
+    // is sound here because `kCGWindowBounds` is documented as a
+    // CFDictionary keyed by CFStrings.
+    let raw = val.as_CFTypeRef();
+    if unsafe { CFGetTypeID(raw) } != unsafe { CFDictionaryGetTypeID() } {
+        return None;
+    }
+    let bdict: CFDictionary<CFString, CFType> =
+        unsafe { CFDictionary::wrap_under_get_rule(raw as _) };
     let x = number_value::<i64>(&bdict, "X")? as i32;
     let y = number_value::<i64>(&bdict, "Y")? as i32;
     let w = number_value::<i64>(&bdict, "Width")? as u32;
