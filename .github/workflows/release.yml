@@ -204,7 +204,11 @@ jobs:
         if: steps.pin.outputs.eligible == 'true'
         run: |
           mkdir -p dist
-          cp -L --no-preserve=mode,ownership -r result/* dist/
+          # `cp -RL` portable across GNU + BSD. nix store paths are 555 —
+          # `chmod -R u+w` makes the staged copy writable so later steps
+          # (upload-artifact, mv) don't hit EACCES on macOS.
+          cp -RL result/* dist/
+          chmod -R u+w dist/
           # Per-slice + per-variant INSTALL.md/install.sh fragments —
           # the publish job merges them into a single unified release.
           tag="${{ matrix.slice.slice }}-${{ matrix.variant }}"
