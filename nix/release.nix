@@ -254,12 +254,11 @@ let
           formats = linuxFormats;
         };
       };
-      darwinX86 = lib.optionalAttrs (system == "x86_64-darwin") {
-        "x86_64-darwin" = {
-          drv = hostDrv;
-          formats = darwinFormats;
-        };
-      };
+      # x86_64-darwin intentionally absent: nixpkgs deprecating (26.05 is
+      # the last supported release) + GitHub macos-13 runners queue
+      # forever on free-tier quotas. aarch64-darwin covers all modern Mac
+      # hardware. Re-introducing requires either a self-hosted runner or
+      # paid larger macos-13 image.
       darwinArm = lib.optionalAttrs (system == "aarch64-darwin") {
         "aarch64-darwin" = {
           drv = hostDrv;
@@ -267,7 +266,7 @@ let
         };
       };
     in
-      linuxX86 // linuxArmHost // darwinX86 // darwinArm;
+      linuxX86 // linuxArmHost // darwinArm;
 
   # Per-variant slice eligibility. `system` + `noocr` ship on every
   # platform we build for. `nvidia` is Linux-only (no CUDA stack on

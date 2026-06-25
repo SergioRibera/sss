@@ -101,9 +101,6 @@ jobs:
           - label: linux-aarch64
             runner: ubuntu-24.04-arm
             slice: linux-aarch64
-          - label: macos-x86_64
-            runner: macos-13
-            slice: darwin-x86_64
           - label: macos-aarch64
             runner: macos-14
             slice: darwin-aarch64
@@ -116,17 +113,10 @@ jobs:
         # `sss_code` × {nvidia, rocm, noocr} can't be expressed here (the
         # binary name resolves only at job time from `needs.plan.outputs`);
         # those are still gated via the `Plan slice` step below.
+        # x86_64-darwin slice dropped: nixpkgs deprecating it (26.05 is
+        # the last supported), GitHub macos-13 runners queue indefinitely
+        # on free-tier quotas. aarch64-darwin covers modern Mac users.
         exclude:
-          - slice:
-              label: macos-x86_64
-              runner: macos-13
-              slice: darwin-x86_64
-            variant: nvidia
-          - slice:
-              label: macos-x86_64
-              runner: macos-13
-              slice: darwin-x86_64
-            variant: rocm
           - slice:
               label: macos-aarch64
               runner: macos-14
