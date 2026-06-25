@@ -188,7 +188,12 @@ jobs:
           if [ "${{ needs.plan.outputs.binary }}" = "sss" ] && [ "${{ matrix.variant }}" != "system" ]; then
             attr="release-sss-${{ matrix.variant }}"
           fi
-          nix build ".#$attr" -L --print-out-paths
+          # `--fallback` rebuilds from source when a substituter starts
+          # serving a NAR but the stream breaks mid-transfer (we hit
+          # HTTP/2 framing errors against attic intermittently). Without
+          # this the build aborts even though Nix could just re-derive
+          # the path locally.
+          nix build ".#$attr" -L --fallback --print-out-paths
 
       - name: Stage artifacts
         if: steps.pin.outputs.eligible == 'true'
@@ -343,7 +348,14 @@ jobs:
         id: cliff
         with:
           config: cliff.toml
-          args: --current --strip header
+          # Explicit `--tag` instead of `--current`: cargo-release's
+          # per-crate commit ordering can leave HEAD at a sibling tag's
+          # commit (when both binary tags resolve at the workspace
+          # checkout used here), so trusting the implicit HEAD lookup
+          # mis-attributes the release. Feeding the tag in directly also
+          # bypasses any annotated/lightweight ambiguity from CI's
+          # checkout.
+          args: --tag ${{ needs.plan.outputs.tag }} --strip header
         env:
           OUTPUT: CHANGELOG.md
 

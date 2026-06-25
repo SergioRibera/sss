@@ -3,12 +3,15 @@
 #
 # `--current` (used in CI) emits the section for the tag currently being
 # released, walking back to the previous tag matching `tag_pattern`. This
-# repo cuts two parallel tag streams:
-#   - `vX.Y.Z`              for the `sss` (sss_cli) binary
+# repo cuts two parallel tag streams (both prefixed per-crate by
+# cargo-release's `tag-prefix = "{{crate_name}}/"`):
+#   - `sss_cli/vX.Y.Z`      for the `sss` (sss_cli) binary
 #   - `sss_code/vX.Y.Z`     for the `sss_code` binary
-# git-cliff treats each tag independently, so the changelog naturally
-# scopes to commits since whichever predecessor tag the release script
-# resolves.
+# Legacy bare `vX.Y.Z` tags (pre-prefix migration) are kept in the
+# pattern so old release notes still render if someone re-runs cliff
+# against them. git-cliff treats each tag independently, so the
+# changelog naturally scopes to commits since whichever predecessor tag
+# the release script resolves.
 
 [changelog]
 header = ""
@@ -48,6 +51,6 @@ commit_parsers = [
   { message = ".*", group = "Other" },
 ]
 filter_commits = false
-# Both release streams ('v*' for sss, 'sss_code/v*' for sss_code).
-tag_pattern = "(v|sss_code/v)[0-9]*"
+# Both release streams + legacy bare `v*`.
+tag_pattern = "(sss_cli/v|sss_code/v|v)[0-9]+\\.[0-9]+\\.[0-9]+"
 sort_commits = "newest"
