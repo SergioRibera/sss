@@ -175,11 +175,22 @@ impl From<GenerationSettingsArgs> for GenerationSettings {
         GenerationSettings {
             copy: val.copy,
             show_notify: val.show_notify,
+            // Only fall back to `out.png` when the user didn't ask for
+            // `--copy`. With `--copy` alone (no `--output`) the user's
+            // intent is "give me the image on the clipboard" — saving a
+            // default file alongside just litters the cwd. Pass an empty
+            // string in that case; `make_output` is gated on it.
             output: val
                 .output
                 .clone()
                 .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| String::from("out.png")),
+                .unwrap_or_else(|| {
+                    if val.copy {
+                        String::new()
+                    } else {
+                        String::from("out.png")
+                    }
+                }),
             save_format: val.save_format.clone(),
             colors: val.colors.into(),
             padding: (val.padding_x.unwrap_or(80), val.padding_y.unwrap_or(100)),

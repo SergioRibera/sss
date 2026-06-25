@@ -152,6 +152,13 @@ pub fn generate_image(
         copy_image_to_clipboard(&img)?;
     }
 
+    // Empty output = caller signalled "don't save". The args layer leaves
+    // it empty when `--copy` is on without `--output`; honour that here
+    // so we don't drop an unsolicited `out.png` next to the user.
+    if settings.output.is_empty() {
+        return Ok(());
+    }
+
     make_output(
         &img,
         &settings.output,
