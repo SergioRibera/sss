@@ -101,48 +101,52 @@ jobs:
           - label: linux-aarch64
             runner: ubuntu-24.04-arm
             slice: linux-aarch64
-          - label: macos-x86_64
-            runner: macos-13
-            slice: darwin-x86_64
           - label: macos-aarch64
             runner: macos-14
             slice: darwin-aarch64
         variant: [system, nvidia, rocm, noocr]
-        # Static excludes can't read `needs.plan.outputs.binary` (the
-        # binary name resolves only at job time). Per-variant eligibility
-        # is computed in the `Plan slice` step below and gates every
-        # subsequent step. Skipped combinations:
-        #   - `sss_code` × {nvidia, rocm, noocr}: sss_code has no OCR.
-        #     It only ships under the `system` variant (which maps to
-        #     `sss_code-bin` rather than `sss-bin`).
-        #   - any slice × `nvidia` on macOS: no CUDA stack on Apple.
-        #   - any slice × `rocm` except linux-x86_64: ROCm targets only
-        #     AMD on Linux-x86_64.
-        include: []
+        # Static excludes drop combinations that cannot produce any
+        # artifact, so the matrix doesn't spawn a runner just to no-op.
+        # Per-variant slice restrictions:
+        #   - any slice × `nvidia` on macOS  → no CUDA stack on Apple
+        #   - any slice × `rocm` except linux-x86_64 → ROCm only on Linux-x86_64
+        # `sss_code` × {nvidia, rocm, noocr} can't be expressed here (the
+        # binary name resolves only at job time from `needs.plan.outputs`);
+        # those are still gated via the `Plan slice` step below.
+        # x86_64-darwin slice dropped: nixpkgs deprecated it (26.05 last
+        # supported), GitHub macos-13 runners queue forever in CI.
+        exclude:
+          - slice:
+              label: macos-aarch64
+              runner: macos-14
+              slice: darwin-aarch64
+            variant: nvidia
+          - slice:
+              label: macos-aarch64
+              runner: macos-14
+              slice: darwin-aarch64
+            variant: rocm
+          - slice:
+              label: linux-aarch64
+              runner: ubuntu-24.04-arm
+              slice: linux-aarch64
+            variant: rocm
     steps:
       - name: Plan slice
         id: pin
         shell: bash
         run: |
-          eligible=false
+          # The matrix `exclude:` already prunes combinations that can't
+          # produce any artifact. This step handles the dynamic gate: if
+          # the tag belongs to `sss_code`, the only eligible variant is
+          # `system` — `nvidia`/`rocm`/`noocr` are sss-only.
+          eligible=true
           variant="${{ matrix.variant }}"
           binary="${{ needs.plan.outputs.binary }}"
           slice="${{ matrix.slice.slice }}"
-          case "$variant" in
-            system)
-              eligible=true ;;
-            nvidia|rocm|noocr)
-              [ "$binary" != "sss" ] && eligible=false || eligible=true ;;
-          esac
-          # Per-variant slice restrictions on top of the binary gate.
-          case "$variant" in
-            nvidia)
-              # CUDA only ships on Linux.
-              [[ "$slice" != linux-* ]] && eligible=false ;;
-            rocm)
-              # ROCm only on linux-x86_64.
-              [ "$slice" != "linux-x86_64" ] && eligible=false ;;
-          esac
+          if [ "$binary" != "sss" ] && [ "$variant" != "system" ]; then
+            eligible=false
+          fi
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
           echo "Plan: variant=$variant binary=$binary slice=$slice → eligible=$eligible"
 
