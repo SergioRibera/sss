@@ -380,11 +380,14 @@ jobs:
           fail_on_unmatched_files: true
           # Exclude the `aur/` subdir from the release upload — it's the
           # source layout for the AUR repo, not a user-installable artifact.
+          # AppImage intentionally absent: dropped in release.nix because
+          # the binary expects a distro-installed libonnxruntime which
+          # breaks AppImage's portability promise. Listing the glob with
+          # `fail_on_unmatched_files: true` would abort the publish job.
           files: |
             dist/*.deb
             dist/*.rpm
             dist/*.pkg.tar.zst
-            dist/*.AppImage
             dist/*.tar.gz
             dist/*.tar.xz
             dist/*.tar.zst

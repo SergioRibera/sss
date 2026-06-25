@@ -70,6 +70,10 @@ windows = { version = "0.62", features = [
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.25"
 core-foundation = "0.10"
+# `core_graphics::image::CGImage` is built via `foreign_types::foreign_type!`,
+# so reconstructing one from a raw `CGImageRef` (CGWindowListCreateImage
+# return value) needs the `ForeignType::from_ptr` trait method in scope.
+foreign-types = "0.5"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = { version = "0.3", features = ["NSScreen", "NSEvent"] }
