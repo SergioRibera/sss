@@ -42,6 +42,8 @@ jobs:
       binary: ${{ steps.plan.outputs.binary }}
       version: ${{ steps.plan.outputs.version }}
       release_name: ${{ steps.plan.outputs.release_name }}
+      crate_dir: ${{ steps.plan.outputs.crate_dir }}
+      tag_pattern: ${{ steps.plan.outputs.tag_pattern }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,10 +60,14 @@ jobs:
             sss_code/v*)
               binary=sss_code
               version="${tag#sss_code/v}"
+              crate_dir=sss_code
+              tag_pattern='sss_code/v[0-9]+\.[0-9]+\.[0-9]+'
               crate=crates/sss_code/Cargo.toml ;;
             sss_cli/v*)
               binary=sss
               version="${tag#sss_cli/v}"
+              crate_dir=sss_cli
+              tag_pattern='sss_cli/v[0-9]+\.[0-9]+\.[0-9]+'
               crate=crates/sss_cli/Cargo.toml ;;
             *)
               echo "::error::tag '$tag' does not match sss_cli/v* or sss_code/v*"
@@ -70,6 +76,8 @@ jobs:
           echo "binary=$binary" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "release_name=$binary v$version" >> "$GITHUB_OUTPUT"
+          echo "crate_dir=$crate_dir" >> "$GITHUB_OUTPUT"
+          echo "tag_pattern=$tag_pattern" >> "$GITHUB_OUTPUT"
 
           crate_ver=$(awk -F\" '/^version = /{print $2; exit}' "$crate")
           if [ "$crate_ver" != "$version" ]; then
@@ -348,14 +356,23 @@ jobs:
         id: cliff
         with:
           config: cliff.toml
-          # Explicit `--tag` instead of `--current`: cargo-release's
-          # per-crate commit ordering can leave HEAD at a sibling tag's
-          # commit (when both binary tags resolve at the workspace
-          # checkout used here), so trusting the implicit HEAD lookup
-          # mis-attributes the release. Feeding the tag in directly also
-          # bypasses any annotated/lightweight ambiguity from CI's
-          # checkout.
-          args: --tag ${{ needs.plan.outputs.tag }} --strip header
+          # Scope the changelog to the binary being released:
+          #   * `--tag-pattern` restricts the "previous tag" walk to the
+          #     same release stream so a sss_cli release doesn't reach
+          #     back to the most recent sss_code tag (or vice versa) and
+          #     drag every workspace commit since then into the body.
+          #   * `--include-path` keeps only commits touching the binary's
+          #     own crate directory. Workspace-wide changes (shared libs,
+          #     CI infra, docs) intentionally don't land here — they show
+          #     up in whichever binary they actually affected.
+          #   * `--tag` is explicit instead of `--current`: cargo-release
+          #     can land cross-tag commits at the same SHA, so trusting
+          #     the implicit HEAD lookup mis-attributes the release.
+          args: >
+            --latest
+            --tag-pattern '${{ needs.plan.outputs.tag_pattern }}'
+            --include-path 'crates/${{ needs.plan.outputs.crate_dir }}/**'
+            --strip header
         env:
           OUTPUT: CHANGELOG.md
 

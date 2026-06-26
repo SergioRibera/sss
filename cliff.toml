@@ -47,6 +47,10 @@ commit_parsers = [
   { message = "^build", group = "Build" },
   { message = "^ci", group = "CI" },
   { message = "^chore\\(release\\)", skip = true },
+  # cargo-release writes `chore: Release <crate> version <ver>` for every
+  # per-crate bump commit. That commit IS the tag boundary, so it's
+  # redundant inside the release notes for that same tag.
+  { message = "^chore: Release ", skip = true },
   { message = "^chore", group = "Chore" },
   { message = ".*", group = "Other" },
 ]
