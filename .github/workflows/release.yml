@@ -44,6 +44,7 @@ jobs:
       release_name: ${{ steps.plan.outputs.release_name }}
       crate_dir: ${{ steps.plan.outputs.crate_dir }}
       tag_pattern: ${{ steps.plan.outputs.tag_pattern }}
+      cliff_paths: ${{ steps.plan.outputs.cliff_paths }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,12 +63,21 @@ jobs:
               version="${tag#sss_code/v}"
               crate_dir=sss_code
               tag_pattern='sss_code/v[0-9]+\.[0-9]+\.[0-9]+'
+              # sss_code depends on sss_lib (rendering pipeline) and
+              # sss_core (shared primitives). Changes in either land in
+              # the same binary, so include them in the changelog.
+              cliff_paths='--include-path crates/sss_code/** --include-path crates/sss_lib/** --include-path crates/sss_core/**'
               crate=crates/sss_code/Cargo.toml ;;
             sss_cli/v*)
               binary=sss
               version="${tag#sss_cli/v}"
               crate_dir=sss_cli
               tag_pattern='sss_cli/v[0-9]+\.[0-9]+\.[0-9]+'
+              # sss_cli pulls every workspace crate (sss_lib for render,
+              # sss_core primitives, sss_capture + sss_capture_ui for the
+              # selector/annotator, sss_ocr for text recognition). All of
+              # them ship inside the `sss` binary, so all are in scope.
+              cliff_paths='--include-path crates/sss_cli/** --include-path crates/sss_lib/** --include-path crates/sss_core/** --include-path crates/sss_capture/** --include-path crates/sss_capture_ui/** --include-path crates/sss_ocr/**'
               crate=crates/sss_cli/Cargo.toml ;;
             *)
               echo "::error::tag '$tag' does not match sss_cli/v* or sss_code/v*"
@@ -78,6 +88,7 @@ jobs:
           echo "release_name=$binary v$version" >> "$GITHUB_OUTPUT"
           echo "crate_dir=$crate_dir" >> "$GITHUB_OUTPUT"
           echo "tag_pattern=$tag_pattern" >> "$GITHUB_OUTPUT"
+          echo "cliff_paths=$cliff_paths" >> "$GITHUB_OUTPUT"
 
           crate_ver=$(awk -F\" '/^version = /{print $2; exit}' "$crate")
           if [ "$crate_ver" != "$version" ]; then
@@ -371,7 +382,7 @@ jobs:
           args: >
             --latest
             --tag-pattern '${{ needs.plan.outputs.tag_pattern }}'
-            --include-path 'crates/${{ needs.plan.outputs.crate_dir }}/**'
+            ${{ needs.plan.outputs.cliff_paths }}
             --strip header
         env:
           OUTPUT: CHANGELOG.md
