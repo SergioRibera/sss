@@ -204,7 +204,7 @@ let
     longDescription = variantLongDescription.${variant};
     bundleId = "rs.sergioribera.${sssPkgName}";
     downloadUrl =
-      "https://github.com/${repo}/releases/download/v${sssVersion}";
+      "https://github.com/${repo}/releases/download/sss_cli/v${sssVersion}";
     desktopEntries = [
       {
         name = sssPkgName;

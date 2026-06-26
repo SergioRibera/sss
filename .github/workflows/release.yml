@@ -348,6 +348,15 @@ jobs:
           pack() {
             local dir=$1 pkg=$2
             if [ -d "$dir" ] && [ -n "$(ls -A "$dir")" ]; then
+              # The archlinux format emits the AUR source tarball
+              # (`<pkg>-<ver>-<arch>.tar.gz`) inside `aur/` alongside
+              # PKGBUILD. PKGBUILD's `source=()` points to it as a
+              # release asset URL, so we lift it into `dist/` to be
+              # uploaded directly — otherwise makepkg/updpkgsums 404s.
+              for src_tar in "$dir"/${pkg}-*.tar.gz; do
+                [ -f "$src_tar" ] || continue
+                cp "$src_tar" "dist/$(basename "$src_tar")"
+              done
               tar czf "dist/${pkg}-${ver}-aur.tar.gz" -C "$dir" .
               has_any=true
             fi
