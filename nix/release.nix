@@ -67,6 +67,13 @@ let
     inherit maintainer;
     homepage = "https://github.com/${repo}";
     license = "MIT";
+    # Ship a slim bundle: no `/opt/<name>/lib/` copy, no RPATH rewrite
+    # to `$ORIGIN/../lib`. Runtime libs (fontconfig, libwayland, libxcb,
+    # libxkbcommon, dbus, openssl, onnxruntime, …) resolve through the
+    # target distro's loader. The per-variant `info.depends.<distro>`
+    # entries declare them so `apt install sss` / `dnf install sss` /
+    # `pacman -U sss-bin` pulls them in alongside the binary.
+    bundleLibs = false;
   };
 
   # Per-distro onnxruntime package candidates. The names are realistic for
