@@ -131,7 +131,11 @@ jobs:
           chmod -R 755 "$PWD"
           REPO_DIR="$PWD"
 
-          su --preserve-environment builder -c "
+          # Use a login shell (`su - builder`) so `$HOME` resolves to
+          # `/home/builder`. `--preserve-environment` kept root's HOME
+          # which made the `git clone` target land under `/root` and
+          # blew up with `Permission denied`.
+          su - builder -c "
             set -e
             cd \$HOME
             git clone ssh://aur@aur.archlinux.org/${aur_pkg}.git aur-repo
