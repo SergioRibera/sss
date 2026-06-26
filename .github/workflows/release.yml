@@ -440,7 +440,6 @@ jobs:
             dist/INSTALL.md
             dist/SHA256SUMS
             dist/install.sh
-            dist/install.ps1
 
   # Pushes Homebrew formula files to SergioRibera/homebrew-tap. Triggered
   # by the AUR push workflow indirectly (both react to a successful
