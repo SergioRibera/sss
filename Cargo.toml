@@ -1,11 +1,17 @@
 [workspace.package]
-name = "Super ScreenShot"
 version = "0.0.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["SergioRibera"]
 repository = "https://github.com/SergioRibera/sss"
 homepage = "https://github.com/SergioRibera/sss"
+
+# Crane (Nix builder) reads `workspace.metadata.crane.name` to derive the
+# umbrella derivation name when the workspace has no root package. Cargo's
+# stricter schema deprecated `[workspace.package].name` so the field had
+# to move here.
+[workspace.metadata.crane]
+name = "Super ScreenShot"
 
 [workspace]
 resolver = "2"
