@@ -4784,7 +4784,7 @@ dependencies = [
 
 [[package]]
 name = "sss_ocr"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "directories",
  "image",
