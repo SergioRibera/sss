@@ -44,7 +44,7 @@ tiny-skia = "0.12"
 # egui-wgpu feature lists below only flip the windowing backend the egui
 # fork compiles in; the crates themselves resolve everywhere.
 egui       = { git = "https://github.com/SergioRibera/egui", branch = "winit_layer_shell", optional = true, default-features = false, features = ["bytemuck", "default_fonts"] }
-wgpu       = { version = "25", optional = true }
+wgpu       = { version = "29", optional = true }
 pollster   = { version = "0.4", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
