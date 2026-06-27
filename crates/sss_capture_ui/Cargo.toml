@@ -23,7 +23,7 @@ editor = ["dep:egui", "dep:egui-winit", "dep:egui-wgpu", "dep:wgpu", "dep:pollst
 serde = ["dep:serde"]
 
 [dependencies]
-sss_capture = { path = "../sss_capture", version = "0.2.0" }
+sss_capture = { path = "../sss_capture", version = "0.2.1" }
 sss_core = { path = "../sss_core", version = "0.2.1" }
 image = "0.25"
 thiserror.workspace = true
