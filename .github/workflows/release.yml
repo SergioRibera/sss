@@ -223,12 +223,13 @@ jobs:
           # (upload-artifact, mv) don't hit EACCES on macOS.
           cp -RL result/* dist/
           chmod -R u+w dist/
-          # Per-slice + per-variant INSTALL.md/install.sh fragments —
-          # the publish job merges them into a single unified release.
+          # Drop bundler-generated install scaffolding: install.sh comes
+          # from `scripts/install.sh` (uploaded by publish), INSTALL.md is
+          # replaced by an inline install snippet in the release body.
+          # SHA256SUMS per slice still gets renamed so the publish job
+          # can stitch a unified one without collisions.
           tag="${{ matrix.slice.slice }}-${{ matrix.variant }}"
-          mv dist/INSTALL.md "dist/INSTALL-${tag}.md" 2>/dev/null || true
-          mv dist/install.sh "dist/install-${tag}.sh" 2>/dev/null || true
-          mv dist/install.ps1 "dist/install-${tag}.ps1" 2>/dev/null || true
+          rm -f dist/INSTALL.md dist/install.sh dist/install.ps1
           mv dist/SHA256SUMS "dist/SHA256SUMS-${tag}" 2>/dev/null || true
           ls -la dist
 
@@ -309,54 +310,17 @@ jobs:
             | LC_ALL=C sort \
             | xargs sha256sum -- > SHA256SUMS
 
-      - name: Assemble unified INSTALL.md + install.sh
+      - name: Stage install.sh
         working-directory: dist
         run: |
-          # The bundler ships one INSTALL-<slice>.md per slice whose only
-          # slice-specific bit is the arch/format bundle table. Merge the
-          # tables from every slice into a single canonical INSTALL.md.
-          shopt -s nullglob
-          md_slices=(INSTALL-*.md)
-          if [ "${#md_slices[@]}" -gt 0 ]; then
-            template="${md_slices[0]}"
-            {
-              for f in "${md_slices[@]}"; do
-                awk '/^\| Arch \| OS \| Format \| File \|$/{t=1; next}
-                     t && /^\|-/{next}
-                     t && /^\|/{print; next}
-                     t{exit}' "$f"
-              done
-            } | LC_ALL=C sort -u > .bundle-rows
-
-            awk -v rows=.bundle-rows '
-              /^\| Arch \| OS \| Format \| File \|$/{
-                print
-                print "|------|----|--------|------|"
-                while ((getline line < rows) > 0) print line
-                close(rows)
-                in_table=1
-                next
-              }
-              in_table && /^\|-/{next}
-              in_table && /^\|/{next}
-              in_table{in_table=0}
-              {print}
-            ' "$template" > INSTALL.md
-            rm -f .bundle-rows
-          fi
-
           # install.sh ships as a tracked script in `scripts/install.sh`
-          # rather than the bundler-generated one. Reasons: the bundler
-          # variant emits one script per slice with hardcoded `NAME=` and
+          # rather than the bundler-generated per-slice one. Reasons: the
+          # bundler emits one script per slice with hardcoded `NAME=` and
           # duplicate `file_for()` cases that make variant selection
-          # impossible. Our custom script resolves variant + version via
+          # impossible. The custom script resolves variant + version via
           # flags and the GH releases API.
           cp ../scripts/install.sh install.sh
           chmod +x install.sh
-
-          rm -f INSTALL-*.md install-*.sh install-*.ps1
-          echo "--- INSTALL.md preview ---"
-          head -60 INSTALL.md
 
       - name: Pack AUR layouts for downstream workflow
         id: aur_detect
@@ -422,10 +386,24 @@ jobs:
 
       - name: Assemble release body
         run: |
+          binary="${{ needs.plan.outputs.binary }}"
+          tag="${{ needs.plan.outputs.tag }}"
+          base="https://github.com/${{ github.repository }}/releases/download/${tag}"
           {
             cat CHANGELOG.md 2>/dev/null || echo "_(no changelog generated)_"
             echo
-            cat dist/INSTALL.md
+            echo "## Install"
+            echo
+            echo '```sh'
+            if [ "$binary" = "sss_code" ]; then
+              echo "curl -fsSL $base/install.sh | sh -s -- --binary sss_code"
+            else
+              echo "curl -fsSL $base/install.sh | sh"
+              echo "# variants: --variant nvidia | --variant rocm | --variant noocr"
+            fi
+            echo '```'
+            echo
+            printf '%s\n' 'Detects distro, picks `.deb` / `.rpm` / `.pkg.tar.zst` / tarball, verifies SHA256. Flags: `--version vX.Y.Z`, `--format FMT`, `--dir DIR`, `--uninstall`. Manual bundles + checksums in the release assets below.'
           } > RELEASE_BODY.md
           echo "--- release body preview ---"
           head -120 RELEASE_BODY.md
@@ -461,7 +439,6 @@ jobs:
             dist/*.pkg
             dist/*.rb
             dist/*-aur.tar.gz
-            dist/INSTALL.md
             dist/SHA256SUMS
             dist/install.sh
 
