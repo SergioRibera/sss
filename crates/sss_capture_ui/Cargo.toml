@@ -1,7 +1,7 @@
 [package]
 name = "sss_capture_ui"
 description = "Interactive selection / annotation overlay for sss_capture (slurp-class binary + full editor library)"
-version = "0.2.0"
+version = "0.2.1"
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
