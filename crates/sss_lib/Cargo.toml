@@ -21,7 +21,7 @@ tracing.workspace = true
 thiserror.workspace = true
 font-kit = "0.14"
 pathfinder_geometry = "0.5"
-imageproc = "0.26"
+imageproc = "0.27"
 arboard = { version = "3.6", features = ["wayland-data-control"] }
 image = { version = "0.25", default-features = false, features = [
     "png",
