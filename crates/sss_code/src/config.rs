@@ -133,9 +133,11 @@ pub struct CodeConfig {
     pub tab_width: Option<u8>,
     #[clap(long, short = 'i', help = "Indent characters (separated by comma)", num_args = 0.., value_delimiter = ',')]
     #[merge(strategy = append)]
+    #[serde(default)]
     pub indent_chars: Vec<char>,
     #[clap(long, help = "Show Hidden Characters", num_args = 0.., value_delimiter = ',', value_parser = parse_hidden_character_type)]
     #[merge(strategy = append)]
+    #[serde(default)]
     pub hidden_chars: Vec<(HiddenCharType, char)>,
 }
 
