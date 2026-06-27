@@ -312,23 +312,13 @@ jobs:
       - name: Assemble unified INSTALL.md + install.sh
         working-directory: dist
         run: |
-          # Each per-slice bundle ships its own INSTALL-<slice>.md /
-          # install-<slice>.sh whose only slice-specific bit is the
-          # arch/format table (resp. file_for() cases + list_entries
-          # body). The static prose, env vars, help text etc. are
-          # identical across slices. So: take the first slice as the
-          # template, then splice in the union of per-slice table rows
-          # / cases / list lines from every slice. One unified
-          # INSTALL.md, one unified install.sh — both arch-agnostic.
-
+          # The bundler ships one INSTALL-<slice>.md per slice whose only
+          # slice-specific bit is the arch/format bundle table. Merge the
+          # tables from every slice into a single canonical INSTALL.md.
           shopt -s nullglob
           md_slices=(INSTALL-*.md)
-          sh_slices=(install-*.sh)
-
           if [ "${#md_slices[@]}" -gt 0 ]; then
             template="${md_slices[0]}"
-            # Pull the union of "| arch | os | format | file |" rows from
-            # every slice's "Bundles in this release" table. Dedupe.
             {
               for f in "${md_slices[@]}"; do
                 awk '/^\| Arch \| OS \| Format \| File \|$/{t=1; next}
@@ -338,7 +328,6 @@ jobs:
               done
             } | LC_ALL=C sort -u > .bundle-rows
 
-            # Splice the union back into the template's table location.
             awk -v rows=.bundle-rows '
               /^\| Arch \| OS \| Format \| File \|$/{
                 print
@@ -356,63 +345,18 @@ jobs:
             rm -f .bundle-rows
           fi
 
-          if [ "${#sh_slices[@]}" -gt 0 ]; then
-            template_sh="${sh_slices[0]}"
-            # Union of file_for() case bodies (between `case "$1" in` and
-            # `*) return 1 ;;`). Lines look like
-            #   "x86_64:Linux:archlinux") echo "..."; return ;;
-            {
-              for f in "${sh_slices[@]}"; do
-                awk '/^file_for\(\) \{/{f=1; next}
-                     f && /case "\$1" in/{c=1; next}
-                     c && /\*\) return 1/{exit}
-                     c{print}' "$f"
-              done
-            } | LC_ALL=C sort -u > .sh-cases
-
-            # Union of list_entries() body — the human-readable
-            # "Configured bundles" listing inside the heredoc.
-            {
-              for f in "${sh_slices[@]}"; do
-                awk '/^list_entries\(\) \{/{f=1; next}
-                     f && /Configured bundles:/{c=1; next}
-                     c && /^EOF$/{exit}
-                     c{print}' "$f"
-              done
-            } | LC_ALL=C sort -u > .sh-list
-
-            awk -v cases=.sh-cases -v listing=.sh-list '
-              /^file_for\(\) \{/{print; in_ff=1; next}
-              in_ff && /case "\$1" in/{
-                print
-                while ((getline line < cases) > 0) print line
-                close(cases)
-                in_cases=1
-                next
-              }
-              in_cases && /\*\) return 1/{in_cases=0; in_ff=0}
-              in_cases{next}
-              /^list_entries\(\) \{/{print; in_le=1; next}
-              in_le && /Configured bundles:/{
-                print
-                while ((getline line < listing) > 0) print line
-                close(listing)
-                in_list=1
-                next
-              }
-              in_list && /^EOF$/{in_list=0; in_le=0}
-              in_list{next}
-              {print}
-            ' "$template_sh" > install.sh
-            chmod +x install.sh
-            rm -f .sh-cases .sh-list
-          fi
+          # install.sh ships as a tracked script in `scripts/install.sh`
+          # rather than the bundler-generated one. Reasons: the bundler
+          # variant emits one script per slice with hardcoded `NAME=` and
+          # duplicate `file_for()` cases that make variant selection
+          # impossible. Our custom script resolves variant + version via
+          # flags and the GH releases API.
+          cp ../scripts/install.sh install.sh
+          chmod +x install.sh
 
           rm -f INSTALL-*.md install-*.sh install-*.ps1
           echo "--- INSTALL.md preview ---"
           head -60 INSTALL.md
-          echo "--- install.sh file_for() preview ---"
-          awk '/^file_for/,/^\}/' install.sh
 
       - name: Pack AUR layouts for downstream workflow
         id: aur_detect
