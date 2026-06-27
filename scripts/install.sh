@@ -16,12 +16,17 @@
 #
 # Flags:
 #   --binary sss|sss_code       which CLI (default: sss)
-#   --variant system|nvidia|rocm|noocr   sss only (default: system)
+#   --variant system|nvidia|rocm|noocr   sss only (auto-detect, then `system`)
 #   --version vX.Y.Z            pin a specific release tag
 #   --format FMT                force a packaging format
 #   --dir DIR                   install dir for tarball fallback
 #   --uninstall                 remove the installed package
 #   -h, --help                  this help
+#
+# When `--variant` is omitted, the installed variant is auto-detected by
+# probing pacman/dpkg/rpm and the install layout, so `install.sh | sh`
+# upgrades the existing flavor in place and `--uninstall` removes
+# whichever one is on disk.
 #
 # Env vars: BINARY, VARIANT, VERSION, FORMAT, INSTALL_DIR, SUDO, REPO.
 
@@ -29,7 +34,8 @@ set -eu
 
 REPO=${REPO:-SergioRibera/sss}
 BINARY=${BINARY:-sss}
-VARIANT=${VARIANT:-system}
+VARIANT=${VARIANT:-}
+VARIANT_EXPLICIT=0
 VERSION=${VERSION:-}
 FORMAT=${FORMAT:-}
 INSTALL_DIR=${INSTALL_DIR:-"$HOME/.local/bin"}
@@ -57,6 +63,11 @@ Flags:
   --uninstall                        remove the installed package
   -h, --help                         this help
 
+Smart variant detection: when `--variant` is not passed, the script
+inspects the system PM (pacman / dpkg / rpm) and the install layout to
+figure out which variant of sss is already on disk, then upgrades or
+removes that one. Falls back to `system` if nothing is installed.
+
 Env vars: BINARY, VARIANT, VERSION, FORMAT, INSTALL_DIR, SUDO, REPO.
 EOF
 }
@@ -66,7 +77,7 @@ die() { echo "install.sh: $*" >&2; exit 1; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --binary)    BINARY="$2"; shift 2 ;;
-    --variant)   VARIANT="$2"; shift 2 ;;
+    --variant)   VARIANT="$2"; VARIANT_EXPLICIT=1; shift 2 ;;
     --version)   VERSION="${2#v}"; shift 2 ;;
     --format)    FORMAT="$2"; shift 2 ;;
     --dir)       INSTALL_DIR="$2"; shift 2 ;;
@@ -81,6 +92,60 @@ case "$BINARY" in
   *) die "--binary must be 'sss' or 'sss_code' (got '$BINARY')" ;;
 esac
 
+OS=$(uname -s)
+ARCH=$(uname -m)
+case "$ARCH" in amd64) ARCH=x86_64 ;; arm64) ARCH=aarch64 ;; esac
+
+# Probe each distro PM for whichever variant of $BINARY is currently
+# installed. Returns the variant name (system|nvidia|rocm|noocr) on
+# stdout, empty if nothing matches. Smart-detect drives both uninstall
+# (so the user doesn't have to repeat `--variant`) and re-install
+# (so a vanilla `install.sh | sh` upgrades whatever the user already
+# had, not silently swaps `nvidia` for `system`).
+detect_installed_variant() {
+  if [ "$BINARY" = "sss_code" ]; then
+    if command -v pacman    >/dev/null 2>&1 && pacman    -Qq sss_code >/dev/null 2>&1; then echo system; return; fi
+    if command -v dpkg-query >/dev/null 2>&1 && dpkg-query -W -f='${Status}' sss_code 2>/dev/null | grep -q 'install ok installed'; then echo system; return; fi
+    if command -v rpm       >/dev/null 2>&1 && rpm -q sss_code >/dev/null 2>&1; then echo system; return; fi
+    # Tarball / macOS: presence of the binary on disk.
+    if [ -x "$INSTALL_DIR/sss_code" ] || [ -x "/opt/sss_code/bin/sss_code" ] || [ -d "/Applications/sss_code.app" ]; then
+      echo system; return
+    fi
+    return 1
+  fi
+  # sss bin: walk the variant suffixes against each PM.
+  for v in system nvidia rocm noocr; do
+    case "$v" in
+      system) pkg=sss ;;
+      *)      pkg="sss-$v" ;;
+    esac
+    if command -v pacman    >/dev/null 2>&1 && pacman    -Qq "$pkg" >/dev/null 2>&1; then echo "$v"; return; fi
+    if command -v dpkg-query >/dev/null 2>&1 && dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then echo "$v"; return; fi
+    if command -v rpm       >/dev/null 2>&1 && rpm -q "$pkg" >/dev/null 2>&1; then echo "$v"; return; fi
+  done
+  # Tarball: only the bare binary survives, no variant marker. Match
+  # any sss-* leftover on $PATH so the script knows _something_ is
+  # installed even if we can't tell which.
+  if [ -x "$INSTALL_DIR/sss" ] || [ -x "/opt/sss/bin/sss" ] || [ -d "/Applications/sss.app" ]; then
+    echo system; return
+  fi
+  return 1
+}
+
+DETECTED_VARIANT=$(detect_installed_variant 2>/dev/null || true)
+
+# Variant resolution priority: explicit flag > detected install > default `system`.
+# That way `install.sh | sh` upgrades the existing variant in place,
+# and `--uninstall` doesn't need the flag at all when a single variant
+# is on disk.
+if [ "$VARIANT_EXPLICIT" = "0" ]; then
+  if [ -n "$DETECTED_VARIANT" ]; then
+    VARIANT=$DETECTED_VARIANT
+  else
+    VARIANT=system
+  fi
+fi
+
 # sss_code only ships the default variant. Silently coerce.
 [ "$BINARY" = "sss_code" ] && VARIANT=system
 
@@ -88,10 +153,6 @@ case "$VARIANT" in
   system|nvidia|rocm|noocr) ;;
   *) die "--variant must be system|nvidia|rocm|noocr (got '$VARIANT')" ;;
 esac
-
-OS=$(uname -s)
-ARCH=$(uname -m)
-case "$ARCH" in amd64) ARCH=x86_64 ;; arm64) ARCH=aarch64 ;; esac
 
 # rocm slice is x86_64-linux only.
 if [ "$VARIANT" = "rocm" ] && [ "$ARCH:$OS" != "x86_64:Linux" ]; then

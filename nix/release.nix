@@ -168,17 +168,26 @@ let
   #   * rpmRecommends      → Fedora/openSUSE `Recommends`
   #   * archlinuxOptional  → Arch Linux PKGBUILD `optdepends`
   #   * brew               → Homebrew formula `depends_on`
+  # OCR variants ship a binary with `DT_NEEDED libonnxruntime.so.1`.
+  # That makes a baseline `onnxruntime` package a HARD depend — without
+  # it, the dynamic loader refuses to start `sss`. GPU variants add the
+  # accelerated build as a *Recommends* (`optdepends` on Arch): user
+  # gets the GPU-flavored runtime via the package manager's suggestion
+  # surface, but the install still succeeds with only the CPU package.
   variantDepends = {
     "system" = {
       depends = {
-        debRecommends = onnxruntimePackages.cpu.deb;
-        rpmRecommends = onnxruntimePackages.cpu.rpm;
-        archlinuxOptional = onnxruntimePackages.cpu.archlinux;
+        deb = onnxruntimePackages.cpu.deb;
+        rpm = onnxruntimePackages.cpu.rpm;
+        archlinux = onnxruntimePackages.cpu.archlinux;
         brew = onnxruntimePackages.cpu.brew;
       };
     };
     "nvidia" = {
       depends = {
+        deb = onnxruntimePackages.cpu.deb;
+        rpm = onnxruntimePackages.cpu.rpm;
+        archlinux = onnxruntimePackages.cpu.archlinux;
         debRecommends = onnxruntimePackages.cuda.deb;
         rpmRecommends = onnxruntimePackages.cuda.rpm;
         archlinuxOptional = onnxruntimePackages.cuda.archlinux;
@@ -186,13 +195,17 @@ let
     };
     "rocm" = {
       depends = {
+        deb = onnxruntimePackages.cpu.deb;
+        rpm = onnxruntimePackages.cpu.rpm;
+        archlinux = onnxruntimePackages.cpu.archlinux;
         debRecommends = onnxruntimePackages.rocm.deb;
         rpmRecommends = onnxruntimePackages.rocm.rpm;
         archlinuxOptional = onnxruntimePackages.rocm.archlinux;
       };
     };
     "noocr" = {
-      # No runtime to recommend.
+      # No OCR feature compiled in → no libonnxruntime in DT_NEEDED → no
+      # runtime to depend on or recommend.
     };
   };
 
