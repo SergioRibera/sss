@@ -270,9 +270,9 @@ impl ExtImageCopyBackend {
                     mgr.get_xdg_output(&wl_output, &qh, oid);
                 }
             }
-            event_queue
-                .roundtrip(&mut state)
-                .map_err(|e| CaptureError::backend(BACKEND, format!("xdg_output roundtrip: {e}")))?;
+            event_queue.roundtrip(&mut state).map_err(|e| {
+                CaptureError::backend(BACKEND, format!("xdg_output roundtrip: {e}"))
+            })?;
         }
         Ok((event_queue, state))
     }
@@ -343,7 +343,10 @@ impl ExtImageCopyBackend {
         if state.session_width == 0 || state.session_height == 0 {
             session.destroy();
             source.destroy();
-            return Err(CaptureError::backend(BACKEND, "session never sent buffer_size"));
+            return Err(CaptureError::backend(
+                BACKEND,
+                "session never sent buffer_size",
+            ));
         }
 
         let chosen_fmt = pick_format(&state.advertised_shm_formats).ok_or_else(|| {

@@ -6,9 +6,12 @@ use std::cell::RefCell;
 use std::mem::size_of;
 use std::sync::Mutex;
 
+use core::ffi::c_void;
+
 use image::RgbaImage;
+use windows::core::BOOL;
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, TRUE};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, TRUE};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
     EnumDisplayMonitors, GetDC, GetDIBits, GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow,
@@ -40,14 +43,14 @@ pub(crate) struct WindowsBackend {
 impl WindowsBackend {
     pub fn try_new() -> Result<Self> {
         unsafe {
-            let dc = GetDC(HWND(0));
-            if dc.0 == 0 {
+            let dc = GetDC(None);
+            if dc.0.is_null() {
                 return Err(CaptureError::unsupported(
                     BACKEND,
                     "GetDC(NULL) failed; no desktop available",
                 ));
             }
-            ReleaseDC(HWND(0), dc);
+            ReleaseDC(None, dc);
         }
         Ok(Self {
             _lock: Mutex::new(()),
@@ -88,7 +91,7 @@ impl Backend for WindowsBackend {
     }
 
     fn capture_window(&self, id: WindowId, _opts: &CaptureOptions) -> Result<RgbaImage> {
-        let hwnd = HWND(id.raw() as isize);
+        let hwnd = HWND(id.raw() as isize as *mut c_void);
         let mut rect = RECT::default();
         unsafe {
             GetWindowRect(hwnd, &mut rect)
@@ -110,7 +113,7 @@ impl Backend for WindowsBackend {
         capture_rect(bounds)
     }
 
-    fn capture_region(&self, region: Rect, _opts: &CaptureOptions) -> Result<RgbaImage> {
+    fn capture_region(&self, region: Rect, opts: &CaptureOptions) -> Result<RgbaImage> {
         if region.size.is_empty() {
             return Err(CaptureError::EmptyRegion(region));
         }
@@ -176,7 +179,7 @@ unsafe extern "system" fn monitor_enum_proc(
 fn enumerate_monitors() -> Result<Vec<Monitor>> {
     MONITOR_BUF.with(|cell| cell.borrow_mut().clear());
     let ok =
-        unsafe { EnumDisplayMonitors(HDC(0), None, Some(monitor_enum_proc), LPARAM(0)).as_bool() };
+        unsafe { EnumDisplayMonitors(None, None, Some(monitor_enum_proc), LPARAM(0)).as_bool() };
     if !ok {
         return Err(CaptureError::backend(BACKEND, "EnumDisplayMonitors failed"));
     }
@@ -243,26 +246,26 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
         return Err(CaptureError::EmptyRegion(bounds));
     }
     unsafe {
-        let screen_dc = GetDC(HWND(0));
-        if screen_dc.0 == 0 {
+        let screen_dc = GetDC(None);
+        if screen_dc.0.is_null() {
             return Err(CaptureError::backend(BACKEND, "GetDC(NULL) failed"));
         }
-        let mem_dc = CreateCompatibleDC(screen_dc);
-        if mem_dc.0 == 0 {
-            ReleaseDC(HWND(0), screen_dc);
+        let mem_dc = CreateCompatibleDC(Some(screen_dc));
+        if mem_dc.0.is_null() {
+            ReleaseDC(None, screen_dc);
             return Err(CaptureError::backend(BACKEND, "CreateCompatibleDC failed"));
         }
         let bitmap: HBITMAP =
             CreateCompatibleBitmap(screen_dc, bounds.width() as i32, bounds.height() as i32);
-        if bitmap.0 == 0 {
-            DeleteDC(mem_dc);
-            ReleaseDC(HWND(0), screen_dc);
+        if bitmap.0.is_null() {
+            let _ = DeleteDC(mem_dc);
+            ReleaseDC(None, screen_dc);
             return Err(CaptureError::backend(
                 BACKEND,
                 "CreateCompatibleBitmap failed",
             ));
         }
-        let old = SelectObject(mem_dc, bitmap);
+        let old = SelectObject(mem_dc, bitmap.into());
 
         // CAPTUREBLT is required to include layered (transparent) top-level UI.
         let ok = BitBlt(
@@ -271,7 +274,7 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
             0,
             bounds.width() as i32,
             bounds.height() as i32,
-            screen_dc,
+            Some(screen_dc),
             bounds.x(),
             bounds.y(),
             SRCCOPY | CAPTUREBLT,
@@ -279,9 +282,9 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
         .is_ok();
         if !ok {
             SelectObject(mem_dc, old);
-            DeleteObject(bitmap);
-            DeleteDC(mem_dc);
-            ReleaseDC(HWND(0), screen_dc);
+            let _ = DeleteObject(bitmap.into());
+            let _ = DeleteDC(mem_dc);
+            ReleaseDC(None, screen_dc);
             return Err(CaptureError::backend(BACKEND, "BitBlt failed"));
         }
 
@@ -292,7 +295,7 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
             biHeight: -(bounds.height() as i32),
             biPlanes: 1,
             biBitCount: 32,
-            biCompression: BI_RGB.0 as u32,
+            biCompression: BI_RGB.0,
             ..Default::default()
         };
 
@@ -310,9 +313,9 @@ fn capture_rect(bounds: Rect) -> Result<RgbaImage> {
         );
 
         SelectObject(mem_dc, old);
-        DeleteObject(bitmap);
-        DeleteDC(mem_dc);
-        ReleaseDC(HWND(0), screen_dc);
+        let _ = DeleteObject(bitmap.into());
+        let _ = DeleteDC(mem_dc);
+        ReleaseDC(None, screen_dc);
 
         if lines == 0 {
             return Err(CaptureError::backend(BACKEND, "GetDIBits failed"));
